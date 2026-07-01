@@ -1,0 +1,30 @@
+[package]
+name = "lagrange-library"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+authors = ["langyo <langyo.china@gmail.com>"]
+description = "Lagrange — a pest-based markdown documentation rendering facility, powered by tairitsu and hikari"
+license = "SySL-1.0"
+repository = "https://github.com/celestia-island/lagrange"
+keywords = ["documentation", "markdown", "ssg", "pest", "rendering"]
+categories = ["command-line-utilities", "text-processing", "web-programming"]
+
+[lib]
+name = "lagrange_library"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lagrange"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "^1"
+clap = { version = "^4", features = ["derive"] }
+pest = "^2"
+pest_derive = "^2"
+
+# Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
+tairitsu-vdom = { path = "../tairitsu/packages/vdom" }
+# Theming: hikari color palette.
+hikari-palette = { path = "../hikari/packages/palette" }

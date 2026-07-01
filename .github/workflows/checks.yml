@@ -1,0 +1,40 @@
+name: Checks
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lagrange
+      - name: Checkout tairitsu (sibling dep)
+        uses: actions/checkout@v4
+        with:
+          repository: celestia-island/tairitsu
+          path: tairitsu
+      - name: Checkout hikari (sibling dep)
+        uses: actions/checkout@v4
+        with:
+          repository: celestia-island/hikari
+          path: hikari
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: fmt
+        # rustfmt directly: `cargo fmt` runs `cargo metadata`, which currently
+        # trips over a broken sibling member in the hikari workspace.
+        run: find src -name '*.rs' -print0 | xargs -0 rustfmt --edition 2021 --check
+        working-directory: lagrange
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: lagrange
+      - name: test
+        run: cargo test --all
+        working-directory: lagrange

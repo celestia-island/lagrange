@@ -1,0 +1,37 @@
+// Lagrange inline markdown grammar.
+//
+// A pragmatic GFM-ish inline grammar parsed with pest. Block structure is
+// detected line-by-line in `parser.rs` (mirroring the ratatui-markdown scheme);
+// each block's text run is fed through this inline grammar, which yields a flat
+// (but nestable for emphasis) sequence of spans.
+
+inline_seq = { SOI ~ span* ~ EOI }
+
+span = {
+    image
+  | link
+  | code_span
+  | strong
+  | emphasis
+  | escape
+  | raw
+}
+
+image     = { "!" ~ label ~ "(" ~ url ~ ")" }
+link      = { label ~ "(" ~ url ~ ")" }
+label     = { "[" ~ (!"]" ~ ANY)* ~ "]" }
+url       = { (!")" ~ ANY)+ }
+
+code_span = { "`" ~ (!"`" ~ ANY)+ ~ "`" }
+
+// Recursive: emphasis may contain other spans (links, code, nested emphasis).
+strong    = { ("**" | "__") ~ span* ~ ("**" | "__") }
+emphasis  = { ("*"  | "_" ) ~ span* ~ ("*"  | "_" ) }
+
+escape    = { "\\" ~ ANY }
+
+// Greedy run of non-special chars; the trailing `ANY` guarantees forward
+// progress even on an unmatched delimiter (e.g. a stray `*`).
+raw       = { (!special_start ~ ANY)+ | ANY }
+
+special_start = { "**" | "__" | "*" | "_" | "`" | "[" | "\\" | "!" }

@@ -1,0 +1,69 @@
+name: Deploy Documentation
+
+# Closed loop: Lagrange's documentation is rendered by Lagrange itself.
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lagrange
+      - name: Checkout tairitsu (sibling dep)
+        uses: actions/checkout@v4
+        with:
+          repository: celestia-island/tairitsu
+          path: tairitsu
+      - name: Checkout hikari (sibling dep)
+        uses: actions/checkout@v4
+        with:
+          repository: celestia-island/hikari
+          path: hikari
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Lagrange
+        run: cargo build --release
+        working-directory: lagrange
+
+      - name: Render the docs with Lagrange
+        run: ./target/release/lagrange build --src docs --out _site
+        working-directory: lagrange
+
+      - name: Add CNAME
+        run: echo "lagrange.docs.celestia.world" > lagrange/_site/CNAME
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: lagrange/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
