@@ -10,29 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: lagrange
-      - name: Checkout tairitsu (sibling dep)
-        uses: actions/checkout@v4
-        with:
-          repository: celestia-island/tairitsu
-          path: tairitsu
-      - name: Checkout hikari (sibling dep)
-        uses: actions/checkout@v4
-        with:
-          repository: celestia-island/hikari
-          path: hikari
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: fmt
-        run: cargo fmt -p lagrange-library -- --check
-        working-directory: lagrange
-      - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
-        working-directory: lagrange
-      - name: test
-        run: cargo test --all
-        working-directory: lagrange
+      - run: cargo fmt -p lagrange-library -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all

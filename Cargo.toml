@@ -26,6 +26,6 @@ pest = "^2"
 pest_derive = "^2"
 
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
-tairitsu-vdom = { version = "^0.5", path = "../tairitsu/packages/vdom" }
+tairitsu-vdom = { git = "https://github.com/celestia-island/tairitsu.git", branch = "dev" }
 # Theming: hikari color palette.
-hikari-palette = { version = "^0.2", path = "../hikari/packages/palette" }
+hikari-palette = { git = "https://github.com/celestia-island/hikari.git", branch = "dev" }

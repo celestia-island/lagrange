@@ -1,7 +1,5 @@
 name: Deploy Documentation
 
-# Closed loop: Lagrange's documentation is rendered by Lagrange itself.
-
 on:
   push:
     branches: [master, dev]
@@ -26,37 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: lagrange
-      - name: Checkout tairitsu (sibling dep)
-        uses: actions/checkout@v4
-        with:
-          repository: celestia-island/tairitsu
-          path: tairitsu
-      - name: Checkout hikari (sibling dep)
-        uses: actions/checkout@v4
-        with:
-          repository: celestia-island/hikari
-          path: hikari
-
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Lagrange
-        run: cargo build --release
-        working-directory: lagrange
-
-      - name: Render the docs with Lagrange
-        run: ./target/release/lagrange build --src docs --out _site
-        working-directory: lagrange
-
-      - name: Add CNAME
-        run: echo "lagrange.docs.celestia.world" > lagrange/_site/CNAME
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - run: cargo run --release -- build --src docs --out _site
+      - run: echo "lagrange.docs.celestia.world" > _site/CNAME
+      - uses: actions/upload-pages-artifact@v3
         with:
-          path: lagrange/_site
-
+          path: _site
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -64,6 +37,4 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v4
