@@ -191,11 +191,15 @@ fn parse_html_block(lines: &[&str], i: usize) -> Option<(Block, usize)> {
 }
 
 /// A line begins an HTML block if, after leading whitespace, it starts with `<`
-/// immediately followed by an ASCII letter, or `</` + letter.
+/// immediately followed by an ASCII letter, `</` + letter, or an HTML
+/// comment / declaration opener (`<!--`, `<!`, `<?`).
 fn is_html_block_start(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.first() != Some(&b'<') {
         return false;
+    }
+    if bytes.starts_with(b"<!--") || bytes.starts_with(b"<!") || bytes.starts_with(b"<?") {
+        return true;
     }
     let mut k = 1;
     if bytes.get(k) == Some(&b'/') {
@@ -433,6 +437,7 @@ fn build_inline(pair: Pair<Rule>) -> Inline {
         Rule::code_span => Inline::Code(strip_delim(inner.as_str(), '`', '`')),
         Rule::strong => Inline::Strong(inner.into_inner().map(build_inline).collect()),
         Rule::emphasis => Inline::Emphasis(inner.into_inner().map(build_inline).collect()),
+        Rule::raw_double_atom | Rule::raw_single_atom => Inline::Text(inner.as_str().to_string()),
         Rule::escape => {
             let ch = inner
                 .as_str()
@@ -499,6 +504,25 @@ mod tests {
             "expected a single Html block, got {:?}",
             blocks
         );
+    }
+
+    #[test]
+    fn gfm_table_row_with_many_bold_cells_does_not_explode() {
+        // A run full of `**bold**` spans (as inside GFM table cells) used to
+        // send the recursive emphasis/strong grammar into exponential
+        // backtracking. It must now parse in bounded time and surface every
+        // bold run. (Without a separator line this is a paragraph, not a
+        // table — that is fine; we only care about the bold spans.)
+        let row = "| **L2** coord | **2a** peers | **2b** lease | **fork** |";
+        let blocks = parse(row);
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks);
+        };
+        let bold_count = inlines
+            .iter()
+            .filter(|i| matches!(i, Inline::Strong(_)))
+            .count();
+        assert_eq!(bold_count, 4, "inlines: {:?}", inlines);
     }
 
     fn text_contains_image(inlines: &[Inline], alt: &str, url_part: &str) -> bool {

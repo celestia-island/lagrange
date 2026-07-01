@@ -4,6 +4,12 @@
 // detected line-by-line in `parser.rs` (mirroring the ratatui-markdown scheme);
 // each block's text run is fed through this inline grammar, which yields a flat
 // (but nestable for emphasis) sequence of spans.
+//
+// Emphasis/strong use *atomic* inner atoms (see `strong_atom` / `em_atom`) that
+// do not recurse into arbitrary `span`s. This keeps the grammar linear — a line
+// full of `**bold**` cells (common in GFM tables) cannot trigger exponential
+// backtracking. The only nesting allowed is italic-around-bold
+// (`*… **b** …*`), which is bounded to two levels.
 
 inline_seq = { SOI ~ span* ~ EOI }
 
@@ -32,14 +38,24 @@ url       = { (!")" ~ ANY)+ }
 
 code_span = { "`" ~ (!"`" ~ ANY)+ ~ "`" }
 
-// Recursive: emphasis may contain other spans (links, code, nested emphasis).
-strong    = { ("**" | "__") ~ span* ~ ("**" | "__") }
-emphasis  = { ("*"  | "_" ) ~ span* ~ ("*"  | "_" ) }
+// `strong`/`emphasis` close on their own delimiter; their inner atoms never
+// recurse into arbitrary spans (only into non-ambiguous atoms +, for emphasis,
+// one level of `strong`).
+strong      = { ("**" | "__") ~ strong_atom* ~ ("**" | "__") }
+emphasis    = { ("*"  | "_" ) ~ em_atom*     ~ ("*"  | "_" ) }
+strong_atom = { code_span | image | link | badge_link | escape | raw_double_atom }
+em_atom     = { code_span | image | link | badge_link | strong | escape | raw_single_atom }
+
+// Atomic runs of non-special chars (relative to the delimiter set) so the
+// surrounding repetition is non-backtracking and produces few nodes.
+raw_double_atom = @{ ( !( ("**" | "__") | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
+raw_single_atom = @{ ( !( ("**" | "__") | ("*" | "_") | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
 
 escape    = { "\\" ~ ANY }
 
 // Greedy run of non-special chars; the trailing `ANY` guarantees forward
-// progress even on an unmatched delimiter (e.g. a stray `*`).
-raw       = { (!special_start ~ ANY)+ | ANY }
+// progress even on an unmatched delimiter (e.g. a stray `*`). Atomic so it does
+// not contribute to backtracking at the span level.
+raw       = @{ (!special_start ~ ANY)+ | ANY }
 
 special_start = { "**" | "__" | "*" | "_" | "`" | "[" | "\\" | "!" }
