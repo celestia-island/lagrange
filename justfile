@@ -2,9 +2,9 @@ set shell := ["bash", "-c"]
 default:
     @just --list
 fmt:
-    @find src -name '*.rs' -print0 | xargs -0 rustfmt --edition 2021
+    cargo fmt -p lagrange-library
 fmt-check:
-    @find src -name '*.rs' -print0 | xargs -0 rustfmt --edition 2021 --check
+    cargo fmt -p lagrange-library -- --check
 check:
     cargo check --all-targets
 clippy:

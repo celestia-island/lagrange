@@ -28,9 +28,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: fmt
-        # rustfmt directly: `cargo fmt` runs `cargo metadata`, which currently
-        # trips over a broken sibling member in the hikari workspace.
-        run: find src -name '*.rs' -print0 | xargs -0 rustfmt --edition 2021 --check
+        run: cargo fmt -p lagrange-library -- --check
         working-directory: lagrange
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
