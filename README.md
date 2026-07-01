@@ -1,53 +1,29 @@
-<h1 align="center">lagrange</h1>
+<p align="center"><img src="docs/logo.webp" alt="Lagrange" width="240" /></p>
 
-<p align="center"><strong>A pest-based markdown documentation rendering facility.</strong></p>
+<h1 align="center">Lagrange</h1>
 
-<p align="center">
-  Lagrange parses markdown with a pest grammar, renders it to HTML through the
-  <a href="https://github.com/celestia-island/tairitsu">tairitsu</a> virtual DOM,
-  and assembles a multilingual static site — themed with the
-  <a href="https://github.com/celestia-island/hikari">hikari</a> palette.
-</p>
+<p align="center"><strong>A pest-based markdown documentation renderer — tairitsu VDom + hikari palette, multilingual out of the box.</strong></p>
 
-<p align="center">
-[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](./LICENSE)
-</p>
+[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](./LICENSE) [![Checks](https://img.shields.io/github/actions/workflow/status/celestia-island/lagrange/checks.yml)](https://github.com/celestia-island/lagrange/actions/workflows/checks.yml) [![Docs](https://img.shields.io/badge/docs-lagrange.docs.celestia.world-blue)](https://lagrange.docs.celestia.world)
 
-<p align="center">
-<a href="./docs/en/index.md">English</a> ·
-<a href="./docs/zhs/index.md">简体中文</a> ·
-<a href="./docs/zht/index.md">繁體中文</a> ·
-<a href="./docs/ja/index.md">日本語</a> ·
-<a href="./docs/ko/index.md">한국어</a> ·
-<a href="./docs/fr/index.md">Français</a> ·
-<a href="./docs/es/index.md">Español</a> ·
-<a href="./docs/ru/index.md">Русский</a> ·
-<a href="./docs/ar/index.md">العربية</a>
-</p>
+[English](./docs/en/README.md) · [简体中文](./docs/zhs/README.md) · [繁體中文](./docs/zht/README.md) · [日本語](./docs/ja/README.md) · [한국어](./docs/ko/README.md) · [Français](./docs/fr/README.md) · [Español](./docs/es/README.md) · [Русский](./docs/ru/README.md) · [العربية](./docs/ar/README.md)
 
-## The closed loop
+## Introduction
 
-Lagrange renders **its own documentation** — this README's sibling `docs/`
-tree is built by Lagrange itself:
+Lagrange turns a folder of markdown into a static, multilingual documentation
+site. It parses markdown with a hand-written [pest](https://pest.rs) grammar,
+renders the AST to HTML through the [tairitsu](https://github.com/celestia-island/tairitsu)
+virtual DOM, and themes the result with the [hikari](https://github.com/celestia-island/hikari)
+palette. One directory per language, a built-in language switcher, and a root
+redirect to English — no JavaScript framework, no mdBook, no Node toolchain.
 
-```bash
-just docs          # = lagrange build --src docs --out target/site
-```
-
-If you are reading the published site, it was produced by Lagrange.
-
-## Features
-
-- **pest-based markdown parser** — block + inline, modelled on
-  [ratatui-markdown](https://github.com/celestia-island/ratatui-markdown).
-- **tairitsu VDom rendering** — documents become `VNode` trees, serialised via
-  `VNode::render_to_html`.
-- **Multilingual** — one directory per language, a built-in language switcher,
-  and a root redirect to English.
-- **hikari theming** — the stylesheet's base colours come from the hikari
-  palette.
+Lagrange renders **its own documentation**: the `docs/` tree next to this README
+is built by Lagrange itself (`just docs`). If you are reading the published
+site, it was produced by Lagrange.
 
 ## Quick start
+
+Build the site for this very repo:
 
 ```bash
 git clone https://github.com/celestia-island/lagrange
@@ -55,39 +31,91 @@ cd lagrange
 cargo run --release -- build --src docs --out target/site
 ```
 
-Open `target/site/index.html`.
+Open `target/site/index.html` — it redirects into the English book.
 
-## Directory layout
+Point Lagrange at any docs tree with the same shape:
 
 ```
 docs/
+├── logo.webp          # shared assets live at the docs root
 ├── en/
-│   ├── SUMMARY.md      # drives the sidebar
-│   ├── index.md
+│   ├── README.md      # becomes <site>/en/index.html
+│   ├── SUMMARY.md     # drives the sidebar
 │   └── guides/*.md
-└── <lang>/ …           # one directory per language
+└── zhs/ …             # one directory per language
 ```
-
-## Modules
-
-| Module | Responsibility |
-|--------|----------------|
-| `markdown` | pest grammar, AST, block + inline parser |
-| `render` | AST → tairitsu `VNode` → HTML string |
-| `theme` | CSS generated from the hikari palette |
-| `site` | walks the docs tree, renders pages, writes a static site |
-| `cli` | the `lagrange` binary |
-
-## Development
 
 ```bash
-just ci          # fmt-check + clippy + test
-just docs        # build the docs site with lagrange itself
+lagrange build --src docs --out _site
 ```
 
-> Lagrange depends on the in-tree sibling crates `tairitsu-vdom` and
-> `hikari-palette` (path dependencies `../tairitsu` and `../hikari`). The CI
-> workflows check those repositories out alongside Lagrange to satisfy them.
+`README.md` and `index.md` both map to `index.html`; a `docs/en/README.md`
+symlink to the root `README.md` is the recommended way to keep the GitHub
+landing page and the docs index in sync.
+
+## Deploying the site
+
+Lagrange emits a plain static directory, so it deploys anywhere. The build is
+just `lagrange build --src docs --out <dir>` (or `cargo run --release -- build …`
+when consumed from source).
+
+### GitHub Actions → GitHub Pages
+
+A ready-made composite action checks Lagrange out alongside your repo and runs
+the build. This is what Lagrange itself uses
+([`.github/workflows/docs.yml`](./.github/workflows/docs.yml)):
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: celestia-island/lagrange/.github/actions/build@dev
+        with:
+          src: docs
+          out: _site
+      - run: echo "your-project.docs.celestia.world" > _site/CNAME
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+```
+
+### Cloudflare Pages
+
+Build command `cargo run --release -- build --src docs --out _site`, build output
+directory `_site`. For a prebuilt Lagrange, mirror
+[`celestia-island/lagrange`](https://github.com/celestia-island/lagrange) and run
+`cargo run --release -- build --src $DOCS_DIR --site_url $CF_PAGES_URL --out _site`.
+`--site_url` is optional and only affects absolute links in the language
+switcher.
+
+### Vercel
+
+Framework preset **Other**, build command
+`cargo run --release -- build --src docs --out public`, output directory
+`public`. (Vervel needs the Rust toolchain — use the
+[`vercel-rust`](https://github.com/vercel-community/rust) runtime builder, or
+build in a prior CI step and deploy the static output.)
+
+## Features
+
+- **pest-based markdown parser** — block + inline, modelled on
+  [ratatui-markdown](https://github.com/celestia-island/ratatui-markdown), plus
+  raw-HTML-block pass-through so centred README markup survives.
+- **tairitsu VDom rendering** — documents become `VNode` trees serialised via
+  `render_to_html`.
+- **Multilingual** — one directory per language, a built-in language switcher,
+  and a root redirect to English.
+- **Self-hosting** — Lagrange's own documentation is built by Lagrange.
 
 ## License
 

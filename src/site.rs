@@ -51,6 +51,12 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         build_lang(&opts.src, &opts.out, lang, &langs, &css, &opts.site_url)?;
     }
 
+    // Copy docs-root assets (siblings of the language directories — e.g.
+    // `docs/logo.webp`) to the site root, so a root README that references
+    // `docs/logo.webp` resolves once its `docs/` prefix is rewritten to the
+    // appropriate depth-relative path.
+    copy_root_assets(&opts.src, &opts.out)?;
+
     // Root redirect to the English book (or the first language if no English).
     let default_lang = if langs.iter().any(|l| l == "en") {
         "en"
@@ -148,6 +154,11 @@ fn render_page(
         })
         .collect::<Vec<_>>()
         .join(" · ");
+
+    // Rewrite asset references written against the repo root (e.g.
+    // `docs/logo.webp` in a symlinked root README) to depth-relative paths
+    // into the site root, where `copy_root_assets` places those files.
+    let body = rewrite_asset_paths(body, page_path);
 
     format!(
         "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title}</title>\n<style>\n{css}\n</style>\n</head>\n<body>\n<div class=\"layout\">\n{sidebar}\n<main class=\"content\">\n{body}\n</main>\n</div>\n<div class=\"lang-switcher\">{switcher}</div>\n</body>\n</html>\n"
@@ -265,6 +276,36 @@ fn walk_md_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 fn copy_assets(src: &Path, out: &Path) -> Result<()> {
     copy_assets_inner(src, out)?;
     Ok(())
+}
+
+/// Copy non-markdown files that live directly in the docs root (siblings of the
+/// language directories, e.g. `docs/logo.webp`) to the site root.
+fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|e| e.to_str()) != Some("md") {
+            fs::copy(&path, out.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Rewrite asset references written against the repo root (`docs/<asset>`) to
+/// depth-relative paths into the site root. `page_path` is the page's path
+/// relative to its language directory, so the total depth from the site root is
+/// one (for the language dir) plus the number of `/` in `page_path`.
+///
+/// Only literal `src="docs/…"` / `href="docs/…"` occurrences are rewritten —
+/// absolute URLs, anchors and intra-doc relative links are left untouched.
+fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
+    let depth = 1 + page_path.matches('/').count();
+    let up = "../".repeat(depth);
+    if up.is_empty() {
+        return html.to_string();
+    }
+    html.replace("src=\"docs/", &format!("src=\"{up}"))
+        .replace("href=\"docs/", &format!("href=\"{up}"))
 }
 
 fn copy_assets_inner(src: &Path, out: &Path) -> Result<()> {

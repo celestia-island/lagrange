@@ -26,6 +26,11 @@ pub enum Block {
     },
     /// `---` / `***` / `___`.
     ThematicBreak,
+    /// A raw HTML block, passed through verbatim (e.g. `<p align="center">…`,
+    /// `<h1 align="center">…</h1>`). Lets a repo's root README — which uses
+    /// block-level HTML for centering — render faithfully when symlinked into a
+    /// language directory.
+    Html(String),
 }
 
 /// An inline span.

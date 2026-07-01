@@ -1,6 +1,6 @@
 # Содержание
 
-[Lagrange](./index.md)
+[Lagrange](./README.md)
 
 ---
 

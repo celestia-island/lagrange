@@ -1,6 +1,6 @@
 # 목차
 
-[Lagrange](./index.md)
+[Lagrange](./README.md)
 
 ---
 

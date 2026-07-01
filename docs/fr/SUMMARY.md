@@ -1,6 +1,6 @@
 # Sommaire
 
-[Lagrange](./index.md)
+[Lagrange](./README.md)
 
 ---
 

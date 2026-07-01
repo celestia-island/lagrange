@@ -36,6 +36,9 @@ pub fn parse(input: &str) -> Vec<Block> {
         } else if is_thematic_break(line) {
             blocks.push(Block::ThematicBreak);
             i += 1;
+        } else if let Some((block, next)) = parse_html_block(&lines, i) {
+            blocks.push(block);
+            i = next;
         } else if let Some((block, next)) = parse_blockquote(&lines, i) {
             blocks.push(block);
             i = next;
@@ -134,6 +137,97 @@ fn is_thematic_break(line: &str) -> bool {
     }
     t.chars().all(|c| c == first || c == ' ' || c == '\t')
         && t.chars().filter(|&c| c == first).count() >= 3
+}
+
+/// Detect a raw HTML block.
+///
+/// Two shapes are recognised (enough for the READMEs in this ecosystem, which
+/// use block-level HTML for centering):
+///
+/// 1. **Single-line, self-closed HTML** — a line whose trimmed form opens and
+///    closes the same element, e.g. `<p align="center"><img …/></p>`,
+///    `<h1 align="center">Name</h1>`. The line is captured verbatim.
+/// 2. **Multi-line HTML run** — consecutive non-blank lines starting with `<`
+///    (e.g. a raw `<img …/>` on its own line), captured together until a blank
+///    line.
+///
+/// Blank lines always terminate a run, so `<div>` … blank … markdown … blank …
+/// `</div>` becomes three separate blocks (the inner markdown is parsed as
+/// normal, which is the GitHub-compatible behaviour the READMEs rely on).
+fn parse_html_block(lines: &[&str], i: usize) -> Option<(Block, usize)> {
+    let trimmed = lines[i].trim_start();
+    if !is_html_block_start(trimmed) {
+        return None;
+    }
+
+    // Shape 1: the opener is fully closed on the same line (`<tag …>…</tag>` or
+    // a self-closing `<…/>`). Capture just this line.
+    if html_line_is_self_contained(trimmed) {
+        return Some((Block::Html(lines[i].to_string()), i + 1));
+    }
+
+    // Shape 2: gather a maximal run of consecutive non-blank `<…>`-prefixed
+    // lines. The first line is already known to qualify; keep eating while the
+    // next line is non-blank and also begins with `<`.
+    let mut buf = String::from(lines[i]);
+    buf.push('\n');
+    let mut j = i + 1;
+    while j < lines.len() {
+        let l = lines[j];
+        let lt = l.trim_start();
+        if lt.is_empty() {
+            break;
+        }
+        // Allow continuation lines that are themselves tag lines. A line that
+        // does not start with `<` ends the run (it will be parsed as markdown).
+        if !lt.starts_with('<') {
+            break;
+        }
+        buf.push_str(l);
+        buf.push('\n');
+        j += 1;
+    }
+    Some((Block::Html(buf), j))
+}
+
+/// A line begins an HTML block if, after leading whitespace, it starts with `<`
+/// immediately followed by an ASCII letter, or `</` + letter.
+fn is_html_block_start(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'<') {
+        return false;
+    }
+    let mut k = 1;
+    if bytes.get(k) == Some(&b'/') {
+        k += 1;
+    }
+    bytes.get(k).is_some_and(|b| b.is_ascii_alphabetic())
+}
+
+/// True when a trimmed HTML line opens and closes its root element on the same
+/// line (`<x …>…</x>`), or is a self-closing tag (`<x …/>`).
+fn html_line_is_self_contained(s: &str) -> bool {
+    // Self-closing singleton like `<img …/>`.
+    if s.ends_with("/>") {
+        return true;
+    }
+    // `<tag …>…</tag>`: capture the first tag name, then require its close tag.
+    let after_open = match s.strip_prefix('<') {
+        Some(rest) => rest,
+        None => return false,
+    };
+    let name: String = after_open
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if name.is_empty() {
+        return false;
+    }
+    let Some(open_end) = after_open.find('>') else {
+        return false;
+    };
+    let close = format!("</{name}>");
+    s[open_end + 1..].contains(&close)
 }
 
 fn parse_blockquote(lines: &[&str], i: usize) -> Option<(Block, usize)> {
@@ -291,6 +385,24 @@ fn build_inline(pair: Pair<Rule>) -> Inline {
         return Inline::Text(span_text);
     };
     match inner.as_rule() {
+        Rule::badge_link => {
+            // `[![alt](img-url)](link-url)` -> a link wrapping an image.
+            // The `alt` group is anonymous, so peel it out of the full match;
+            // the two `url` captures come through as the only inner pairs.
+            let full = inner.as_str();
+            let alt = full
+                .strip_prefix("[![")
+                .and_then(|rest| rest.split_once("]("))
+                .map(|(alt, _)| alt.to_string())
+                .unwrap_or_default();
+            let urls: Vec<String> = inner.into_inner().map(|p| p.as_str().to_string()).collect();
+            let img_url = urls.first().cloned().unwrap_or_default();
+            let link_url = urls.get(1).cloned().unwrap_or_default();
+            Inline::Link {
+                text: vec![Inline::Image { alt, url: img_url }],
+                url: link_url,
+            }
+        }
         Rule::image => {
             let kids: Vec<_> = inner.into_inner().collect();
             let alt = kids
@@ -340,4 +452,62 @@ fn strip_delim(s: &str, open: char, close: char) -> String {
     let s = s.strip_prefix(open).unwrap_or(s);
     let s = s.strip_suffix(close).unwrap_or(s);
     s.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn badge_link_is_a_link_wrapping_an_image() {
+        let blocks = parse("text [![License](badge.svg)](./LICENSE) tail");
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a paragraph, got {:?}", blocks);
+        };
+        // Find the link span.
+        let link = inlines
+            .iter()
+            .find_map(|i| match i {
+                Inline::Link { text, url } => Some((text, url)),
+                _ => None,
+            })
+            .expect("a badge link");
+        assert_eq!(link.1, "./LICENSE");
+        assert!(
+            text_contains_image(link.0, "License", "badge.svg"),
+            "expected an image span inside the link, got {:?}",
+            link.0
+        );
+    }
+
+    #[test]
+    fn raw_html_block_passes_through_verbatim() {
+        let blocks = parse("<h1 align=\"center\">Lagrange</h1>\n\nparagraph");
+        assert_eq!(blocks.len(), 2);
+        let Block::Html(raw) = &blocks[0] else {
+            panic!("expected an Html block, got {:?}", blocks[0]);
+        };
+        assert!(raw.contains("<h1 align=\"center\">Lagrange</h1>"));
+        assert!(matches!(blocks[1], Block::Paragraph(_)));
+    }
+
+    #[test]
+    fn self_closing_html_is_a_single_line_block() {
+        let blocks = parse("<p align=\"center\"><img src=\"logo.webp\" /></p>");
+        assert!(
+            matches!(&blocks[..], [Block::Html(_)]),
+            "expected a single Html block, got {:?}",
+            blocks
+        );
+    }
+
+    fn text_contains_image(inlines: &[Inline], alt: &str, url_part: &str) -> bool {
+        inlines.iter().any(|i| match i {
+            Inline::Image { alt: a, url } => a == alt && url.contains(url_part),
+            Inline::Strong(inner) | Inline::Emphasis(inner) => {
+                text_contains_image(inner, alt, url_part)
+            }
+            _ => false,
+        })
+    }
 }

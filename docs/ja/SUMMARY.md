@@ -1,6 +1,6 @@
 # 目次
 
-[Lagrange](./index.md)
+[Lagrange](./README.md)
 
 ---
 

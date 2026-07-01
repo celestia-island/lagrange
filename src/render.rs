@@ -62,6 +62,13 @@ fn render_block(b: &Block) -> VNode {
             el_node("table", vec![thead, tbody])
         }
         Block::ThematicBreak => el_node("hr", Vec::new()),
+        Block::Html(raw) => {
+            // Raw HTML block (e.g. centred `<p align="center">…`). Emit a
+            // dedicated passthrough element so the markdown text-escaper does
+            // not mangle it. `render_page` rewrites asset paths inside this
+            // string afterwards.
+            VNode::Element(Box::new(el("div").dangerous_inner_html(raw)))
+        }
     }
 }
 

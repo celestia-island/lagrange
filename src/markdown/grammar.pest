@@ -8,13 +8,21 @@
 inline_seq = { SOI ~ span* ~ EOI }
 
 span = {
-    image
+    badge_link
+  | image
   | link
   | code_span
   | strong
   | emphasis
   | escape
   | raw
+}
+
+// A link wrapping an image — `[![alt](img-url)](link-url)`. Standard shield.io
+// badge syntax. Matched before `link` so the nested `[`/`]` don't confuse the
+// generic label rule (which stops at the first `]`).
+badge_link = {
+    "[!" ~ "[" ~ (!"]" ~ ANY)* ~ "]" ~ "(" ~ url ~ ")" ~ "]" ~ "(" ~ url ~ ")"
 }
 
 image     = { "!" ~ label ~ "(" ~ url ~ ")" }

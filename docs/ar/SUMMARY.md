@@ -1,6 +1,6 @@
 # الفهرس
 
-[Lagrange](./index.md)
+[Lagrange](./README.md)
 
 ---
 
