@@ -28,4 +28,4 @@ pest_derive = "^2"
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
 tairitsu-vdom = { version = "^0.5", path = "../tairitsu/packages/vdom" }
 # Theming: hikari color palette.
-hikari-palette = { version = "0.1.0", path = "../hikari/packages/palette" }
+hikari-palette = { version = "^0.2", path = "../hikari/packages/palette" }
