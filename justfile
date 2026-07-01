@@ -17,6 +17,6 @@ build:
 # Build lagrange's own documentation with lagrange itself (closed loop).
 # Output goes to target/site/.
 docs:
-    cargo run --release -- build docs --out target/site
+    cargo run --release -- build --src docs --out target/site
 
 ci: fmt-check && clippy && test

@@ -9,6 +9,7 @@ license = "SySL-1.0"
 repository = "https://github.com/celestia-island/lagrange"
 keywords = ["documentation", "markdown", "ssg", "pest", "rendering"]
 categories = ["command-line-utilities", "text-processing", "web-programming"]
+exclude = ["docs/", "justfile", ".github/"]
 
 [lib]
 name = "lagrange_library"
