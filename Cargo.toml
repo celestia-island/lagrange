@@ -43,3 +43,4 @@ tower-http = { version = "^0.6", features = ["fs"] }
 tairitsu-vdom = { git = "https://github.com/celestia-island/tairitsu.git", branch = "dev" }
 # Theming: hikari color palette.
 hikari-palette = { git = "https://github.com/celestia-island/hikari.git", branch = "dev" }
+hikari-icons = { git = "https://github.com/celestia-island/hikari.git", branch = "dev", default-features = false }

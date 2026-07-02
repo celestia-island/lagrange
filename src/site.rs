@@ -382,7 +382,7 @@ fn absolute_href(href: &str, _lang: &str) -> String {
 }
 
 fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
-    let depth = 1 + page_path.matches('/').count();
+    let depth = page_path.matches('/').count();
     let up = "../".repeat(depth);
     if up.is_empty() {
         return html.to_string();
