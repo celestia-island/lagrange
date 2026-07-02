@@ -1,28 +1,61 @@
-# Lagrange
+<p align="center"><img src="../logo.webp" alt="Lagrange" width="240" /></p>
 
-**Инструмент рендеринга markdown-документации на основе pest.**
+<h1 align="center">Lagrange</h1>
 
-Lagrange разбирает markdown с помощью грамматики pest, рендерит его в HTML через
-виртуальный DOM [tairitsu](https://github.com/celestia-island/tairitsu) и
-собирает многоязычный статический сайт — с темой на основе палитры
-[hikari](https://github.com/celestia-island/hikari).
+<p align="center"><strong>Инструмент рендеринга Markdown-документации на основе pest — VDom tairitsu + палитра hikari, многоязычный из коробки.</strong></p>
 
-> Эта самая страница отрендерена самим Lagrange.
+<div align="center">
 
-## Возможности
+[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](../../LICENSE)
+[![Checks](https://img.shields.io/github/actions/workflow/status/celestia-island/lagrange/checks.yml)](https://github.com/celestia-island/lagrange/actions/workflows/checks.yml)
+[![Docs](https://img.shields.io/badge/docs-lagrange.docs.celestia.world-blue)](https://lagrange.docs.celestia.world)
 
-- **markdown-парсер на основе pest** — блочный + строчный, по образцу ratatui-markdown.
-- **Рендеринг VDom tairitsu** — документы превращаются в деревья `VNode`, сериализуемые через
-  `render_to_html`.
-- **Многоязычность** — один каталог на язык, встроенный переключатель языков
-  и корневой редирект на английский.
-- **Самохостинг** — собственная документация Lagrange собирается самим Lagrange
-  (`just docs`).
+</div>
+
+<div align="center">
+
+[English](../en/README.md) ·
+[简体中文](../zhs/README.md) ·
+[繁體中文](../zht/README.md) ·
+[日本語](../ja/README.md) ·
+[한국어](../ko/README.md) ·
+[Français](../fr/README.md) ·
+[Español](../es/README.md) ·
+**Русский** ·
+[العربية](../ar/README.md)
+
+</div>
+
+## Введение
+
+Lagrange превращает папку с Markdown-файлами в многоязычный статический
+документационный сайт. Парсинг осуществляется собственной грамматикой
+[pest](https://pest.rs), AST рендерится в HTML через виртуальный DOM
+[tairitsu](https://github.com/celestia-island/tairitsu), темы берутся из
+палитры [hikari](https://github.com/celestia-island/hikari). По одному
+каталогу на язык, встроенный переключатель языков, корневой редирект на
+английский — без JavaScript-фреймворков, без mdBook, без Node.
 
 ## Быстрый старт
 
 ```bash
-cargo run --release -- build docs --out target/site
+git clone https://github.com/celestia-island/lagrange
+cd lagrange
+cargo run --release -- build --src docs --out target/site
 ```
 
-См. [Быстрый старт](./guides/quickstart.md) и [Архитектура](./guides/architecture.md).
+## Развёртывание
+
+Вывод — статический каталог. Разворачивается на **GitHub Pages** (встроенный
+composite action), **Cloudflare Pages** или **Vercel**.
+
+## Возможности
+
+- **Парсер Markdown на основе pest** (блоки+inline, сырой HTML сохранён)
+- **Рендеринг VDom tairitsu**
+- **Многоязычный** — каталог на язык, встроенный переключатель
+- **Самодокументирование** — документация Lagrange собрана самим Lagrange
+
+## Лицензия
+
+SySL-1.0 (Synthetic Source License). См. [LICENSE](../../LICENSE).

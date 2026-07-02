@@ -1,27 +1,61 @@
-# Lagrange
+<p align="center"><img src="../logo.webp" alt="Lagrange" width="240" /></p>
 
-**一個基於 pest 的 Markdown 文件渲染設施。**
+<h1 align="center">Lagrange</h1>
 
-Lagrange 使用 pest 語法解析 Markdown，透過
-[tairitsu](https://github.com/celestia-island/tairitsu) 虛擬 DOM 將其渲染為 HTML，並組裝成一個多語言靜態網站——使用
-[hikari](https://github.com/celestia-island/hikari) 調色盤進行主題化。
+<p align="center"><strong>一個基於 pest 的 Markdown 文件渲染器——tairitsu VDom + hikari 調色板，開箱即用多語言。</strong></p>
 
-> 你正在瀏覽的這個頁面正是由 Lagrange 自身渲染的。
+<div align="center">
 
-## 特色
+[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](../../LICENSE)
+[![Checks](https://img.shields.io/github/actions/workflow/status/celestia-island/lagrange/checks.yml)](https://github.com/celestia-island/lagrange/actions/workflows/checks.yml)
+[![Docs](https://img.shields.io/badge/docs-lagrange.docs.celestia.world-blue)](https://lagrange.docs.celestia.world)
 
-- **基於 pest 的 Markdown 解析器** —— 區塊 + 行內，以 ratatui-markdown 為藍本。
-- **tairitsu VDom 渲染** —— 文件轉換為 `VNode` 樹，透過
-  `render_to_html` 序列化。
-- **多語言** —— 每種語言一個目錄，內建語言切換器，
-  以及到英文版的根重新導向。
-- **自架** —— Lagrange 自身的文件由 Lagrange 建置
-  （`just docs`）。
+</div>
 
-## 快速入門
+<div align="center">
+
+[English](../en/README.md) ·
+[简体中文](../zhs/README.md) ·
+**繁體中文** ·
+[日本語](../ja/README.md) ·
+[한국어](../ko/README.md) ·
+[Français](../fr/README.md) ·
+[Español](../es/README.md) ·
+[Русский](../ru/README.md) ·
+[العربية](../ar/README.md)
+
+</div>
+
+## 簡介
+
+Lagrange 將一個 Markdown 文件夾變成多語言靜態文件站點。它用自己編寫的
+[pest](https://pest.rs) 語法解析 Markdown，通過 [tairitsu](https://github.com/celestia-island/tairitsu)
+虛擬 DOM 將 AST 渲染為 HTML，並用 [hikari](https://github.com/celestia-island/hikari)
+調色板進行主題美化。每種語言一個目錄、內置語言切換器、根重定向到英文——無需
+JavaScript 框架、無需 mdBook、無需 Node 工具鏈。
+
+Lagrange 用它自身渲染自己的文件：README 旁邊的 `docs/` 目錄樹就是 Lagrange 構建的
+（`just docs`）。
+
+## 快速開始
 
 ```bash
-cargo run --release -- build docs --out target/site
+git clone https://github.com/celestia-island/lagrange
+cd lagrange
+cargo run --release -- build --src docs --out target/site
 ```
 
-請參見[快速入門](./guides/quickstart.md)與[架構](./guides/architecture.md)。
+打開 `target/site/index.html`。
+
+詳細用法與部署（GitHub Pages / Cloudflare Pages / Vercel）見根 [README](../../README.md#deploying-the-site)。
+
+## 特性
+
+- **pest 語法解析**——區塊級 + 行內，以 ratatui-markdown 為藍本，支援 raw HTML 透傳。
+- **tairitsu VDom 渲染**。
+- **多語言**——每種語言一個目錄、內置語言切換器、根重定向到英文。
+- **自託管**——Lagrange 自身的文件由 Lagrange 構建。
+
+## 許可
+
+SySL-1.0（Synthetic Source License）。見 [LICENSE](../../LICENSE)。

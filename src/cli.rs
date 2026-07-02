@@ -1,6 +1,8 @@
 //! Command-line interface.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -34,6 +36,8 @@ pub enum Command {
         site_url: Option<String>,
     },
     /// Build once, then watch for changes and rebuild automatically.
+    /// When `--port` is set, also starts a lightweight HTTP server that
+    /// serves the output directory — no external dependency needed.
     Dev {
         /// Source docs root. Defaults to `docs`.
         #[arg(long, default_value = "docs")]
@@ -47,6 +51,9 @@ pub enum Command {
         /// Polling interval in seconds (default 1).
         #[arg(long, default_value = "1")]
         interval: f64,
+        /// HTTP port to serve on. 0 means "serve is off".
+        #[arg(long, default_value = "0")]
+        port: u16,
     },
 }
 
@@ -62,6 +69,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             out,
             site_url,
             interval,
+            port,
         } => {
             info!("lagrange dev — build + watch ({interval}s poll)");
             let opts = BuildOptions {
@@ -70,10 +78,23 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 site_url: site_url.clone(),
             };
             site::build(&opts)?;
+
+            // Start HTTP server if requested.
+            let _server = if port > 0 {
+                let out_d = out.clone();
+                let bind = format!("127.0.0.1:{port}");
+                info!("serving {} on http://{bind}", out_d.display());
+                Some(serve_dir(out_d, port))
+            } else {
+                None
+            };
+
             info!(
-                "watching {} for changes …  (open {}index.html or serve with e.g. `python3 -m http.server`)",
+                "watching {} …  open {base}index.html or http://127.0.0.1:{port}/{default_lang}",
                 src.display(),
-                out.display().to_string() + "/",
+                base = out.display().to_string() + "/",
+                port = port,
+                default_lang = if out.join("en").exists() { "en/" } else { "" },
             );
             watch_loop(src, out, site_url, interval)?;
             Ok(())
@@ -140,4 +161,110 @@ fn collect_mtimes(
         }
     }
     Ok(())
+}
+
+// ── built-in HTTP static server (no deps — pure std) ─────────────────────
+
+/// Spawn a daemon thread that serves `root` over HTTP on `port`. Returns the
+/// handle so the caller can join or detach.
+fn serve_dir(root: PathBuf, port: u16) -> thread::JoinHandle<()> {
+    let root = Arc::new(root);
+    let bind = format!("127.0.0.1:{port}");
+    thread::spawn(move || {
+        let listener = match std::net::TcpListener::bind(&bind) {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::error!("cannot bind {}: {e}", bind);
+                return;
+            }
+        };
+        for stream in listener.incoming() {
+            let stream = match stream {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let root = Arc::clone(&root);
+            thread::spawn(move || handle_http(stream, &root));
+        }
+    })
+}
+
+fn handle_http(mut stream: std::net::TcpStream, root: &PathBuf) {
+    use std::io::{BufRead, BufReader, Write};
+    let reader = BufReader::new(stream.try_clone().unwrap_or_else(|_| unreachable!()));
+    let Some(req_line) = reader.lines().next().and_then(|l| l.ok()) else {
+        return;
+    };
+    // Parse `GET /path HTTP/1.x`
+    let parts: Vec<&str> = req_line.split_whitespace().collect();
+    if parts.len() < 2 || !parts[0].eq_ignore_ascii_case("GET") {
+        respond(&mut stream, 405, "text/plain", "Method Not Allowed");
+        return;
+    }
+    let req_path = parts[1].trim_start_matches('/');
+    let abs = if req_path.is_empty() {
+        root.join("index.html")
+    } else {
+        root.join(req_path)
+    };
+    // Prevent directory traversal.
+    if !abs.starts_with(root) {
+        respond(&mut stream, 403, "text/plain", "Forbidden");
+        return;
+    }
+    match std::fs::read(&abs) {
+        Ok(bytes) => {
+            let mime = mime_for(abs.extension().and_then(|e| e.to_str()).unwrap_or(""));
+            let header = format!(
+                "HTTP/1.0 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n\r\n",
+                bytes.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(&bytes);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            respond(&mut stream, 404, "text/plain", "Not Found");
+        }
+        Err(_) => {
+            respond(&mut stream, 500, "text/plain", "Internal Server Error");
+        }
+    }
+}
+
+fn respond(stream: &mut std::net::TcpStream, code: u16, mime: &str, body: &str) {
+    use std::io::Write;
+    let label = match code {
+        200 => "OK",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        _ => "Error",
+    };
+    let header = format!(
+        "HTTP/1.0 {code} {label}\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(header.as_bytes());
+}
+
+/// Simple extension → MIME mapping (enough for a docs site).
+fn mime_for(ext: &str) -> &'static str {
+    match ext {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css" => "text/css",
+        "js" => "application/javascript",
+        "json" => "application/json",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "wasm" => "application/wasm",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" | "otf" => "font/opentype",
+        "xml" => "application/xml",
+        "txt" | "md" => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
 }
