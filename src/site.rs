@@ -5,8 +5,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
+use tracing::info;
 
 use crate::markdown;
 use crate::render;
@@ -24,6 +26,7 @@ pub struct BuildOptions {
 
 /// Build the whole site.
 pub fn build(opts: &BuildOptions) -> Result<()> {
+    let t0 = Instant::now();
     let mut langs: Vec<String> = Vec::new();
     for entry in
         fs::read_dir(&opts.src).with_context(|| format!("read docs dir {}", opts.src.display()))?
@@ -40,6 +43,13 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         anyhow::bail!("no language directories found under {}", opts.src.display());
     }
 
+    info!(
+        "building {} languages ({}) from {}",
+        langs.len(),
+        langs.join(", "),
+        opts.src.display()
+    );
+
     if opts.out.exists() {
         fs::remove_dir_all(&opts.out).context("clean output dir")?;
     }
@@ -48,7 +58,12 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     let css = theme::stylesheet();
 
     for lang in &langs {
-        build_lang(&opts.src, &opts.out, lang, &langs, &css, &opts.site_url)?;
+        let t_lang = Instant::now();
+        let pages = build_lang(&opts.src, &opts.out, lang, &langs, &css, &opts.site_url)?;
+        info!(
+            "  {lang} — {pages} pages in {:.1}s",
+            t_lang.elapsed().as_secs_f64()
+        );
     }
 
     // Copy docs-root assets (siblings of the language directories — e.g.
@@ -68,6 +83,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         l = default_lang
     );
     fs::write(opts.out.join("index.html"), redirect)?;
+
+    info!("done ({:.1}s total)", t0.elapsed().as_secs_f64());
     Ok(())
 }
 
@@ -78,7 +95,8 @@ fn build_lang(
     langs: &[String],
     css: &str,
     site_url: &Option<String>,
-) -> Result<()> {
+) -> Result<usize> {
+    let mut page_count = 0;
     let lang_dir = src.join(lang);
     let out_dir = out.join(lang);
     fs::create_dir_all(&out_dir)?;
@@ -113,10 +131,11 @@ fn build_lang(
             fs::create_dir_all(parent)?;
         }
         fs::write(&out_path, html).with_context(|| format!("write {}", out_path.display()))?;
+        page_count += 1;
     }
 
     copy_assets(&lang_dir, &out_dir)?;
-    Ok(())
+    Ok(page_count)
 }
 
 #[allow(clippy::too_many_arguments)]

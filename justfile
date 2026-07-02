@@ -19,4 +19,8 @@ build:
 docs:
     cargo run --release -- build --src docs --out target/site
 
+# Build + watch: rebuilds the docs tree automatically on change.
+dev:
+    cargo run --release -- dev --src docs --out target/site
+
 ci: fmt-check && clippy && test

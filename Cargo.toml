@@ -24,6 +24,9 @@ anyhow = "^1"
 clap = { version = "^4", features = ["derive"] }
 pest = "^2"
 pest_derive = "^2"
+# Unified logging (matching the tairitsu/shirebe/kou ecosystem convention).
+tracing = "^0.1"
+tracing-subscriber = { version = "^0.3", features = ["env-filter", "time"] }
 
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
 tairitsu-vdom = { git = "https://github.com/celestia-island/tairitsu.git", branch = "dev" }
