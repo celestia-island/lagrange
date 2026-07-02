@@ -121,7 +121,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
-                format!("<aside class=\"sidebar\"><h2>Contents</h2><ul>\n{items}\n</ul></aside>")
+                format!("<h2>Contents</h2><ul>\n{items}\n</ul>")
             };
 
             // Rewrite asset paths (logo from README `docs/logo.webp`).
@@ -202,13 +202,24 @@ fn write_multi_page(
     html.push_str(&html_escape_text(&default.title));
     html.push_str("</title>\n<style>\n");
     html.push_str(css);
-    html.push_str("\n</style>\n</head>\n<body>\n<div class=\"layout\">\n");
+    html.push_str(
+        "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\
+         <aside class=\"sidebar\">\n\
+         <div class=\"lg-search-box\">\
+         <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
+         <div id=\"lg-search-results\"></div>\
+         </div>\n\
+         <nav id=\"lg-sidebar\">\n",
+    );
     html.push_str(&default.sidebar_html);
-    html.push_str("\n<main class=\"content\" id=\"lg-body\">\n");
+    html.push_str(
+        "\n</nav>\n\
+         <div class=\"lg-lang-footer\"><div id=\"lg-sw\"></div></div>\n\
+         </aside>\n\
+         <main class=\"content\" id=\"lg-body\">\n",
+    );
     html.push_str(&default.body);
-    html.push_str("\n</main>\n</div>\n<div class=\"lang-switcher\" id=\"lg-sw\"></div>\n");
-    // Search input (top-right of sidebar).
-    html.push_str("<div id=\"lg-search\"><input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\"><div id=\"lg-search-results\"></div></div>\n");
+    html.push_str("\n</main>\n</div>\n");
 
     // Embedded language data.
     html.push_str("<script type=\"application/json\" id=\"lg-data\">");
@@ -229,12 +240,31 @@ const LAGRANGE_JS: &str = r##"<script>
 (function(){
  var D=JSON.parse(document.getElementById('lg-data').textContent);
  var N={"ar":"العربية","en":"English","es":"Español","fr":"Français","ja":"日本語","ko":"한국어","ru":"Русский","zhs":"简体中文","zht":"繁體中文"};
- var DL='en',IDX=null,CUR='en';
- function gL(){return new URLSearchParams(location.search).get('lang')||localStorage['lagrange-lang']||(navigator.language||'').slice(0,2)||DL}
- function sL(l){localStorage['lagrange-lang']=l;var u=new URL(location);u.searchParams.set('lang',l);history.replaceState(null,'',u);rL(l)}
- function rL(l){var p=D[l]||D[DL];if(!p)return;CUR=l;document.documentElement.lang=l;document.title=p.title;document.getElementById('lg-body').innerHTML=p.body;var sb=document.getElementById('lg-sidebar');if(sb)sb.innerHTML=p.sidebar_html;var as=document.querySelectorAll('#lg-sw a');for(var i=0;i<as.length;i++)as[i].classList.toggle('on',as[i].dataset.lang===l);}
- var sw=document.getElementById('lg-sw');var ls=Object.keys(D).sort();for(var i=0;i<ls.length;i++){var l=ls[i];var a=document.createElement('a');a.href='?lang='+l;a.dataset.lang=l;a.textContent=N[l]||l;a.onclick=function(e){e.preventDefault();sL(this.dataset.lang)};sw.appendChild(a);if(i<ls.length-1){var s=document.createTextNode(' · ');sw.appendChild(s)}}
- var init=gL();if(!D[init])init=DL;sL(init);
+ var DL='en',CUR='en';
+ var BL={'zh':'zhs','zh-CN':'zhs','zh-Hans':'zhs','zh-TW':'zht','zh-Hant':'zht','zh-HK':'zht'};
+ function gL(){var q=new URLSearchParams(location.search).get('lang');if(q&&D[q])return q;var s=localStorage['lagrange-lang'];if(s&&D[s])return s;var bl=navigator.language||'';if(BL[bl])return BL[bl];var sh=bl.split('-')[0];if(BL[sh])return BL[sh];return D[sh]?sh:DL}
+ function sL(l){if(!D[l])l=DL;CUR=l;localStorage['lagrange-lang']=l;var u=new URL(location);u.searchParams.set('lang',l);history.replaceState(null,'',u);rL(l)}
+ function rL(l){
+  var p=D[l]||D[DL];if(!p)return;
+  document.documentElement.lang=l;document.title=p.title;
+  document.getElementById('lg-body').innerHTML=p.body;
+  var sb=document.getElementById('lg-sidebar');if(sb)sb.innerHTML=p.sidebar_html;
+  var cl=document.getElementById('lg-lang-cur');if(cl)cl.textContent=N[l]||l;
+  var os=document.querySelectorAll('.lg-lang-opt');for(var i=0;i<os.length;i++)os[i].classList.toggle('selected',os[i].dataset.lang===l);
+ }
+ /* ── language dropdown ── */
+ var sw=document.getElementById('lg-sw');sw.className='lg-lang-select';
+ sw.innerHTML='<button type="button" class="lg-lang-trigger">\
+ <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 010 20"/><path d="M12 2a15 15 0 000 20"/></svg>\
+ <span id="lg-lang-cur"></span>\
+ <svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>\
+ </button><div class="lg-lang-panel"></div>';
+ var trigger=sw.querySelector('.lg-lang-trigger');
+ var panel=sw.querySelector('.lg-lang-panel');
+ var ls=Object.keys(D).sort();
+ for(var i=0;i<ls.length;i++){var l=ls[i];var o=document.createElement('a');o.href='?lang='+l;o.className='lg-lang-opt';o.dataset.lang=l;o.textContent=N[l]||l;o.onclick=function(e){e.preventDefault();sL(this.dataset.lang);panel.classList.remove('open')};panel.appendChild(o)}
+ trigger.onclick=function(e){e.stopPropagation();panel.classList.toggle('open')};
+ document.addEventListener('click',function(e){if(!e.target.closest('#lg-sw'))panel.classList.remove('open')});
 
  /* ── search (sharded inverted index) ── */
  var si=document.getElementById('lg-search-input'),sr=document.getElementById('lg-search-results');
@@ -262,7 +292,6 @@ const LAGRANGE_JS: &str = r##"<script>
    var loaded=0;var all={};
    function check(){
     loaded++;if(loaded<names.length)return;
-    /* intersect doc ids across all query tokens */
     var sets=[];
     for(var i=0;i<tokens.length;i++){
      var s={};for(var j=0;j<names.length;j++){var idx=all[names[j]]||{};if(idx[tokens[i]])for(var k=0;k<idx[tokens[i]].length;k++)s[idx[tokens[i]][k]]=true}
@@ -270,29 +299,22 @@ const LAGRANGE_JS: &str = r##"<script>
     }
     var ids=sets[0];for(var i=1;i<sets.length;i++){var n={};for(var k in ids)if(sets[i][k])n[k]=true;ids=n}
     var result=[];
-    for(var k in ids){
-     var d=META.docs[k];
-     if(d&&d.lang===L)result.push(d)
-    }
+    for(var k in ids){var d=META.docs[k];if(d&&d.lang===L)result.push(d)}
     result=result.slice(0,10);
     if(!result.length){sr.innerHTML='<div class="lg-no">No results</div>';sr.style.display='block';return}
     var h='';
-    for(var i=0;i<result.length;i++){
-     var r=result[i];
-      h+='<a href="'+he(r.url)+(L!==DL?'?lang='+L:'')+'" class="lg-hit"><b>'+he(r.title)+'</b>';
-     if(r.snippet)h+='<span>'+r.snippet.replace(/</g,'&lt;')+'</span>';
-     h+='</a>'
-    }
+    for(var i=0;i<result.length;i++){var r=result[i];h+='<a href="'+he(r.url)+'?lang='+L+'" class="lg-hit"><b>'+he(r.title)+'</b>';if(r.snippet)h+='<span>'+r.snippet.replace(/</g,'&lt;')+'</span>';h+='</a>'}
     sr.innerHTML=h;sr.style.display='block'
    }
-   for(var i=0;i<names.length;i++){
-    (function(n){loadShard(n,function(idx){all[n]=idx;check()})})(names[i])
-   }
+   for(var i=0;i<names.length;i++){(function(n){loadShard(n,function(idx){all[n]=idx;check()})})(names[i])}
   })
  }
  var dt;
  if(si)si.oninput=function(){clearTimeout(dt);dt=setTimeout(function(){doSearch(si.value)},200)};
- document.addEventListener('click',function(e){if(e.target.closest('#lg-search'))return;sr.style.display='none'});
+ document.addEventListener('click',function(e){if(e.target.closest('.lg-search-box'))return;sr.style.display='none'});
+
+ /* ── init ── */
+ sL(gL());
 })();
 </script>"##;
 
@@ -311,9 +333,9 @@ impl serde::Serialize for LangPage {
 
 // ── single page (legacy, kept for potential direct use) ───────────────────
 
-/// Turn a SUMMARY href into an absolute site path (`/<lang>/<href>`), unless it
-/// is already absolute (http/https/mailto) or an anchor.
-fn absolute_href(href: &str, lang: &str) -> String {
+/// Turn a SUMMARY href into a flat site path (no language prefix).
+/// Language switching is handled via `?lang=xx` query params.
+fn absolute_href(href: &str, _lang: &str) -> String {
     if href.starts_with("http://")
         || href.starts_with("https://")
         || href.starts_with("mailto:")
@@ -322,7 +344,18 @@ fn absolute_href(href: &str, lang: &str) -> String {
     {
         return href.to_string();
     }
-    format!("/{lang}/{href}", lang = lang, href = href)
+    let p = href.trim_start_matches("./");
+    let p = if let Some(stripped) = p.strip_suffix(".md") {
+        format!("{stripped}.html")
+    } else {
+        p.to_string()
+    };
+    let p = if p == "README.html" {
+        "index.html".to_string()
+    } else {
+        p
+    };
+    format!("/{p}")
 }
 
 fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
@@ -501,5 +534,18 @@ mod tests {
         assert_eq!(absolute_href("https://x.com", "en"), "https://x.com");
         assert_eq!(absolute_href("#anchor", "en"), "#anchor");
         assert_eq!(absolute_href("/abs/path", "en"), "/abs/path");
+    }
+
+    #[test]
+    fn absolute_href_flat_paths() {
+        assert_eq!(
+            absolute_href("./guides/quickstart.md", "en"),
+            "/guides/quickstart.html"
+        );
+        assert_eq!(absolute_href("./README.md", "en"), "/index.html");
+        assert_eq!(
+            absolute_href("guides/architecture.md", "zhs"),
+            "/guides/architecture.html"
+        );
     }
 }

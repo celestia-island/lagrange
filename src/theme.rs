@@ -19,10 +19,33 @@ body {{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica
 a {{color:var(--accent);text-decoration:none}}
 a:hover {{text-decoration:underline}}
 .layout {{display:flex;min-height:100vh}}
-.sidebar {{width:var(--sidebar-w);border-right:1px solid var(--border);padding:1.5rem 1rem;position:sticky;top:0;height:100vh;overflow:auto;background:#fafafb}}
+/* ── sidebar: search top, nav middle, lang dropdown bottom ── */
+.sidebar {{width:var(--sidebar-w);border-right:1px solid var(--border);position:sticky;top:0;height:100vh;display:flex;flex-direction:column;background:#fafafb}}
+.lg-search-box {{padding:1rem 1rem .5rem;position:relative}}
+#lg-search-input {{width:100%;padding:.35rem .5rem;border:1px solid var(--border);border-radius:4px;font-size:.85rem;background:var(--bg)}}
+#lg-search-results {{position:absolute;top:calc(100% - .5rem);left:1rem;right:1rem;max-height:400px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);display:none;z-index:200}}
+#lg-sidebar {{flex:1;overflow-y:auto;padding:.25rem 1rem 1rem}}
 .sidebar h2 {{font-size:1rem;margin:0 0 .75rem}}
 .sidebar ul {{list-style:none;padding:0;margin:0}}
 .sidebar li {{margin:.2rem 0}}
+/* ── language dropdown (bottom of sidebar) ── */
+.lg-lang-footer {{padding:.6rem 1rem;border-top:1px solid var(--border)}}
+.lg-lang-select {{position:relative}}
+.lg-lang-trigger {{display:flex;align-items:center;gap:.4rem;width:100%;padding:.4rem .6rem;background:transparent;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:.85rem;color:var(--fg)}}
+.lg-lang-trigger:hover {{border-color:var(--accent)}}
+.lg-lang-arrow {{margin-left:auto;transition:transform .2s}}
+.lg-lang-trigger.open .lg-lang-arrow,button.open .lg-lang-arrow {{transform:rotate(180deg)}}
+.lg-lang-panel {{display:none;position:absolute;bottom:calc(100% + 4px);left:0;right:0;background:var(--bg);border:1px solid var(--border);border-radius:4px;box-shadow:0 -4px 12px rgba(0,0,0,.12);max-height:240px;overflow:auto;z-index:200}}
+.lg-lang-panel.open {{display:block}}
+.lg-lang-opt {{display:flex;align-items:center;padding:.4rem .6rem;color:var(--fg);font-size:.85rem}}
+.lg-lang-opt:hover {{background:var(--code-bg);text-decoration:none}}
+.lg-lang-opt.selected {{color:var(--accent);font-weight:600}}
+/* ── search result items ── */
+#lg-search-results .lg-hit {{display:block;padding:.5rem .75rem;border-bottom:1px solid var(--border);color:var(--fg)}}
+#lg-search-results .lg-hit:hover {{background:var(--code-bg);text-decoration:none}}
+#lg-search-results .lg-hit span {{display:block;font-size:.8rem;color:var(--muted)}}
+#lg-search-results .lg-no {{padding:.75rem;color:var(--muted);text-align:center}}
+/* ── content ── */
 .content {{flex:1;max-width:860px;margin:0 auto;padding:2.5rem 1.5rem 5rem}}
 .content h1 {{font-size:2rem;margin-top:0}}
 .content h2 {{border-bottom:1px solid var(--border);padding-bottom:.3rem;margin-top:2rem}}
@@ -36,16 +59,6 @@ a:hover {{text-decoration:underline}}
 .content th {{background:#f4f4f6}}
 .content blockquote {{border-left:4px solid var(--border);margin:1rem 0;padding:.25rem 1rem;color:var(--muted)}}
 .content hr {{border:none;border-top:1px solid var(--border);margin:2rem 0}}
-.lang-switcher {{position:fixed;right:1rem;bottom:1rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.35rem .5rem;font-size:.85rem;box-shadow:0 1px 4px rgba(0,0,0,.1)}}
-.lang-switcher a.on {{font-weight:700}}
-.lang-switcher a {{padding:0 .15rem}}
-#lg-search {{position:fixed;top:.75rem;right:1rem;z-index:100}}
-#lg-search-input {{width:180px;padding:.3rem .5rem;border:1px solid var(--border);border-radius:4px;font-size:.85rem}}
-#lg-search-results {{position:absolute;top:100%;right:0;width:360px;max-height:400px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);display:none}}
-#lg-search-results .lg-hit {{display:block;padding:.5rem .75rem;border-bottom:1px solid var(--border);color:var(--fg)}}
-#lg-search-results .lg-hit:hover {{background:var(--code-bg);text-decoration:none}}
-#lg-search-results .lg-hit span {{display:block;font-size:.8rem;color:var(--muted)}}
-#lg-search-results .lg-no {{padding:.75rem;color:var(--muted);text-align:center}}
-@media (max-width:880px) {{.layout{{flex-direction:column}}.sidebar{{position:static;height:auto;width:auto}}#lg-search{{position:static;margin:.5rem 1rem}}#lg-search-input{{width:100%}}#lg-search-results{{width:100%;right:0}}}}"#
+@media (max-width:880px) {{.layout{{flex-direction:column}}.sidebar{{position:static;height:auto;width:auto}}}}"#
     )
 }
