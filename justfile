@@ -17,10 +17,10 @@ build:
 # Build lagrange's own documentation with lagrange itself (closed loop).
 # Output goes to target/site/.
 docs:
-    cargo run --release -- build --src docs --out target/site
+    cargo run --release -- build --src docs --out dist
 
 # Build + watch: rebuilds the docs tree automatically on change.
 dev:
-    cargo run --release -- dev --src docs --out target/site
+    cargo run --release -- dev --src docs --out dist --port 0
 
 ci: fmt-check && clippy && test

@@ -10,6 +10,7 @@
 pub mod cli;
 pub mod markdown;
 pub mod render;
+pub mod search;
 pub mod site;
 pub mod theme;
 

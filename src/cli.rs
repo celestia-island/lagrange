@@ -25,13 +25,13 @@ pub struct Cli {
 pub enum Command {
     /// Build a documentation tree into a static HTML site.
     Build {
-        /// Source docs root (one subdirectory per language). Defaults to `docs`.
+        /// Source docs root. Defaults to `docs`.
         #[arg(long, default_value = "docs")]
         src: PathBuf,
-        /// Output directory. Defaults to `target/site`.
-        #[arg(long, default_value = "target/site")]
+        /// Output directory. Defaults to `dist` (matching mdBook / Zola).
+        #[arg(long, default_value = "dist")]
         out: PathBuf,
-        /// Optional absolute site URL.
+        /// Optional site URL.
         #[arg(long)]
         site_url: Option<String>,
         /// Default language. Defaults to "en".
@@ -45,8 +45,8 @@ pub enum Command {
         /// Source docs root. Defaults to `docs`.
         #[arg(long, default_value = "docs")]
         src: PathBuf,
-        /// Output directory. Defaults to `target/site`.
-        #[arg(long, default_value = "target/site")]
+        /// Output directory. Defaults to `dist`.
+        #[arg(long, default_value = "dist")]
         out: PathBuf,
         /// Optional site URL.
         #[arg(long)]

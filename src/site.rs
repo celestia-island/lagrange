@@ -31,16 +31,16 @@ pub struct BuildOptions {
 }
 
 /// Contents of a single page in one language.
-struct LangPage {
-    title: String,
-    body: String,
-    sidebar_html: String,
+pub struct LangPage {
+    pub title: String,
+    pub body: String,
+    pub sidebar_html: String,
 }
 
 /// All language variants of one logical page.
-struct MultiPage {
-    pages: BTreeMap<String, LangPage>,
-    page_path: String, // e.g. "index.html", "guides/quickstart.html"
+pub struct MultiPage {
+    pub pages: BTreeMap<String, LangPage>,
+    pub page_path: String, // e.g. "index.html", "guides/quickstart.html"
 }
 
 /// Build the whole site.
@@ -160,6 +160,9 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 3. Copy assets.
     copy_root_assets(&opts.src, &opts.out)?;
 
+    // ── 4. Build the search index.
+    crate::search::write_index(&opts.out, &multi)?;
+
     info!(
         "wrote {} pages in {:.1}s total",
         page_count,
@@ -204,6 +207,8 @@ fn write_multi_page(
     html.push_str("\n<main class=\"content\" id=\"lg-body\">\n");
     html.push_str(&default.body);
     html.push_str("\n</main>\n</div>\n<div class=\"lang-switcher\" id=\"lg-sw\"></div>\n");
+    // Search input (top-right of sidebar).
+    html.push_str("<div id=\"lg-search\"><input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\"><div id=\"lg-search-results\"></div></div>\n");
 
     // Embedded language data.
     html.push_str("<script type=\"application/json\" id=\"lg-data\">");
@@ -224,11 +229,62 @@ const LAGRANGE_JS: &str = r##"<script>
 (function(){
  var D=JSON.parse(document.getElementById('lg-data').textContent);
  var N={"ar":"العربية","en":"English","es":"Español","fr":"Français","ja":"日本語","ko":"한국어","ru":"Русский","zhs":"简体中文","zht":"繁體中文"};
- var DL='en';function gL(){return new URLSearchParams(location.search).get('lang')||localStorage['lagrange-lang']||(navigator.language||'').slice(0,2)||DL}
+ var DL='en',IDX=null,CUR='en';
+ function gL(){return new URLSearchParams(location.search).get('lang')||localStorage['lagrange-lang']||(navigator.language||'').slice(0,2)||DL}
  function sL(l){localStorage['lagrange-lang']=l;var u=new URL(location);u.searchParams.set('lang',l);history.replaceState(null,'',u);rL(l)}
- function rL(l){var p=D[l]||D[DL];if(!p)return;document.documentElement.lang=l;document.title=p.title;document.getElementById('lg-body').innerHTML=p.body;document.getElementById('lg-sidebar')&&(document.getElementById('lg-sidebar').innerHTML=p.sidebar_html);var as=document.querySelectorAll('#lg-sw a');for(var i=0;i<as.length;i++)as[i].classList.toggle('on',as[i].dataset.lang===l);}
+ function rL(l){var p=D[l]||D[DL];if(!p)return;CUR=l;document.documentElement.lang=l;document.title=p.title;document.getElementById('lg-body').innerHTML=p.body;var sb=document.getElementById('lg-sidebar');if(sb)sb.innerHTML=p.sidebar_html;var as=document.querySelectorAll('#lg-sw a');for(var i=0;i<as.length;i++)as[i].classList.toggle('on',as[i].dataset.lang===l);}
  var sw=document.getElementById('lg-sw');var ls=Object.keys(D).sort();for(var i=0;i<ls.length;i++){var l=ls[i];var a=document.createElement('a');a.href='?lang='+l;a.dataset.lang=l;a.textContent=N[l]||l;a.onclick=function(e){e.preventDefault();sL(this.dataset.lang)};sw.appendChild(a);if(i<ls.length-1){var s=document.createTextNode(' · ');sw.appendChild(s)}}
  var init=gL();if(!D[init])init=DL;sL(init);
+
+ /* ── search ── */
+ var si=document.getElementById('lg-search-input'),sr=document.getElementById('lg-search-results');
+ function loadIdx(cb){
+  if(IDX){cb();return}
+  var s=document.createElement('script');s.src='search_index.json';s.onload=function(){
+   var req=new XMLHttpRequest();req.open('GET','search_index.json',true);
+   req.onload=function(){
+    try{IDX=JSON.parse(req.responseText)}catch(e){IDX=[]}
+    cb()
+   };
+   req.send()
+  };
+  /* trigger the XHR directly (the script tag is a fallback) */
+  var req=new XMLHttpRequest();req.open('GET','search_index.json',true);
+  req.onload=function(){
+   try{IDX=JSON.parse(req.responseText)}catch(e){IDX=[]}
+   cb()
+  };
+  req.onerror=function(){IDX=[];cb()};
+  req.send()
+ }
+ function doSearch(q){
+  if(!q||q.length<2){sr.innerHTML='';sr.style.display='none';return}
+  loadIdx(function(){
+   var L=CUR;var r=[];
+   for(var i=0;i<IDX.length;i++){
+    var d=IDX[i];
+    if(d.lang!==L)continue;
+    var hit=d.title.toLowerCase().indexOf(q.toLowerCase())>=0||d.text.toLowerCase().indexOf(q.toLowerCase())>=0;
+    if(hit){
+     var snip='',ti=d.text.toLowerCase().indexOf(q.toLowerCase());
+     if(ti>=0){snip=d.text.substring(Math.max(0,ti-30),ti+q.length+30);}
+     r.push({title:d.title,url:d.url,snippet:snip})
+    }
+   }
+   if(!r.length){sr.innerHTML='<div class="lg-no">No results</div>';sr.style.display='block';return}
+   r=r.slice(0,10);
+   var h='';
+   for(var i=0;i<r.length;i++){
+    h+='<a href="'+r[i].url+(L!==DL?'?lang='+L:'')+'" class="lg-hit"><b>'+r[i].title+'</b>';
+    if(r[i].snippet)h+='<span>'+r[i].snippet.replace(/</g,'&lt;')+'</span>';
+    h+='</a>'
+   }
+   sr.innerHTML=h;sr.style.display='block'
+  })
+ }
+ var dt;
+ if(si)si.oninput=function(){clearTimeout(dt);dt=setTimeout(function(){doSearch(si.value)},200)};
+ document.addEventListener('click',function(e){if(e.target.closest('#lg-search'))return;sr.style.display='none'});
 })();
 </script>"##;
 
