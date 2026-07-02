@@ -222,7 +222,7 @@ fn serve_dir(root: PathBuf, bind: &str) -> String {
 
 fn handle_http(mut stream: std::net::TcpStream, root: &PathBuf) {
     use std::io::{BufRead, BufReader, Write};
-    let reader = BufReader::new(stream.try_clone().unwrap_or_else(|_| unreachable!()));
+    let reader = BufReader::new(stream.try_clone().expect("TcpStream try_clone"));
     let Some(req_line) = reader.lines().next().and_then(|l| l.ok()) else {
         return;
     };
@@ -233,10 +233,24 @@ fn handle_http(mut stream: std::net::TcpStream, root: &PathBuf) {
         return;
     }
     let req_path = parts[1].trim_start_matches('/');
+    // Resolve path manually, rejecting `..` components.
     let abs = if req_path.is_empty() {
         root.join("index.html")
     } else {
-        root.join(req_path)
+        let mut resolved = root.clone();
+        for component in req_path.split('/') {
+            match component {
+                "" | "." => {}
+                ".." => {
+                    respond(&mut stream, 403, "text/plain", "Forbidden");
+                    return;
+                }
+                c => {
+                    resolved.push(c);
+                }
+            }
+        }
+        resolved
     };
     // Prevent directory traversal.
     if !abs.starts_with(root) {

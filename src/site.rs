@@ -188,7 +188,7 @@ fn write_multi_page(
         .ok_or_else(|| anyhow::anyhow!("no language content for {}", mp.page_path))?;
 
     // Serialise all language data to JSON.
-    let json_data = serde_json::to_string(&mp.pages).unwrap_or_default();
+    let json_data = serde_json::to_string(&mp.pages)?;
 
     let out_path = out.join(&mp.page_path);
     if let Some(parent) = out_path.parent() {
@@ -236,50 +236,58 @@ const LAGRANGE_JS: &str = r##"<script>
  var sw=document.getElementById('lg-sw');var ls=Object.keys(D).sort();for(var i=0;i<ls.length;i++){var l=ls[i];var a=document.createElement('a');a.href='?lang='+l;a.dataset.lang=l;a.textContent=N[l]||l;a.onclick=function(e){e.preventDefault();sL(this.dataset.lang)};sw.appendChild(a);if(i<ls.length-1){var s=document.createTextNode(' · ');sw.appendChild(s)}}
  var init=gL();if(!D[init])init=DL;sL(init);
 
- /* ── search ── */
+ /* ── search (sharded inverted index) ── */
  var si=document.getElementById('lg-search-input'),sr=document.getElementById('lg-search-results');
- function loadIdx(cb){
-  if(IDX){cb();return}
-  var s=document.createElement('script');s.src='search_index.json';s.onload=function(){
-   var req=new XMLHttpRequest();req.open('GET','search_index.json',true);
-   req.onload=function(){
-    try{IDX=JSON.parse(req.responseText)}catch(e){IDX=[]}
-    cb()
-   };
-   req.send()
-  };
-  /* trigger the XHR directly (the script tag is a fallback) */
-  var req=new XMLHttpRequest();req.open('GET','search_index.json',true);
-  req.onload=function(){
-   try{IDX=JSON.parse(req.responseText)}catch(e){IDX=[]}
-   cb()
-  };
-  req.onerror=function(){IDX=[];cb()};
-  req.send()
+ var META=null,SHARDS={},LOADING={};
+ function he(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+ function isCJK(c){return(c>='\u4e00'&&c<='\u9fff')||(c>='\u3400'&&c<='\u4dbf')||(c>='\u3040'&&c<='\u30ff')||(c>='\uac00'&&c<='\ud7af')||(c>='\uf900'&&c<='\ufaff')}
+ function tokenize(q){var t=[];var cs=q.split('');var i=0;while(i<cs.length){var c=cs[i];if(c.charCodeAt(0)<128&&c.match(/[a-z0-9]/i)){var w='';while(i<cs.length&&cs[i].match(/[a-z0-9]/i))w+=cs[i++].toLowerCase();if(w.length>=2)t.push(w)}else if(isCJK(c)){if(i+1<cs.length&&isCJK(cs[i+1]))t.push(c+cs[i+1]);i++}else{i++}}return t}
+ function loadShard(name,cb){
+  if(SHARDS[name]){cb(SHARDS[name]);return}
+  if(LOADING[name]){var iv=setInterval(function(){if(SHARDS[name]||!LOADING[name]){clearInterval(iv);SHARDS[name]&&cb(SHARDS[name])}},50);return}
+  LOADING[name]=true;
+  var x=new XMLHttpRequest();x.open('GET',name,true);x.onload=function(){try{SHARDS[name]=JSON.parse(x.responseText)}catch(e){SHARDS[name]={}}delete LOADING[name];cb(SHARDS[name])};x.onerror=function(){SHARDS[name]={};delete LOADING[name];cb({})};x.send()
+ }
+ function loadMeta(cb){
+  if(META){cb();return}
+  var x=new XMLHttpRequest();x.open('GET','search_meta.json',true);
+  x.onload=function(){try{META=JSON.parse(x.responseText)}catch(e){META={docs:[],shards:[]}};cb()};x.onerror=function(){META={docs:[],shards:[]};cb()};x.send()
  }
  function doSearch(q){
   if(!q||q.length<2){sr.innerHTML='';sr.style.display='none';return}
-  loadIdx(function(){
-   var L=CUR;var r=[];
-   for(var i=0;i<IDX.length;i++){
-    var d=IDX[i];
-    if(d.lang!==L)continue;
-    var hit=d.title.toLowerCase().indexOf(q.toLowerCase())>=0||d.text.toLowerCase().indexOf(q.toLowerCase())>=0;
-    if(hit){
-     var snip='',ti=d.text.toLowerCase().indexOf(q.toLowerCase());
-     if(ti>=0){snip=d.text.substring(Math.max(0,ti-30),ti+q.length+30);}
-     r.push({title:d.title,url:d.url,snippet:snip})
+  loadMeta(function(){
+   var tokens=tokenize(q);if(!tokens.length){sr.innerHTML='';sr.style.display='none';return}
+   var L=CUR;var needed={};for(var i=0;i<tokens.length;i++){var c=tokens[i].charCodeAt(0)%16;needed[META.shards[c]]=true}
+   var names=Object.keys(needed);if(!names.length){sr.innerHTML='';sr.style.display='none';return}
+   var loaded=0;var all={};
+   function check(){
+    loaded++;if(loaded<names.length)return;
+    /* intersect doc ids across all query tokens */
+    var sets=[];
+    for(var i=0;i<tokens.length;i++){
+     var s={};for(var j=0;j<names.length;j++){var idx=all[names[j]]||{};if(idx[tokens[i]])for(var k=0;k<idx[tokens[i]].length;k++)s[idx[tokens[i]][k]]=true}
+     sets.push(s)
     }
+    var ids=sets[0];for(var i=1;i<sets.length;i++){var n={};for(var k in ids)if(sets[i][k])n[k]=true;ids=n}
+    var result=[];
+    for(var k in ids){
+     var d=META.docs[k];
+     if(d&&d.lang===L)result.push(d)
+    }
+    result=result.slice(0,10);
+    if(!result.length){sr.innerHTML='<div class="lg-no">No results</div>';sr.style.display='block';return}
+    var h='';
+    for(var i=0;i<result.length;i++){
+     var r=result[i];
+      h+='<a href="'+he(r.url)+(L!==DL?'?lang='+L:'')+'" class="lg-hit"><b>'+he(r.title)+'</b>';
+     if(r.snippet)h+='<span>'+r.snippet.replace(/</g,'&lt;')+'</span>';
+     h+='</a>'
+    }
+    sr.innerHTML=h;sr.style.display='block'
    }
-   if(!r.length){sr.innerHTML='<div class="lg-no">No results</div>';sr.style.display='block';return}
-   r=r.slice(0,10);
-   var h='';
-   for(var i=0;i<r.length;i++){
-    h+='<a href="'+r[i].url+(L!==DL?'?lang='+L:'')+'" class="lg-hit"><b>'+r[i].title+'</b>';
-    if(r[i].snippet)h+='<span>'+r[i].snippet.replace(/</g,'&lt;')+'</span>';
-    h+='</a>'
+   for(var i=0;i<names.length;i++){
+    (function(n){loadShard(n,function(idx){all[n]=idx;check()})})(names[i])
    }
-   sr.innerHTML=h;sr.style.display='block'
   })
  }
  var dt;
