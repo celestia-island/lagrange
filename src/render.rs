@@ -62,6 +62,16 @@ fn render_block(b: &Block) -> VNode {
             el_node("table", vec![thead, tbody])
         }
         Block::ThematicBreak => el_node("hr", Vec::new()),
+        Block::Center(inner) => {
+            // A `<div align="center">…</div>` container; render its inner
+            // markdown as normal and wrap in a styling div so the content
+            // stays centred both on GitHub and in the built site.
+            VNode::Element(Box::new(
+                el("div")
+                    .attr("style", "text-align:center")
+                    .children(vec![render_blocks(inner)]),
+            ))
+        }
         Block::Html(raw) => {
             // Raw HTML block (e.g. centred `<p align="center">…`). Emit a
             // dedicated passthrough element so the markdown text-escaper does

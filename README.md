@@ -4,9 +4,27 @@
 
 <p align="center"><strong>A pest-based markdown documentation renderer — tairitsu VDom + hikari palette, multilingual out of the box.</strong></p>
 
-[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](./LICENSE) [![Checks](https://img.shields.io/github/actions/workflow/status/celestia-island/lagrange/checks.yml)](https://github.com/celestia-island/lagrange/actions/workflows/checks.yml) [![Docs](https://img.shields.io/badge/docs-lagrange.docs.celestia.world-blue)](https://lagrange.docs.celestia.world)
+<div align="center">
 
-[English](./docs/en/README.md) · [简体中文](./docs/zhs/README.md) · [繁體中文](./docs/zht/README.md) · [日本語](./docs/ja/README.md) · [한국어](./docs/ko/README.md) · [Français](./docs/fr/README.md) · [Español](./docs/es/README.md) · [Русский](./docs/ru/README.md) · [العربية](./docs/ar/README.md)
+[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](./LICENSE)
+[![Checks](https://img.shields.io/github/actions/workflow/status/celestia-island/lagrange/checks.yml)](https://github.com/celestia-island/lagrange/actions/workflows/checks.yml)
+[![Docs](https://img.shields.io/badge/docs-lagrange.docs.celestia.world-blue)](https://lagrange.docs.celestia.world)
+
+</div>
+
+<div align="center">
+
+[English](./docs/en/README.md) ·
+[简体中文](./docs/zhs/README.md) ·
+[繁體中文](./docs/zht/README.md) ·
+[日本語](./docs/ja/README.md) ·
+[한국어](./docs/ko/README.md) ·
+[Français](./docs/fr/README.md) ·
+[Español](./docs/es/README.md) ·
+[Русский](./docs/ru/README.md) ·
+[العربية](./docs/ar/README.md)
+
+</div>
 
 ## Introduction
 

@@ -31,6 +31,11 @@ pub enum Block {
     /// block-level HTML for centering — render faithfully when symlinked into a
     /// language directory.
     Html(String),
+    /// A centered container: `<div align="center">` … (markdown blocks) …
+    /// `</div>`. The inner blocks are parsed normally; the renderer wraps
+    /// them in a `<div style="text-align:center">` so badges and language
+    /// switchers stay centered both on GitHub and in the built site.
+    Center(Vec<Block>),
 }
 
 /// An inline span.

@@ -36,6 +36,9 @@ pub fn parse(input: &str) -> Vec<Block> {
         } else if is_thematic_break(line) {
             blocks.push(Block::ThematicBreak);
             i += 1;
+        } else if let Some((block, next)) = parse_center_container(&lines, i) {
+            blocks.push(block);
+            i = next;
         } else if let Some((block, next)) = parse_html_block(&lines, i) {
             blocks.push(block);
             i = next;
@@ -232,6 +235,37 @@ fn html_line_is_self_contained(s: &str) -> bool {
     };
     let close = format!("</{name}>");
     s[open_end + 1..].contains(&close)
+}
+
+/// Detect a `<div align="center">` … (inner markdown blocks) … `</div>`
+/// container. The inner markdown is parsed recursively and wrapped in
+/// [`Block::Center`] so the renderer can centre its children. If no closing
+/// `</div>` is found, returns `None` (the line falls through to regular HTML
+/// block detection).
+fn parse_center_container(lines: &[&str], i: usize) -> Option<(Block, usize)> {
+    let trimmed = lines[i].trim_start();
+    // Must begin with `<div align="center"` (modulo extra attributes).
+    if !trimmed.starts_with("<div align=\"center\"") && !trimmed.starts_with("<div align=center") {
+        return None;
+    }
+    // The line must end with `>` (either the close of `<div ...>` or a bare `>`).
+    if !trimmed.ends_with('>') {
+        return None;
+    }
+    // Find the matching `</div>`.
+    let mut j = i + 1;
+    while j < lines.len() {
+        if lines[j].trim() == "</div>" {
+            break;
+        }
+        j += 1;
+    }
+    if j >= lines.len() {
+        return None; // unterminated — fall through to a raw HTML block
+    }
+    let inner_lines = &lines[i + 1..j];
+    let inner = parse(&inner_lines.join("\n"));
+    Some((Block::Center(inner), j + 1))
 }
 
 fn parse_blockquote(lines: &[&str], i: usize) -> Option<(Block, usize)> {
