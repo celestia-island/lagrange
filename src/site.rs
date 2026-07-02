@@ -230,17 +230,27 @@ fn parse_summary(path: &Path) -> Result<Vec<(String, String)>> {
     Ok(entries)
 }
 
-/// `./foo.md` -> `foo.html`, `README.md` -> `index.html`.
+/// `./foo.md` -> `foo.html`, `README.md` -> `index.html`. Preserves any
+/// `#fragment` (mirrors `render::rewrite_link`).
 fn rewrite_nav_link(url: &str) -> String {
     if url.starts_with("http") || url.starts_with('#') {
         return url.to_string();
     }
-    let stripped = url.strip_prefix("./").unwrap_or(url);
+    // Split off a trailing `#fragment` so the `.md` rewrite only touches the
+    // path portion (e.g. `./a.md#sec` -> `a.html#sec`, not `a.md#sec`).
+    let (path, fragment) = match url.split_once('#') {
+        Some((p, f)) => (p, Some(f)),
+        None => (url, None),
+    };
+    if path.is_empty() {
+        return url.to_string();
+    }
+    let stripped = path.strip_prefix("./").unwrap_or(path);
     let path = std::path::Path::new(stripped);
     let is_readme = path
         .file_name()
         .is_some_and(|f| f == "README.md" || f == "readme.md");
-    if is_readme {
+    let rewritten = if is_readme {
         match path.parent() {
             Some(p) if !p.as_os_str().is_empty() => format!("{}/index.html", p.display()),
             _ => "index.html".to_string(),
@@ -251,6 +261,10 @@ fn rewrite_nav_link(url: &str) -> String {
             .strip_suffix(".md")
             .map(|p| format!("{p}.html"))
             .unwrap_or_else(|| stripped.to_string())
+    };
+    match fragment {
+        Some(f) => format!("{rewritten}#{f}"),
+        None => rewritten,
     }
 }
 
@@ -305,8 +319,10 @@ fn copy_assets(src: &Path, out: &Path) -> Result<()> {
 
 /// Copy non-markdown files that live directly in the docs root (siblings of the
 /// language directories, e.g. `docs/logo.webp`) to the site root. Also copies a
-/// repo-root `LICENSE` (the parent of `src`) so the README's `[License](./LICENSE)`
-/// badge link resolves on the built site.
+/// repo-root `LICENSE` (the parent of `src`) to the site root AND into each
+/// language directory, so the README's `[License](./LICENSE)` badge link
+/// resolves on every page (the README is symlinked into each lang dir as the
+/// index, where a relative `LICENSE` would otherwise 404).
 fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
     for entry in fs::read_dir(src)? {
         let entry = entry?;
@@ -315,10 +331,25 @@ fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
             fs::copy(&path, out.join(entry.file_name()))?;
         }
     }
-    if let Some(repo_root) = src.parent() {
-        let license = repo_root.join("LICENSE");
-        if license.is_file() && !out.join("LICENSE").exists() {
-            fs::copy(&license, out.join("LICENSE"))?;
+    let license_src = src.parent().map(|root| root.join("LICENSE"));
+    if let Some(license) = license_src {
+        if license.is_file() {
+            // Site root.
+            let root_dst = out.join("LICENSE");
+            if !root_dst.exists() {
+                fs::copy(&license, &root_dst)?;
+            }
+            // Each language directory (en/, zhs/, …) — the README badge links
+            // resolve relative to the page, i.e. inside the lang dir.
+            for entry in fs::read_dir(out)? {
+                let entry = entry?;
+                if entry.file_type()?.is_dir() {
+                    let dst = entry.path().join("LICENSE");
+                    if !dst.exists() {
+                        fs::copy(&license, &dst)?;
+                    }
+                }
+            }
         }
     }
     Ok(())
