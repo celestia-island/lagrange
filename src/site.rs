@@ -1,8 +1,16 @@
 //! Static site builder: walks a docs tree (one directory per language),
-//! renders every markdown page through the parser + renderer, wraps it in a
-//! page template (sidebar from `SUMMARY.md`, language switcher) and writes a
-//! static HTML site.
+//! renders every markdown page in every language, and writes a single HTML
+//! file per page path with all language variants embedded. A small inline
+//! JavaScript layer picks the active language from:
+//!
+//!   1. `?lang=` query parameter (shareable)
+//!   2. `localStorage` key `lagrange-lang` (persistent)
+//!   3. `navigator.language` (browser preference)
+//!   4. the configured default (usually `"en"`)
+//!
+//! The output is flat — no per-language subdirectories in the URL.
 
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -16,21 +24,30 @@ use crate::theme;
 
 /// Options for [`build`].
 pub struct BuildOptions {
-    /// Source docs root (contains one subdirectory per language).
     pub src: PathBuf,
-    /// Output directory (a static site is written here).
     pub out: PathBuf,
-    /// Optional absolute site URL (used for the language switcher prefix).
     pub site_url: Option<String>,
+    pub default_lang: Option<String>,
+}
+
+/// Contents of a single page in one language.
+struct LangPage {
+    title: String,
+    body: String,
+    sidebar_html: String,
+}
+
+/// All language variants of one logical page.
+struct MultiPage {
+    pages: BTreeMap<String, LangPage>,
+    page_path: String, // e.g. "index.html", "guides/quickstart.html"
 }
 
 /// Build the whole site.
 pub fn build(opts: &BuildOptions) -> Result<()> {
     let t0 = Instant::now();
     let mut langs: Vec<String> = Vec::new();
-    for entry in
-        fs::read_dir(&opts.src).with_context(|| format!("read docs dir {}", opts.src.display()))?
-    {
+    for entry in fs::read_dir(&opts.src).with_context(|| format!("read {}", opts.src.display()))? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
             if let Some(name) = entry.file_name().to_str() {
@@ -40,16 +57,21 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     }
     langs.sort();
     if langs.is_empty() {
-        anyhow::bail!("no language directories found under {}", opts.src.display());
+        anyhow::bail!("no language directories under {}", opts.src.display());
     }
 
+    let default_lang = opts
+        .default_lang
+        .clone()
+        .unwrap_or_else(|| "en".to_string());
     info!(
-        "building {} languages ({}) from {}",
+        "building {} languages ({})  default={}",
         langs.len(),
         langs.join(", "),
-        opts.src.display()
+        default_lang
     );
 
+    // Clear output.
     if opts.out.exists() {
         fs::remove_dir_all(&opts.out).context("clean output dir")?;
     }
@@ -57,139 +79,173 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 
     let css = theme::stylesheet();
 
+    // ── 1. For each language, parse its SUMMARY and render every markdown
+    //      page into a LangPage. Collect them into per-page-path MultiPages.
+    let mut multi: HashMap<String, MultiPage> = HashMap::new();
+
     for lang in &langs {
         let t_lang = Instant::now();
-        let pages = build_lang(&opts.src, &opts.out, lang, &langs, &css, &opts.site_url)?;
+        let lang_dir = opts.src.join(lang);
+        let nav = parse_summary(&lang_dir.join("SUMMARY.md")).unwrap_or_default();
+
+        for md_path in walk_md(&lang_dir)? {
+            if md_path.file_name().is_some_and(|f| f == "SUMMARY.md") {
+                continue;
+            }
+            let rel = md_path.strip_prefix(&lang_dir).unwrap_or(&md_path);
+            let source = fs::read_to_string(&md_path)
+                .with_context(|| format!("read {}", md_path.display()))?;
+            let blocks = markdown::parse(&source);
+            let body_raw = render::render_to_html(&blocks);
+            let title = first_heading(&blocks).unwrap_or_else(|| "Lagrange".to_string());
+
+            // Compute output page path (README/index → index.html).
+            let mut out_rel = rel.with_extension("html");
+            if out_rel
+                .file_name()
+                .is_some_and(|f| f == "README.html" || f == "index.html")
+            {
+                out_rel = out_rel.with_file_name("index.html");
+            }
+            let page_path = out_rel.to_string_lossy().replace('\\', "/");
+
+            // Render sidebar for THIS language.
+            let sidebar_html = if nav.is_empty() {
+                String::new()
+            } else {
+                let items: String = nav
+                    .iter()
+                    .map(|(t, href)| {
+                        let abs = absolute_href(href, lang);
+                        format!("<li><a href=\"{abs}\">{t}</a></li>")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("<aside class=\"sidebar\"><h2>Contents</h2><ul>\n{items}\n</ul></aside>")
+            };
+
+            // Rewrite asset paths (logo from README `docs/logo.webp`).
+            let body = rewrite_asset_paths(&body_raw, &page_path);
+
+            let entry = multi.entry(page_path.clone()).or_insert_with(|| MultiPage {
+                pages: BTreeMap::new(),
+                page_path: page_path.clone(),
+            });
+            entry.pages.insert(
+                lang.clone(),
+                LangPage {
+                    title,
+                    body,
+                    sidebar_html,
+                },
+            );
+        }
         info!(
-            "  {lang} — {pages} pages in {:.1}s",
+            "  {lang} — {} pages in {:.1}s",
+            multi
+                .values()
+                .filter(|m| m.pages.contains_key(lang))
+                .count(),
             t_lang.elapsed().as_secs_f64()
         );
     }
 
-    // Copy docs-root assets (siblings of the language directories — e.g.
-    // `docs/logo.webp`) to the site root, so a root README that references
-    // `docs/logo.webp` resolves once its `docs/` prefix is rewritten to the
-    // appropriate depth-relative path.
-    copy_root_assets(&opts.src, &opts.out)?;
-
-    // Root redirect to the English book (or the first language if no English).
-    let default_lang = if langs.iter().any(|l| l == "en") {
-        "en"
-    } else {
-        langs[0].as_str()
-    };
-    let redirect = format!(
-        "<!doctype html>\n<meta charset=\"utf-8\">\n<meta http-equiv=\"refresh\" content=\"0; url={l}/index.html\">\n<title>Lagrange</title>\n<a href=\"{l}/index.html\">Redirect</a>\n",
-        l = default_lang
-    );
-    fs::write(opts.out.join("index.html"), redirect)?;
-
-    info!("done ({:.1}s total)", t0.elapsed().as_secs_f64());
-    Ok(())
-}
-
-fn build_lang(
-    src: &Path,
-    out: &Path,
-    lang: &str,
-    langs: &[String],
-    css: &str,
-    site_url: &Option<String>,
-) -> Result<usize> {
+    // ── 2. Write one HTML file per MultiPage.
     let mut page_count = 0;
-    let lang_dir = src.join(lang);
-    let out_dir = out.join(lang);
-    fs::create_dir_all(&out_dir)?;
-
-    let nav = parse_summary(&lang_dir.join("SUMMARY.md")).unwrap_or_default();
-
-    for md_path in walk_md(&lang_dir)? {
-        // SUMMARY.md is the table of contents, not a page.
-        if md_path.file_name().is_some_and(|f| f == "SUMMARY.md") {
-            continue;
-        }
-        let rel = md_path.strip_prefix(&lang_dir).unwrap_or(&md_path);
-        let source =
-            fs::read_to_string(&md_path).with_context(|| format!("read {}", md_path.display()))?;
-        let blocks = markdown::parse(&source);
-        let body = render::render_to_html(&blocks);
-        let title = first_heading(&blocks).unwrap_or_else(|| "Lagrange".to_string());
-
-        // README.md / index.md -> index.html, otherwise .md -> .html
-        let mut out_rel = rel.with_extension("html");
-        let is_index = out_rel
-            .file_name()
-            .is_some_and(|f| f == "README.html" || f == "index.html");
-        if is_index {
-            out_rel = out_rel.with_file_name("index.html");
-        }
-        let page_path = out_rel.to_string_lossy().replace('\\', "/");
-
-        let html = render_page(&title, &body, lang, langs, &nav, css, site_url, &page_path);
-        let out_path = out_dir.join(&out_rel);
-        if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&out_path, html).with_context(|| format!("write {}", out_path.display()))?;
+    for mp in multi.values() {
+        write_multi_page(&opts.out, mp, &default_lang, &css, &opts.site_url)?;
         page_count += 1;
     }
 
-    copy_assets(&lang_dir, &out_dir)?;
-    Ok(page_count)
+    // ── 3. Copy assets.
+    copy_root_assets(&opts.src, &opts.out)?;
+
+    info!(
+        "wrote {} pages in {:.1}s total",
+        page_count,
+        t0.elapsed().as_secs_f64()
+    );
+    Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_page(
-    title: &str,
-    body: &str,
-    lang: &str,
-    langs: &[String],
-    nav: &[(String, String)],
+// ── helpers ───────────────────────────────────────────────────────────────
+
+fn write_multi_page(
+    out: &Path,
+    mp: &MultiPage,
+    default_lang: &str,
     css: &str,
     _site_url: &Option<String>,
-    page_path: &str,
-) -> String {
-    let sidebar = if nav.is_empty() {
-        String::new()
-    } else {
-        // Sidebar hrefs come from SUMMARY and are relative to the language root
-        // (e.g. `index.html`, `guides/quickstart.html`). Make them absolute
-        // (`/<lang>/<href>`) so they resolve correctly from pages at any depth
-        // (a guide page lives at `/<lang>/guides/x.html`).
-        let items: String = nav
-            .iter()
-            .map(|(t, href)| {
-                let abs = absolute_href(href, lang);
-                format!("<li><a href=\"{abs}\">{t}</a></li>")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!("<aside class=\"sidebar\"><h2>Contents</h2><ul>\n{items}\n</ul></aside>")
-    };
+) -> Result<()> {
+    // Pick the default language's content for the visible HTML (SEO + no-JS).
+    let default = mp
+        .pages
+        .get(default_lang)
+        .or_else(|| mp.pages.values().next())
+        .ok_or_else(|| anyhow::anyhow!("no language content for {}", mp.page_path))?;
 
-    let switcher: String = langs
-        .iter()
-        .map(|l| {
-            let target = format!("/{l}/{page_path}", l = l, page_path = page_path);
-            let label = lang_label(l);
-            if l == lang {
-                format!("<a href=\"{target}\" aria-current=\"true\">{label}</a>")
-            } else {
-                format!("<a href=\"{target}\">{label}</a>")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" · ");
+    // Serialise all language data to JSON.
+    let json_data = serde_json::to_string(&mp.pages).unwrap_or_default();
 
-    // Rewrite asset references written against the repo root (e.g.
-    // `docs/logo.webp` in a symlinked root README) to depth-relative paths
-    // into the site root, where `copy_root_assets` places those files.
-    let body = rewrite_asset_paths(body, page_path);
+    let out_path = out.join(&mp.page_path);
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
-    format!(
-        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title}</title>\n<style>\n{css}\n</style>\n</head>\n<body>\n<div class=\"layout\">\n{sidebar}\n<main class=\"content\">\n{body}\n</main>\n</div>\n<div class=\"lang-switcher\">{switcher}</div>\n</body>\n</html>\n"
-    )
+    let mut html = String::new();
+    html.push_str("<!doctype html>\n<html lang=\"");
+    html.push_str(default_lang);
+    html.push_str("\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>");
+    html.push_str(&html_escape_text(&default.title));
+    html.push_str("</title>\n<style>\n");
+    html.push_str(css);
+    html.push_str("\n</style>\n</head>\n<body>\n<div class=\"layout\">\n");
+    html.push_str(&default.sidebar_html);
+    html.push_str("\n<main class=\"content\" id=\"lg-body\">\n");
+    html.push_str(&default.body);
+    html.push_str("\n</main>\n</div>\n<div class=\"lang-switcher\" id=\"lg-sw\"></div>\n");
+
+    // Embedded language data.
+    html.push_str("<script type=\"application/json\" id=\"lg-data\">");
+    html.push_str(&json_data);
+    html.push_str("</script>\n");
+
+    // Client-side language logic.
+    html.push_str(LAGRANGE_JS);
+    html.push_str("</body>\n</html>\n");
+
+    fs::write(&out_path, html).with_context(|| format!("write {}", out_path.display()))?;
+    Ok(())
 }
+
+// ── inline JavaScript ─────────────────────────────────────────────────────
+
+const LAGRANGE_JS: &str = r##"<script>
+(function(){
+ var D=JSON.parse(document.getElementById('lg-data').textContent);
+ var N={"ar":"العربية","en":"English","es":"Español","fr":"Français","ja":"日本語","ko":"한국어","ru":"Русский","zhs":"简体中文","zht":"繁體中文"};
+ var DL='en';function gL(){return new URLSearchParams(location.search).get('lang')||localStorage['lagrange-lang']||(navigator.language||'').slice(0,2)||DL}
+ function sL(l){localStorage['lagrange-lang']=l;var u=new URL(location);u.searchParams.set('lang',l);history.replaceState(null,'',u);rL(l)}
+ function rL(l){var p=D[l]||D[DL];if(!p)return;document.documentElement.lang=l;document.title=p.title;document.getElementById('lg-body').innerHTML=p.body;document.getElementById('lg-sidebar')&&(document.getElementById('lg-sidebar').innerHTML=p.sidebar_html);var as=document.querySelectorAll('#lg-sw a');for(var i=0;i<as.length;i++)as[i].classList.toggle('on',as[i].dataset.lang===l);}
+ var sw=document.getElementById('lg-sw');var ls=Object.keys(D).sort();for(var i=0;i<ls.length;i++){var l=ls[i];var a=document.createElement('a');a.href='?lang='+l;a.dataset.lang=l;a.textContent=N[l]||l;a.onclick=function(e){e.preventDefault();sL(this.dataset.lang)};sw.appendChild(a);if(i<ls.length-1){var s=document.createTextNode(' · ');sw.appendChild(s)}}
+ var init=gL();if(!D[init])init=DL;sL(init);
+})();
+</script>"##;
+
+// ── JSON serialisation for LangPage ───────────────────────────────────────
+
+impl serde::Serialize for LangPage {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = s.serialize_struct("LangPage", 3)?;
+        st.serialize_field("title", &self.title)?;
+        st.serialize_field("body", &self.body)?;
+        st.serialize_field("sidebar_html", &self.sidebar_html)?;
+        st.end()
+    }
+}
+
+// ── single page (legacy, kept for potential direct use) ───────────────────
 
 /// Turn a SUMMARY href into an absolute site path (`/<lang>/<href>`), unless it
 /// is already absolute (http/https/mailto) or an anchor.
@@ -205,87 +261,17 @@ fn absolute_href(href: &str, lang: &str) -> String {
     format!("/{lang}/{href}", lang = lang, href = href)
 }
 
-fn lang_label(code: &str) -> &'static str {
-    match code {
-        "en" => "English",
-        "zhs" => "简体中文",
-        "zht" => "繁體中文",
-        "ja" => "日本語",
-        "ko" => "한국어",
-        "fr" => "Français",
-        "es" => "Español",
-        "ru" => "Русский",
-        "ar" => "العربية",
-        _ => "—",
+fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
+    let depth = 1 + page_path.matches('/').count();
+    let up = "../".repeat(depth);
+    if up.is_empty() {
+        return html.to_string();
     }
+    html.replace("src=\"docs/", &format!("src=\"{up}"))
+        .replace("href=\"docs/", &format!("href=\"{up}"))
 }
 
-/// Parse a minimal mdBook-style SUMMARY (`- [Title](./path.md)` lines).
-fn parse_summary(path: &Path) -> Result<Vec<(String, String)>> {
-    let source = fs::read_to_string(path)?;
-    let mut entries = Vec::new();
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed == "---" {
-            continue;
-        }
-        // Expect `- [Title](url)` or `[Title](url)`.
-        let body = trimmed.trim_start_matches('-').trim_start();
-        let Some(open) = body.find('[') else { continue };
-        let Some(rel_close) = body[open..].find(']') else {
-            continue;
-        };
-        let close = open + rel_close;
-        let title = &body[open + 1..close];
-        let rest = &body[close + 1..];
-        let Some(lp) = rest.find('(') else { continue };
-        let Some(rp_rel) = rest[lp..].find(')') else {
-            continue;
-        };
-        let rp = lp + rp_rel;
-        let url = &rest[lp + 1..rp];
-        entries.push((title.to_string(), rewrite_nav_link(url)));
-    }
-    Ok(entries)
-}
-
-/// `./foo.md` -> `foo.html`, `README.md` -> `index.html`. Preserves any
-/// `#fragment` (mirrors `render::rewrite_link`).
-fn rewrite_nav_link(url: &str) -> String {
-    if url.starts_with("http") || url.starts_with('#') {
-        return url.to_string();
-    }
-    // Split off a trailing `#fragment` so the `.md` rewrite only touches the
-    // path portion (e.g. `./a.md#sec` -> `a.html#sec`, not `a.md#sec`).
-    let (path, fragment) = match url.split_once('#') {
-        Some((p, f)) => (p, Some(f)),
-        None => (url, None),
-    };
-    if path.is_empty() {
-        return url.to_string();
-    }
-    let stripped = path.strip_prefix("./").unwrap_or(path);
-    let path = std::path::Path::new(stripped);
-    let is_readme = path
-        .file_name()
-        .is_some_and(|f| f == "README.md" || f == "readme.md");
-    let rewritten = if is_readme {
-        match path.parent() {
-            Some(p) if !p.as_os_str().is_empty() => format!("{}/index.html", p.display()),
-            _ => "index.html".to_string(),
-        }
-    } else {
-        // Replace only a trailing `.md` extension (not any `.md` substring).
-        stripped
-            .strip_suffix(".md")
-            .map(|p| format!("{p}.html"))
-            .unwrap_or_else(|| stripped.to_string())
-    };
-    match fragment {
-        Some(f) => format!("{rewritten}#{f}"),
-        None => rewritten,
-    }
-}
+// ── markdown helpers ──────────────────────────────────────────────────────
 
 fn first_heading(blocks: &[markdown::Block]) -> Option<String> {
     for b in blocks {
@@ -310,6 +296,72 @@ fn collect_text(inlines: &[markdown::Inline]) -> String {
         .collect()
 }
 
+// ── file-system walkers ───────────────────────────────────────────────────
+
+fn parse_summary(path: &Path) -> Result<Vec<(String, String)>> {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let mut entries = Vec::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed == "---" {
+            continue;
+        }
+        let body = trimmed.trim_start_matches('-').trim_start();
+        let Some(open) = body.find('[') else { continue };
+        let Some(rel_close) = body[open..].find(']') else {
+            continue;
+        };
+        let close = open + rel_close;
+        let title = &body[open + 1..close];
+        let rest = &body[close + 1..];
+        let Some(lp) = rest.find('(') else { continue };
+        let Some(rp_rel) = rest[lp..].find(')') else {
+            continue;
+        };
+        let rp = lp + rp_rel;
+        let url = &rest[lp + 1..rp];
+        entries.push((title.to_string(), rewrite_nav_link(url)));
+    }
+    Ok(entries)
+}
+
+fn rewrite_nav_link(url: &str) -> String {
+    if url.starts_with("http") || url.starts_with('#') {
+        return url.to_string();
+    }
+    // Split off fragment.
+    let (path, fragment) = match url.split_once('#') {
+        Some((p, f)) => (p, Some(f)),
+        None => (url, None),
+    };
+    if path.is_empty() {
+        return url.to_string();
+    }
+    let stripped = path.strip_prefix("./").unwrap_or(path);
+    let p = std::path::Path::new(stripped);
+    let is_readme = p
+        .file_name()
+        .is_some_and(|f| f == "README.md" || f == "readme.md");
+    let rewritten = if is_readme {
+        match p.parent() {
+            Some(d) if !d.as_os_str().is_empty() => format!("{}/index.html", d.display()),
+            _ => "index.html".to_string(),
+        }
+    } else {
+        stripped
+            .strip_suffix(".md")
+            .map(|x| format!("{x}.html"))
+            .unwrap_or_else(|| stripped.to_string())
+    };
+    match fragment {
+        Some(f) => format!("{rewritten}#{f}"),
+        None => rewritten,
+    }
+}
+
 fn walk_md(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     walk_md_inner(dir, &mut out)?;
@@ -330,18 +382,8 @@ fn walk_md_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Copy every non-markdown file (images, etc.) verbatim into the output.
-fn copy_assets(src: &Path, out: &Path) -> Result<()> {
-    copy_assets_inner(src, out)?;
-    Ok(())
-}
+// ── assets ────────────────────────────────────────────────────────────────
 
-/// Copy non-markdown files that live directly in the docs root (siblings of the
-/// language directories, e.g. `docs/logo.webp`) to the site root. Also copies a
-/// repo-root `LICENSE` (the parent of `src`) to the site root AND into each
-/// language directory, so the README's `[License](./LICENSE)` badge link
-/// resolves on every page (the README is symlinked into each lang dir as the
-/// index, where a relative `LICENSE` would otherwise 404).
 fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
     for entry in fs::read_dir(src)? {
         let entry = entry?;
@@ -351,58 +393,49 @@ fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
         }
     }
     let license_src = src.parent().map(|root| root.join("LICENSE"));
-    if let Some(license) = license_src {
-        if license.is_file() {
-            // Site root.
-            let root_dst = out.join("LICENSE");
-            if !root_dst.exists() {
-                fs::copy(&license, &root_dst)?;
-            }
-            // Each language directory (en/, zhs/, …) — the README badge links
-            // resolve relative to the page, i.e. inside the lang dir.
-            for entry in fs::read_dir(out)? {
-                let entry = entry?;
-                if entry.file_type()?.is_dir() {
-                    let dst = entry.path().join("LICENSE");
-                    if !dst.exists() {
-                        fs::copy(&license, &dst)?;
-                    }
-                }
-            }
+    if let Some(ref license) = license_src {
+        if license.is_file() && !out.join("LICENSE").exists() {
+            fs::copy(license, out.join("LICENSE"))?;
         }
     }
     Ok(())
 }
 
-/// Rewrite asset references written against the repo root (`docs/<asset>`) to
-/// depth-relative paths into the site root. `page_path` is the page's path
-/// relative to its language directory, so the total depth from the site root is
-/// one (for the language dir) plus the number of `/` in `page_path`.
-///
-/// Only literal `src="docs/…"` / `href="docs/…"` occurrences are rewritten —
-/// absolute URLs, anchors and intra-doc relative links are left untouched.
-fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
-    let depth = 1 + page_path.matches('/').count();
-    let up = "../".repeat(depth);
-    if up.is_empty() {
-        return html.to_string();
-    }
-    html.replace("src=\"docs/", &format!("src=\"{up}"))
-        .replace("href=\"docs/", &format!("href=\"{up}"))
-}
+// ── utils ─────────────────────────────────────────────────────────────────
 
-fn copy_assets_inner(src: &Path, out: &Path) -> Result<()> {
-    fs::create_dir_all(out)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let path = entry.path();
-        let name = entry.file_name();
-        let dest = out.join(&name);
-        if path.is_dir() {
-            copy_assets_inner(&path, &dest)?;
-        } else if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            fs::copy(&path, &dest)?;
+fn html_escape_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(ch),
         }
     }
-    Ok(())
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_nav_readme_to_index() {
+        assert_eq!(rewrite_nav_link("./README.md"), "index.html");
+        assert_eq!(rewrite_nav_link("./en/README.md"), "en/index.html");
+    }
+
+    #[test]
+    fn rewrite_nav_fragment_preserved() {
+        assert_eq!(rewrite_nav_link("./a.md#sec"), "a.html#sec");
+    }
+
+    #[test]
+    fn absolute_href_passthrough() {
+        assert_eq!(absolute_href("https://x.com", "en"), "https://x.com");
+        assert_eq!(absolute_href("#anchor", "en"), "#anchor");
+        assert_eq!(absolute_href("/abs/path", "en"), "/abs/path");
+    }
 }

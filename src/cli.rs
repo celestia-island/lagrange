@@ -31,9 +31,12 @@ pub enum Command {
         /// Output directory. Defaults to `target/site`.
         #[arg(long, default_value = "target/site")]
         out: PathBuf,
-        /// Optional absolute site URL (e.g. https://lagrange.docs.celestia.world).
+        /// Optional absolute site URL.
         #[arg(long)]
         site_url: Option<String>,
+        /// Default language. Defaults to "en".
+        #[arg(long, default_value = "en")]
+        default_lang: String,
     },
     /// Build once, then watch for changes and rebuild automatically.
     /// When `--port` is set, also starts a lightweight HTTP server that
@@ -48,10 +51,15 @@ pub enum Command {
         /// Optional site URL.
         #[arg(long)]
         site_url: Option<String>,
+        /// Default language (default "en"). Used when no query param, no
+        /// localStorage, and no browser-preference match.
+        #[arg(long, default_value = "en")]
+        default_lang: String,
         /// Polling interval in seconds (default 1).
         #[arg(long, default_value = "1")]
         interval: f64,
-        /// HTTP port to serve on. 0 means "serve is off".
+        /// HTTP port to serve on. 0 picks a random available port on all
+        /// interfaces and prints the chosen address.
         #[arg(long, default_value = "0")]
         port: u16,
     },
@@ -60,8 +68,18 @@ pub enum Command {
 /// Run the CLI.
 pub fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
-        Command::Build { src, out, site_url } => {
-            let opts = BuildOptions { src, out, site_url };
+        Command::Build {
+            src,
+            out,
+            site_url,
+            default_lang,
+        } => {
+            let opts = BuildOptions {
+                src,
+                out,
+                site_url,
+                default_lang: Some(default_lang),
+            };
             site::build(&opts)
         }
         Command::Dev {
@@ -70,33 +88,38 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             site_url,
             interval,
             port,
+            default_lang,
         } => {
             info!("lagrange dev — build + watch ({interval}s poll)");
             let opts = BuildOptions {
                 src: src.clone(),
                 out: out.clone(),
                 site_url: site_url.clone(),
+                default_lang: Some(default_lang.clone()),
             };
             site::build(&opts)?;
 
             // Start HTTP server if requested.
-            let _server = if port > 0 {
-                let out_d = out.clone();
-                let bind = format!("127.0.0.1:{port}");
-                info!("serving {} on http://{bind}", out_d.display());
-                Some(serve_dir(out_d, port))
+            let bind_addr = if port > 0 {
+                let bind = format!("0.0.0.0:{port}");
+                info!("serving {} on http://{bind}", out.display());
+                let _ = serve_dir(out.clone(), &bind);
+                bind
             } else {
-                None
+                // Port 0: pick a random available port on all interfaces.
+                let bind = "0.0.0.0:0";
+                let actual = serve_dir(out.clone(), bind);
+                info!("serving {} on http://{actual}", out.display());
+                actual
             };
 
             info!(
-                "watching {} …  open {base}index.html or http://127.0.0.1:{port}/{default_lang}",
+                "watching {} …  open http://{bind_addr}/index.html?lang={dl}",
                 src.display(),
-                base = out.display().to_string() + "/",
-                port = port,
-                default_lang = if out.join("en").exists() { "en/" } else { "" },
+                bind_addr = bind_addr,
+                dl = default_lang,
             );
-            watch_loop(src, out, site_url, interval)?;
+            watch_loop(src, out, site_url, default_lang, interval)?;
             Ok(())
         }
     }
@@ -107,6 +130,7 @@ fn watch_loop(
     src: PathBuf,
     out: PathBuf,
     site_url: Option<String>,
+    default_lang: String,
     interval: f64,
 ) -> anyhow::Result<()> {
     let interval = Duration::from_secs_f64(interval.max(0.2));
@@ -127,6 +151,7 @@ fn watch_loop(
                 src: src.clone(),
                 out: out.clone(),
                 site_url: site_url.clone(),
+                default_lang: Some(default_lang.clone()),
             };
             if let Err(e) = site::build(&opts) {
                 tracing::error!("rebuild failed: {e:?}");
@@ -165,28 +190,34 @@ fn collect_mtimes(
 
 // ── built-in HTTP static server (no deps — pure std) ─────────────────────
 
-/// Spawn a daemon thread that serves `root` over HTTP on `port`. Returns the
-/// handle so the caller can join or detach.
-fn serve_dir(root: PathBuf, port: u16) -> thread::JoinHandle<()> {
+/// Spawn a daemon thread that serves `root` over HTTP on `bind` (e.g.
+/// `"0.0.0.0:0"` or `"0.0.0.0:8080"`). Returns the actual local address
+/// string that is being listened on.
+fn serve_dir(root: PathBuf, bind: &str) -> String {
     let root = Arc::new(root);
-    let bind = format!("127.0.0.1:{port}");
+    let listener = match std::net::TcpListener::bind(bind) {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("cannot bind {bind}: {e}");
+            return bind.to_string();
+        }
+    };
+    let addr = listener
+        .local_addr()
+        .map(|a| a.to_string())
+        .unwrap_or_else(|_| bind.to_string());
+    let root2 = Arc::clone(&root);
     thread::spawn(move || {
-        let listener = match std::net::TcpListener::bind(&bind) {
-            Ok(l) => l,
-            Err(e) => {
-                tracing::error!("cannot bind {}: {e}", bind);
-                return;
-            }
-        };
         for stream in listener.incoming() {
             let stream = match stream {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            let root = Arc::clone(&root);
+            let root = Arc::clone(&root2);
             thread::spawn(move || handle_http(stream, &root));
         }
-    })
+    });
+    addr
 }
 
 fn handle_http(mut stream: std::net::TcpStream, root: &PathBuf) {

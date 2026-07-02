@@ -27,6 +27,9 @@ pest_derive = "^2"
 # Unified logging (matching the tairitsu/shirebe/kou ecosystem convention).
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter", "time"] }
+# JSON for the embedded multi-language page data.
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
 
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
 tairitsu-vdom = { git = "https://github.com/celestia-island/tairitsu.git", branch = "dev" }
