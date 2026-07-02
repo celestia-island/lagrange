@@ -9,6 +9,7 @@
 
 pub mod cli;
 pub mod config;
+pub mod icons;
 pub mod markdown;
 pub mod render;
 pub mod search;

@@ -215,10 +215,16 @@ fn write_multi_page(
     html.push_str(&html_escape_text(&default.title));
     html.push_str("</title>\n<style>\n");
     html.push_str(css);
+    let magnify = crate::icons::icon_svg("magnify", 16);
     html.push_str(
         "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\
          <aside class=\"sidebar\">\n\
          <div class=\"lg-search-box\">\
+         <span class=\"lg-search-icon\">",
+    );
+    html.push_str(&magnify);
+    html.push_str(
+        "</span>\
          <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
          <div id=\"lg-search-results\"></div>\
          </div>\n\
@@ -240,7 +246,7 @@ fn write_multi_page(
     html.push_str("</script>\n");
 
     // Client-side language logic.
-    html.push_str(LAGRANGE_JS);
+    html.push_str(&lagrange_js());
     html.push_str("</body>\n</html>\n");
 
     fs::write(&out_path, html).with_context(|| format!("write {}", out_path.display()))?;
@@ -249,7 +255,15 @@ fn write_multi_page(
 
 // ── inline JavaScript ─────────────────────────────────────────────────────
 
-const LAGRANGE_JS: &str = r##"<script>
+fn lagrange_js() -> String {
+    let translate = crate::icons::icon_svg("translate", 16);
+    let chevron = format!("<path d=\"{}\"/>", crate::icons::mdi_path("chevron-down"));
+    LAGRANGE_JS_TEMPLATE
+        .replace("@TRANSLATE_ICON@", &translate)
+        .replace("@CHEVRON_ICON_PATH@", &chevron)
+}
+
+const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
 (function(){
  var D=JSON.parse(document.getElementById('lg-data').textContent);
  var N={"ar":"العربية","en":"English","es":"Español","fr":"Français","ja":"日本語","ko":"한국어","ru":"Русский","zhs":"简体中文","zht":"繁體中文"};
@@ -267,11 +281,7 @@ const LAGRANGE_JS: &str = r##"<script>
  }
  /* ── language dropdown ── */
  var sw=document.getElementById('lg-sw');sw.className='lg-lang-select';
- sw.innerHTML='<button type="button" class="lg-lang-trigger">\
- <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 010 20"/><path d="M12 2a15 15 0 000 20"/></svg>\
- <span id="lg-lang-cur"></span>\
- <svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>\
- </button><div class="lg-lang-panel"></div>';
+ sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel"></div>';
  var trigger=sw.querySelector('.lg-lang-trigger');
  var panel=sw.querySelector('.lg-lang-panel');
  var ls=document.documentElement.dataset.langs?document.documentElement.dataset.langs.split(','):Object.keys(D).sort();
