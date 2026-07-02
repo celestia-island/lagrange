@@ -232,7 +232,12 @@ fn handle_http(mut stream: std::net::TcpStream, root: &PathBuf) {
         respond(&mut stream, 405, "text/plain", "Method Not Allowed");
         return;
     }
-    let req_path = parts[1].trim_start_matches('/');
+    // Strip query string and fragment before resolving the file path.
+    let req_path = parts[1]
+        .split(['?', '#'])
+        .next()
+        .unwrap_or("")
+        .trim_start_matches('/');
     // Resolve path manually, rejecting `..` components.
     let abs = if req_path.is_empty() {
         root.join("index.html")
