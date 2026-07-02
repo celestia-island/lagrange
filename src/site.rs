@@ -261,7 +261,7 @@ const LAGRANGE_JS: &str = r##"<script>
   var p=D[l]||D[DL];if(!p)return;
   document.documentElement.lang=l;document.title=p.title;
   document.getElementById('lg-body').innerHTML=p.body;
-  var sb=document.getElementById('lg-sidebar');if(sb)sb.innerHTML=p.sidebar_html;
+  var sb=document.getElementById('lg-sidebar');if(sb){sb.innerHTML=p.sidebar_html;var cp=location.pathname.replace(/\/+$/,'')||'/index.html';var links=sb.querySelectorAll('a');for(var i=0;i<links.length;i++){var h=links[i].getAttribute('href');if(h===cp||h+'/index.html'===cp||cp+'/index.html'===h)links[i].classList.add('active')}}
   var cl=document.getElementById('lg-lang-cur');if(cl)cl.textContent=N[l]||l;
   var os=document.querySelectorAll('.lg-lang-opt');for(var i=0;i<os.length;i++)os[i].classList.toggle('selected',os[i].dataset.lang===l);
  }
