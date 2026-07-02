@@ -22,7 +22,7 @@
 //!   answer to CJK without a dictionary).
 //! - Everything else is indexed as-is (emoji, symbols, …).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -63,7 +63,7 @@ struct SearchMeta {
 /// Build the search index and write it to `out/`.
 pub fn write_index(
     out: &Path,
-    pages: &HashMap<String, crate::site::MultiPage>,
+    pages: &std::collections::BTreeMap<String, crate::site::MultiPage>,
 ) -> anyhow::Result<()> {
     let mut metas: Vec<DocMeta> = Vec::new();
     let mut shards: Vec<Shard> = (0..SHARD_COUNT)

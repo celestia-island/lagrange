@@ -10,7 +10,7 @@
 //!
 //! The output is flat — no per-language subdirectories in the URL.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -81,7 +81,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
-    let mut multi: HashMap<String, MultiPage> = HashMap::new();
+    let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
 
     for lang in &langs {
         let t_lang = Instant::now();
