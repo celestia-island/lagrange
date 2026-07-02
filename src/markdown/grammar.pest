@@ -40,16 +40,19 @@ code_span = { "`" ~ (!"`" ~ ANY)+ ~ "`" }
 
 // `strong`/`emphasis` close on their own delimiter; their inner atoms never
 // recurse into arbitrary spans (only into non-ambiguous atoms +, for emphasis,
-// one level of `strong`).
-strong      = { ("**" | "__") ~ strong_atom* ~ ("**" | "__") }
-emphasis    = { ("*"  | "_" ) ~ em_atom*     ~ ("*"  | "_" ) }
+// one level of `strong`). Only `*`/`**` are treated as emphasis delimiters —
+// `_` is left literal so identifiers like `snake_case` / `my_var` in technical
+// prose are not mangled (CommonMark underscore flanking is deliberately not
+// modelled).
+strong      = { "**" ~ strong_atom* ~ "**" }
+emphasis    = { "*" ~ em_atom* ~ "*" }
 strong_atom = { code_span | image | link | badge_link | escape | raw_double_atom }
 em_atom     = { code_span | image | link | badge_link | strong | escape | raw_single_atom }
 
 // Atomic runs of non-special chars (relative to the delimiter set) so the
 // surrounding repetition is non-backtracking and produces few nodes.
-raw_double_atom = @{ ( !( ("**" | "__") | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
-raw_single_atom = @{ ( !( ("**" | "__") | ("*" | "_") | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
+raw_double_atom = @{ ( !( "**" | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
+raw_single_atom = @{ ( !( "**" | "*" | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
 
 escape    = { "\\" ~ ANY }
 
@@ -58,4 +61,4 @@ escape    = { "\\" ~ ANY }
 // not contribute to backtracking at the span level.
 raw       = @{ (!special_start ~ ANY)+ | ANY }
 
-special_start = { "**" | "__" | "*" | "_" | "`" | "[" | "\\" | "!" }
+special_start = { "**" | "*" | "`" | "[" | "\\" | "!" }

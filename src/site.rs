@@ -133,9 +133,16 @@ fn render_page(
     let sidebar = if nav.is_empty() {
         String::new()
     } else {
+        // Sidebar hrefs come from SUMMARY and are relative to the language root
+        // (e.g. `index.html`, `guides/quickstart.html`). Make them absolute
+        // (`/<lang>/<href>`) so they resolve correctly from pages at any depth
+        // (a guide page lives at `/<lang>/guides/x.html`).
         let items: String = nav
             .iter()
-            .map(|(t, href)| format!("<li><a href=\"{href}\">{t}</a></li>"))
+            .map(|(t, href)| {
+                let abs = absolute_href(href, lang);
+                format!("<li><a href=\"{abs}\">{t}</a></li>")
+            })
             .collect::<Vec<_>>()
             .join("\n");
         format!("<aside class=\"sidebar\"><h2>Contents</h2><ul>\n{items}\n</ul></aside>")
@@ -163,6 +170,20 @@ fn render_page(
     format!(
         "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title}</title>\n<style>\n{css}\n</style>\n</head>\n<body>\n<div class=\"layout\">\n{sidebar}\n<main class=\"content\">\n{body}\n</main>\n</div>\n<div class=\"lang-switcher\">{switcher}</div>\n</body>\n</html>\n"
     )
+}
+
+/// Turn a SUMMARY href into an absolute site path (`/<lang>/<href>`), unless it
+/// is already absolute (http/https/mailto) or an anchor.
+fn absolute_href(href: &str, lang: &str) -> String {
+    if href.starts_with("http://")
+        || href.starts_with("https://")
+        || href.starts_with("mailto:")
+        || href.starts_with('/')
+        || href.starts_with('#')
+    {
+        return href.to_string();
+    }
+    format!("/{lang}/{href}", lang = lang, href = href)
 }
 
 fn lang_label(code: &str) -> &'static str {
@@ -225,7 +246,11 @@ fn rewrite_nav_link(url: &str) -> String {
             _ => "index.html".to_string(),
         }
     } else {
-        stripped.replace(".md", ".html")
+        // Replace only a trailing `.md` extension (not any `.md` substring).
+        stripped
+            .strip_suffix(".md")
+            .map(|p| format!("{p}.html"))
+            .unwrap_or_else(|| stripped.to_string())
     }
 }
 
@@ -279,13 +304,21 @@ fn copy_assets(src: &Path, out: &Path) -> Result<()> {
 }
 
 /// Copy non-markdown files that live directly in the docs root (siblings of the
-/// language directories, e.g. `docs/logo.webp`) to the site root.
+/// language directories, e.g. `docs/logo.webp`) to the site root. Also copies a
+/// repo-root `LICENSE` (the parent of `src`) so the README's `[License](./LICENSE)`
+/// badge link resolves on the built site.
 fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|e| e.to_str()) != Some("md") {
             fs::copy(&path, out.join(entry.file_name()))?;
+        }
+    }
+    if let Some(repo_root) = src.parent() {
+        let license = repo_root.join("LICENSE");
+        if license.is_file() && !out.join("LICENSE").exists() {
+            fs::copy(&license, out.join("LICENSE"))?;
         }
     }
     Ok(())

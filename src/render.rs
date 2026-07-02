@@ -130,7 +130,12 @@ fn rewrite_link(url: &str) -> String {
             _ => "index.html".to_string(),
         }
     } else {
-        stripped.replace(".md", ".html")
+        // Replace only a trailing `.md` extension (not any `.md` substring like
+        // in `foo.md5` or `v2.md-spec/x`).
+        stripped
+            .strip_suffix(".md")
+            .map(|p| format!("{p}.html"))
+            .unwrap_or_else(|| stripped.to_string())
     };
     match fragment {
         Some(f) => format!("{rewritten}#{f}"),

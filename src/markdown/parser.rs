@@ -525,6 +525,40 @@ mod tests {
         assert_eq!(bold_count, 4, "inlines: {:?}", inlines);
     }
 
+    #[test]
+    fn underscores_are_not_emphasis() {
+        // `snake_case` / `my_var` identifiers must stay literal — `_` is not an
+        // emphasis delimiter (only `*` is).
+        let blocks = parse("see my_var and snake_case_name here");
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks);
+        };
+        assert!(
+            inlines.iter().all(|i| matches!(i, Inline::Text(_))),
+            "underscores leaked into emphasis: {:?}",
+            inlines
+        );
+        // The text is reconstructed verbatim.
+        let joined: String = inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Text(s) => s.clone(),
+                _ => String::new(),
+            })
+            .collect();
+        assert_eq!(joined, "see my_var and snake_case_name here");
+    }
+
+    #[test]
+    fn asterisk_emphasis_still_works() {
+        let blocks = parse("a *italic* and **bold** z");
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks);
+        };
+        assert!(inlines.iter().any(|i| matches!(i, Inline::Emphasis(_))));
+        assert!(inlines.iter().any(|i| matches!(i, Inline::Strong(_))));
+    }
+
     fn text_contains_image(inlines: &[Inline], alt: &str, url_part: &str) -> bool {
         inlines.iter().any(|i| match i {
             Inline::Image { alt: a, url } => a == alt && url.contains(url_part),
