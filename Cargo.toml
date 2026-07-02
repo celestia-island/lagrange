@@ -31,6 +31,11 @@ tracing-subscriber = { version = "^0.3", features = ["env-filter", "time"] }
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 
+# Dev server: axum + tower-http ServeDir for static file serving.
+axum = "^0.8"
+tokio = { version = "^1", features = ["net", "rt-multi-thread", "macros"] }
+tower-http = { version = "^0.6", features = ["fs"] }
+
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
 tairitsu-vdom = { git = "https://github.com/celestia-island/tairitsu.git", branch = "dev" }
 # Theming: hikari color palette.

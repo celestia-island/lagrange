@@ -1,8 +1,6 @@
 //! Command-line interface.
 
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -99,26 +97,46 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             };
             site::build(&opts)?;
 
-            // Start HTTP server if requested.
-            let bind_addr = if port > 0 {
-                let bind = format!("0.0.0.0:{port}");
-                info!("serving {} on http://{bind}", out.display());
-                let _ = serve_dir(out.clone(), &bind);
-                bind
+            // Spawn the axum + tower-http static-file server on a tokio
+            // runtime.  The runtime is kept alive for the lifetime of this
+            // scope (i.e. until watch_loop returns).
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+
+            let bind = if port > 0 {
+                format!("0.0.0.0:{port}")
             } else {
-                // Port 0: pick a random available port on all interfaces.
-                let bind = "0.0.0.0:0";
-                let actual = serve_dir(out.clone(), bind);
-                info!("serving {} on http://{actual}", out.display());
-                actual
+                "0.0.0.0:0".to_string()
             };
+
+            let bind_addr = rt.block_on(async {
+                match tokio::net::TcpListener::bind(&bind).await {
+                    Ok(listener) => {
+                        let addr = listener.local_addr().unwrap().to_string();
+                        info!("serving {} on http://{addr}", out.display());
+                        let app = axum::Router::new()
+                            .fallback_service(tower_http::services::ServeDir::new(out.clone()));
+                        tokio::spawn(async move {
+                            if let Err(e) = axum::serve(listener, app).await {
+                                tracing::error!("HTTP server error: {e}");
+                            }
+                        });
+                        addr
+                    }
+                    Err(e) => {
+                        tracing::error!("cannot bind {bind}: {e}");
+                        bind
+                    }
+                }
+            });
 
             info!(
                 "watching {} …  open http://{bind_addr}/index.html?lang={dl}",
                 src.display(),
-                bind_addr = bind_addr,
                 dl = default_lang,
             );
+            // watch_loop blocks forever; rt stays alive in this scope.
             watch_loop(src, out, site_url, default_lang, interval)?;
             Ok(())
         }
@@ -186,135 +204,4 @@ fn collect_mtimes(
         }
     }
     Ok(())
-}
-
-// ── built-in HTTP static server (no deps — pure std) ─────────────────────
-
-/// Spawn a daemon thread that serves `root` over HTTP on `bind` (e.g.
-/// `"0.0.0.0:0"` or `"0.0.0.0:8080"`). Returns the actual local address
-/// string that is being listened on.
-fn serve_dir(root: PathBuf, bind: &str) -> String {
-    let root = Arc::new(root);
-    let listener = match std::net::TcpListener::bind(bind) {
-        Ok(l) => l,
-        Err(e) => {
-            tracing::error!("cannot bind {bind}: {e}");
-            return bind.to_string();
-        }
-    };
-    let addr = listener
-        .local_addr()
-        .map(|a| a.to_string())
-        .unwrap_or_else(|_| bind.to_string());
-    let root2 = Arc::clone(&root);
-    thread::spawn(move || {
-        for stream in listener.incoming() {
-            let stream = match stream {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            let root = Arc::clone(&root2);
-            thread::spawn(move || handle_http(stream, &root));
-        }
-    });
-    addr
-}
-
-fn handle_http(mut stream: std::net::TcpStream, root: &PathBuf) {
-    use std::io::{BufRead, BufReader, Write};
-    let reader = BufReader::new(stream.try_clone().expect("TcpStream try_clone"));
-    let Some(req_line) = reader.lines().next().and_then(|l| l.ok()) else {
-        return;
-    };
-    // Parse `GET /path HTTP/1.x`
-    let parts: Vec<&str> = req_line.split_whitespace().collect();
-    if parts.len() < 2 || !parts[0].eq_ignore_ascii_case("GET") {
-        respond(&mut stream, 405, "text/plain", "Method Not Allowed");
-        return;
-    }
-    // Strip query string and fragment before resolving the file path.
-    let req_path = parts[1]
-        .split(['?', '#'])
-        .next()
-        .unwrap_or("")
-        .trim_start_matches('/');
-    // Resolve path manually, rejecting `..` components.
-    let abs = if req_path.is_empty() {
-        root.join("index.html")
-    } else {
-        let mut resolved = root.clone();
-        for component in req_path.split('/') {
-            match component {
-                "" | "." => {}
-                ".." => {
-                    respond(&mut stream, 403, "text/plain", "Forbidden");
-                    return;
-                }
-                c => {
-                    resolved.push(c);
-                }
-            }
-        }
-        resolved
-    };
-    // Prevent directory traversal.
-    if !abs.starts_with(root) {
-        respond(&mut stream, 403, "text/plain", "Forbidden");
-        return;
-    }
-    match std::fs::read(&abs) {
-        Ok(bytes) => {
-            let mime = mime_for(abs.extension().and_then(|e| e.to_str()).unwrap_or(""));
-            let header = format!(
-                "HTTP/1.0 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n\r\n",
-                bytes.len()
-            );
-            let _ = stream.write_all(header.as_bytes());
-            let _ = stream.write_all(&bytes);
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            respond(&mut stream, 404, "text/plain", "Not Found");
-        }
-        Err(_) => {
-            respond(&mut stream, 500, "text/plain", "Internal Server Error");
-        }
-    }
-}
-
-fn respond(stream: &mut std::net::TcpStream, code: u16, mime: &str, body: &str) {
-    use std::io::Write;
-    let label = match code {
-        200 => "OK",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        _ => "Error",
-    };
-    let header = format!(
-        "HTTP/1.0 {code} {label}\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(header.as_bytes());
-}
-
-/// Simple extension → MIME mapping (enough for a docs site).
-fn mime_for(ext: &str) -> &'static str {
-    match ext {
-        "html" | "htm" => "text/html; charset=utf-8",
-        "css" => "text/css",
-        "js" => "application/javascript",
-        "json" => "application/json",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "svg" => "image/svg+xml",
-        "webp" => "image/webp",
-        "ico" => "image/x-icon",
-        "wasm" => "application/wasm",
-        "woff" => "font/woff",
-        "woff2" => "font/woff2",
-        "ttf" | "otf" => "font/opentype",
-        "xml" => "application/xml",
-        "txt" | "md" => "text/plain; charset=utf-8",
-        _ => "application/octet-stream",
-    }
 }
