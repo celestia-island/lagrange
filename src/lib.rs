@@ -8,6 +8,7 @@
 //! documentation is rendered by Lagrange itself (see `just docs`).
 
 pub mod cli;
+pub mod config;
 pub mod markdown;
 pub mod render;
 pub mod search;

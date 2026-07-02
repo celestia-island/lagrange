@@ -46,24 +46,26 @@ pub struct MultiPage {
 /// Build the whole site.
 pub fn build(opts: &BuildOptions) -> Result<()> {
     let t0 = Instant::now();
-    let mut langs: Vec<String> = Vec::new();
+    let config = crate::config::Config::load(&opts.src);
+
+    let mut available: Vec<String> = Vec::new();
     for entry in fs::read_dir(&opts.src).with_context(|| format!("read {}", opts.src.display()))? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
             if let Some(name) = entry.file_name().to_str() {
-                langs.push(name.to_string());
+                available.push(name.to_string());
             }
         }
     }
-    langs.sort();
-    if langs.is_empty() {
+    if available.is_empty() {
         anyhow::bail!("no language directories under {}", opts.src.display());
     }
 
+    let langs = config.ordered_langs(&available);
     let default_lang = opts
         .default_lang
         .clone()
-        .unwrap_or_else(|| "en".to_string());
+        .unwrap_or_else(|| config.languages.default.clone());
     info!(
         "building {} languages ({})  default={}",
         langs.len(),
@@ -151,9 +153,17 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     }
 
     // ── 2. Write one HTML file per MultiPage.
+    let lang_order: Vec<&str> = langs.iter().map(|s| s.as_str()).collect();
     let mut page_count = 0;
     for mp in multi.values() {
-        write_multi_page(&opts.out, mp, &default_lang, &css, &opts.site_url)?;
+        write_multi_page(
+            &opts.out,
+            mp,
+            &default_lang,
+            &lang_order,
+            &css,
+            &opts.site_url,
+        )?;
         page_count += 1;
     }
 
@@ -177,6 +187,7 @@ fn write_multi_page(
     out: &Path,
     mp: &MultiPage,
     default_lang: &str,
+    lang_order: &[&str],
     css: &str,
     _site_url: &Option<String>,
 ) -> Result<()> {
@@ -198,6 +209,8 @@ fn write_multi_page(
     let mut html = String::new();
     html.push_str("<!doctype html>\n<html lang=\"");
     html.push_str(default_lang);
+    html.push_str("\" data-langs=\"");
+    html.push_str(&lang_order.join(","));
     html.push_str("\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>");
     html.push_str(&html_escape_text(&default.title));
     html.push_str("</title>\n<style>\n");
@@ -261,7 +274,7 @@ const LAGRANGE_JS: &str = r##"<script>
  </button><div class="lg-lang-panel"></div>';
  var trigger=sw.querySelector('.lg-lang-trigger');
  var panel=sw.querySelector('.lg-lang-panel');
- var ls=Object.keys(D).sort();
+ var ls=document.documentElement.dataset.langs?document.documentElement.dataset.langs.split(','):Object.keys(D).sort();
  for(var i=0;i<ls.length;i++){var l=ls[i];var o=document.createElement('a');o.href='?lang='+l;o.className='lg-lang-opt';o.dataset.lang=l;o.textContent=N[l]||l;o.onclick=function(e){e.preventDefault();sL(this.dataset.lang);panel.classList.remove('open')};panel.appendChild(o)}
  trigger.onclick=function(e){e.stopPropagation();panel.classList.toggle('open')};
  document.addEventListener('click',function(e){if(!e.target.closest('#lg-sw'))panel.classList.remove('open')});
