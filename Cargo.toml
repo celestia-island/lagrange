@@ -40,7 +40,7 @@ tokio = { version = "^1", features = ["net", "rt-multi-thread", "macros"] }
 tower-http = { version = "^0.6", features = ["fs"] }
 
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
-tairitsu-vdom = { git = "https://github.com/celestia-island/tairitsu.git", branch = "dev" }
-# Theming: hikari color palette.
-hikari-palette = { git = "https://github.com/celestia-island/hikari.git", branch = "dev" }
-hikari-icons = { git = "https://github.com/celestia-island/hikari.git", branch = "dev", default-features = false }
+tairitsu-vdom = "^0.5"
+# Theming: hikari color palette + icon system.
+hikari-palette = "^0.2"
+hikari-icons = { version = "^0.1", default-features = false }
