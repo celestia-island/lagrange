@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+/// Top-level configuration read from `lagrange.toml`.
 #[derive(Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
@@ -12,12 +13,14 @@ pub struct Config {
     pub languages: LanguagesConfig,
 }
 
+/// Site-wide settings (title, description).
 #[derive(Deserialize, Default)]
 pub struct SiteConfig {
     pub title: Option<String>,
     pub description: Option<String>,
 }
 
+/// Language ordering and default selection.
 #[derive(Deserialize)]
 pub struct LanguagesConfig {
     #[serde(default = "default_lang")]
