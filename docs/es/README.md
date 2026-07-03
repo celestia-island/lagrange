@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>Un motor de renderizado de documentación Markdown basado en pest — VDom tairitsu + paleta hikari, multilingüe desde el primer momento.</strong></p>
+<p align="center"><strong>Un motor de renderizado de documentación Markdown basado en pest — VDom tairitsu + paleta hikari, multilingüe desde el primer momento</strong></p>
 
 <div align="center">
 

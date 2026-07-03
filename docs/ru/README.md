@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>Инструмент рендеринга Markdown-документации на основе pest — VDom tairitsu + палитра hikari, многоязычный из коробки.</strong></p>
+<p align="center"><strong>Инструмент рендеринга Markdown-документации на основе pest — VDom tairitsu + палитра hikari, многоязычный из коробки</strong></p>
 
 <div align="center">
 

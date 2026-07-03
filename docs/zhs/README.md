@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>一个基于 pest 的 Markdown 文档渲染器——tairitsu VDom + hikari 调色板，开箱即用多语言。</strong></p>
+<p align="center"><strong>一个基于 pest 的 Markdown 文档渲染器——tairitsu VDom + hikari 调色板，开箱即用多语言</strong></p>
 
 <div align="center">
 

@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>منشئ توثيق Markdown مبني على pest — VDom tairitsu + لوحة ألوان hikari، متعدد اللغات جاهز للاستخدام.</strong></p>
+<p align="center"><strong>منشئ توثيق Markdown مبني على pest — VDom tairitsu + لوحة ألوان hikari، متعدد اللغات جاهز للاستخدام</strong></p>
 
 <div align="center">
 

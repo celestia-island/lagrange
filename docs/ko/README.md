@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>pest 기반 Markdown 문서 렌더러 — tairitsu VDom + hikari 팔레트, 다국어 기본 제공.</strong></p>
+<p align="center"><strong>pest 기반 Markdown 문서 렌더러 — tairitsu VDom + hikari 팔레트, 다국어 기본 제공</strong></p>
 
 <div align="center">
 
