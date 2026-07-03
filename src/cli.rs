@@ -1,7 +1,6 @@
 //! Command-line interface.
 
-use std::path::PathBuf;
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use clap::{Parser, Subcommand};
 use tracing::info;

@@ -22,11 +22,9 @@
 //!   answer to CJK without a dictionary).
 //! - Everything else is indexed as-is (emoji, symbols, …).
 
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
-
 use serde::Serialize;
+use std::{collections::BTreeMap, fs, path::Path};
+
 use tracing::info;
 
 /// Number of shards (must be ≥ 1). 16 shards keeps each file small for sites
