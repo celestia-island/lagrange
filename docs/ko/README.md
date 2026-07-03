@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>pest 기반 Markdown 문서 렌더러 — tairitsu VDom + hikari 팔레트, 다국어 기본 제공</strong></p>
+<p align="center"><strong>WASI 렌더링 Markdown 정적 사이트 도구 — 다국어 지원</strong></p>
 
 <div align="center">
 
@@ -28,13 +28,7 @@
 
 ## 소개
 
-Lagrange는 Markdown 폴더를 정적 다국어 문서 사이트로 변환합니다. 자체 작성한
-[pest](https://pest.rs) 문법으로 Markdown을 파싱하고,
-[tairitsu](https://github.com/celestia-island/tairitsu) 가상 DOM을 통해 AST를
-HTML로 렌더링하며, [hikari](https://github.com/celestia-island/hikari)
-팔레트로 테마를 적용합니다. 언어별로 하나의 디렉터리, 내장 언어 전환기,
-그리고 루트에서 영어로의 리다이렉트 — JavaScript 프레임워크도, mdBook도,
-Node 도구 체인도 필요 없습니다.
+Lagrange는 Markdown 폴더를 정적 다국어 문서 사이트로 변환합니다 — WASI로 렌더링되며, 내장 언어 전환기와 루트에서 영어로의 리다이렉트를 제공합니다. JavaScript 프레임워크도, mdBook도, Node 도구 체인도 필요 없습니다.
 
 Lagrange는 **자신의 문서를 직접 렌더링**합니다: 이 README 옆에 있는 `docs/`
 트리는 Lagrange 자체로 빌드됩니다(`just docs`). 게시된 사이트를 보고 계신다면,

@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>一个基于 pest 的 Markdown 文档渲染器——tairitsu VDom + hikari 调色板，开箱即用多语言</strong></p>
+<p align="center"><strong>基于 WASI 渲染的 Markdown 静态站点设施 — 开箱即用多语言</strong></p>
 
 <div align="center">
 
@@ -28,11 +28,9 @@
 
 ## 简介
 
-Lagrange 把一个 Markdown 文件夹变成多语言静态文档站点。它用自己编写的
-[pest](https://pest.rs) 语法解析 Markdown，通过 [tairitsu](https://github.com/celestia-island/tairitsu)
-虚拟 DOM 将 AST 渲染为 HTML，并用 [hikari](https://github.com/celestia-island/hikari)
-调色板进行主题美化。每种语言一个目录、内置语言切换器、根重定向到英文——无需
-JavaScript 框架、无需 mdBook、无需 Node 工具链。
+Lagrange 把一个 Markdown 文件夹变成静态的多语言文档站点 —— WASI 渲染，
+内置语言切换器，根重定向到英文。无需 JavaScript 框架、无需 mdBook、
+无需 Node 工具链。
 
 Lagrange 用它自身渲染自己的文档：README 旁边的 `docs/` 目录树就是 Lagrange 构建的
 （`just docs`）。如果你正在阅读已发布的站点，它就是由 Lagrange 生成的。

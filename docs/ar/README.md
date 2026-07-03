@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>منشئ توثيق Markdown مبني على pest — VDom tairitsu + لوحة ألوان hikari، متعدد اللغات جاهز للاستخدام</strong></p>
+<p align="center"><strong>أداة إنشاء مواقع Markdown ثابتة بتصيير WASI — متعددة اللغات</strong></p>
 
 <div align="center">
 
@@ -28,11 +28,8 @@
 
 ## مقدمة
 
-يحوّل Lagrange مجلدًا من ملفات Markdown إلى موقع توثيق ثابت متعدد اللغات.
-يعالج Markdown بقواعد [pest](https://pest.rs) المكتوبة يدويًا، ويعرض شجرة
-AST إلى HTML عبر DOM الافتراضي [tairitsu](https://github.com/celestia-island/tairitsu)،
-ويُطبّق السمات من لوحة ألوان [hikari](https://github.com/celestia-island/hikari).
-دليل واحد لكل لغة، ومبدّل لغة مدمج، وإعادة توجيه من الجذر إلى الإنجليزية —
+يحوّل Lagrange مجلدًا من ملفات Markdown إلى موقع توثيق ثابت متعدد اللغات —
+يُصيّر عبر WASI، مع مبدّل لغة مدمج وإعادة توجيه من الجذر إلى الإنجليزية.
 بلا أطر JavaScript، بلا mdBook، بلا سلسلة أدوات Node.
 
 يعرض Lagrange **توثيق نفسه**: شجرة `docs/` المجاورة لهذا الملف التمهيدي

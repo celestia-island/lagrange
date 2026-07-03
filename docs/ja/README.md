@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>pest ベースの Markdown ドキュメントレンダラー — tairitsu VDom + hikari パレット、多言語対応済</strong></p>
+<p align="center"><strong>WASI レンダリングの Markdown 静的サイト生成ツール — 多言語対応済</strong></p>
 
 <div align="center">
 
@@ -28,11 +28,8 @@
 
 ## 概要
 
-Lagrange は Markdown のフォルダを静的で多言語対応のドキュメントサイトに変換します。
-独自に記述した [pest](https://pest.rs) 文法で Markdown を解析し、AST を
-[tairitsu](https://github.com/celestia-island/tairitsu) 仮想 DOM で HTML にレンダリングし、
-[hikari](https://github.com/celestia-island/hikari) パレットでテーマを適用します。
-言語ごとに 1 ディレクトリ、組み込みの言語スイッチャー、ルートから英語へのリダイレクト —
+Lagrange は Markdown のフォルダを静的で多言語対応のドキュメントサイトに変換します ——
+WASI レンダリング、組み込みの言語スイッチャー、ルートから英語へのリダイレクト。
 JavaScript フレームワークも mdBook も Node ツールチェーンも不要です。
 
 Lagrange は**自身のドキュメント**をビルドします: この README と同階層の `docs/` ツリーは

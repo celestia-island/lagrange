@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>Un motor de renderizado de documentación Markdown basado en pest — VDom tairitsu + paleta hikari, multilingüe desde el primer momento</strong></p>
+<p align="center"><strong>Un generador de sitios estáticos Markdown renderizado con WASI — multilingüe</strong></p>
 
 <div align="center">
 
@@ -29,12 +29,9 @@
 ## Introducción
 
 Lagrange convierte una carpeta de archivos Markdown en un sitio de documentación
-estático y multilingüe. Analiza el Markdown con una gramática
-[pest](https://pest.rs) escrita a mano, renderiza el AST a HTML mediante el DOM
-virtual de [tairitsu](https://github.com/celestia-island/tairitsu) y aplica temas
-con la paleta [hikari](https://github.com/celestia-island/hikari). Un directorio
-por idioma, un selector de idioma integrado y una redirección raíz al inglés —
-sin frameworks JavaScript, sin mdBook, sin cadena de herramientas Node.
+estático y multilingüe — renderizado con WASI, con un selector de idioma
+integrado y una redirección raíz al inglés. Sin frameworks JavaScript, sin
+mdBook, sin cadena de herramientas Node.
 
 Lagrange renderiza **su propia documentación**: el árbol `docs/` junto a este
 README es construido por Lagrange mismo (`just docs`). Si estás leyendo el sitio

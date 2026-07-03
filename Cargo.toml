@@ -5,11 +5,11 @@ edition = "2021"
 rust-version = "1.80"
 authors = ["langyo <langyo.china@gmail.com>"]
 publish = true
-description = "Lagrange — a pest-based markdown documentation rendering facility, powered by tairitsu and hikari"
+description = "A WASI-rendered Markdown static site facility — multilingual out of the box"
 license-file = "LICENSE"
 readme = "README.md"
 repository = "https://github.com/celestia-island/lagrange"
-keywords = ["documentation", "markdown", "ssg", "pest", "rendering"]
+keywords = ["documentation", "markdown", "ssg", "wasi", "static-site"]
 categories = ["command-line-utilities", "text-processing", "web-programming"]
 exclude = ["docs/", "justfile", ".github/"]
 
