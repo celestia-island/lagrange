@@ -1,0 +1,7 @@
+[site]
+title = "Lagrange"
+description = "A pest-based markdown documentation renderer"
+
+[languages]
+default = "en"
+order = ["en", "zhs", "zht", "ja", "ko", "fr", "es", "ru", "ar"]

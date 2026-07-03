@@ -1,0 +1,64 @@
+// Lagrange inline markdown grammar.
+//
+// A pragmatic GFM-ish inline grammar parsed with pest. Block structure is
+// detected line-by-line in `parser.rs` (mirroring the ratatui-markdown scheme);
+// each block's text run is fed through this inline grammar, which yields a flat
+// (but nestable for emphasis) sequence of spans.
+//
+// Emphasis/strong use *atomic* inner atoms (see `strong_atom` / `em_atom`) that
+// do not recurse into arbitrary `span`s. This keeps the grammar linear — a line
+// full of `**bold**` cells (common in GFM tables) cannot trigger exponential
+// backtracking. The only nesting allowed is italic-around-bold
+// (`*… **b** …*`), which is bounded to two levels.
+
+inline_seq = { SOI ~ span* ~ EOI }
+
+span = {
+    badge_link
+  | image
+  | link
+  | code_span
+  | strong
+  | emphasis
+  | escape
+  | raw
+}
+
+// A link wrapping an image — `[![alt](img-url)](link-url)`. Standard shield.io
+// badge syntax. Matched before `link` so the nested `[`/`]` don't confuse the
+// generic label rule (which stops at the first `]`).
+badge_link = {
+    "[!" ~ "[" ~ (!"]" ~ ANY)* ~ "]" ~ "(" ~ url ~ ")" ~ "]" ~ "(" ~ url ~ ")"
+}
+
+image     = { "!" ~ label ~ "(" ~ url ~ ")" }
+link      = { label ~ "(" ~ url ~ ")" }
+label     = { "[" ~ (!"]" ~ ANY)* ~ "]" }
+url       = { (!")" ~ ANY)+ }
+
+code_span = { "`" ~ (!"`" ~ ANY)+ ~ "`" }
+
+// `strong`/`emphasis` close on their own delimiter; their inner atoms never
+// recurse into arbitrary spans (only into non-ambiguous atoms +, for emphasis,
+// one level of `strong`). Only `*`/`**` are treated as emphasis delimiters —
+// `_` is left literal so identifiers like `snake_case` / `my_var` in technical
+// prose are not mangled (CommonMark underscore flanking is deliberately not
+// modelled).
+strong      = { "**" ~ strong_atom* ~ "**" }
+emphasis    = { "*" ~ em_atom* ~ "*" }
+strong_atom = { code_span | image | link | badge_link | escape | raw_double_atom }
+em_atom     = { code_span | image | link | badge_link | strong | escape | raw_single_atom }
+
+// Atomic runs of non-special chars (relative to the delimiter set) so the
+// surrounding repetition is non-backtracking and produces few nodes.
+raw_double_atom = @{ ( !( "**" | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
+raw_single_atom = @{ ( !( "**" | "*" | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
+
+escape    = { "\\" ~ ANY }
+
+// Greedy run of non-special chars; the trailing `ANY` guarantees forward
+// progress even on an unmatched delimiter (e.g. a stray `*`). Atomic so it does
+// not contribute to backtracking at the span level.
+raw       = @{ (!special_start ~ ANY)+ | ANY }
+
+special_start = { "**" | "*" | "`" | "[" | "\\" | "!" }

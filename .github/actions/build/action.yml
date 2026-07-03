@@ -1,0 +1,27 @@
+name: Build docs with Lagrange
+
+description: Render a multilingual documentation tree into a static site.
+
+inputs:
+  src:
+    description: 'Source docs root (one subdirectory per language)'
+    default: 'docs'
+  out:
+    description: 'Output directory (site root)'
+    default: '_site'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: celestia-island/lagrange
+        ref: dev
+        path: .lagrange
+    - uses: dtolnay/rust-toolchain@stable
+    - shell: bash
+      run: |
+        cd .lagrange
+        cargo run --release -- build \
+          --src "${{ github.workspace }}/${{ inputs.src }}" \
+          --out "${{ github.workspace }}/${{ inputs.out }}"
