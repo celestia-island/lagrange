@@ -7,6 +7,7 @@ authors = ["langyo <langyo.china@gmail.com>"]
 publish = true
 description = "Lagrange — a pest-based markdown documentation rendering facility, powered by tairitsu and hikari"
 license-file = "LICENSE"
+readme = "README.md"
 repository = "https://github.com/celestia-island/lagrange"
 keywords = ["documentation", "markdown", "ssg", "pest", "rendering"]
 categories = ["command-line-utilities", "text-processing", "web-programming"]
