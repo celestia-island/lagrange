@@ -23,4 +23,4 @@ docs:
 dev:
     cargo run --release -- dev --src docs --out dist --port 0
 
-ci: fmt-check && clippy && test
+ci: fmt-check clippy test
