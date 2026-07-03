@@ -28,15 +28,22 @@
 
 ## Введение
 
-Lagrange превращает папку с Markdown-файлами в многоязычный статический
-документационный сайт. Парсинг осуществляется собственной грамматикой
-[pest](https://pest.rs), AST рендерится в HTML через виртуальный DOM
-[tairitsu](https://github.com/celestia-island/tairitsu), темы берутся из
-палитры [hikari](https://github.com/celestia-island/hikari). По одному
-каталогу на язык, встроенный переключатель языков, корневой редирект на
-английский — без JavaScript-фреймворков, без mdBook, без Node.
+Lagrange превращает папку с Markdown-файлами в статический, многоязычный
+документационный сайт. Парсинг осуществляется собственноручно написанной
+грамматикой [pest](https://pest.rs), AST рендерится в HTML через виртуальный
+DOM [tairitsu](https://github.com/celestia-island/tairitsu), а темы
+оформляются с использованием палитры
+[hikari](https://github.com/celestia-island/hikari). Один каталог на язык,
+встроенный переключатель языков и корневой редирект на английский — без
+JavaScript-фреймворков, без mdBook, без Node-инструментов.
+
+Lagrange рендерит **собственную документацию**: дерево `docs/` рядом с этим
+README собирается самим Lagrange (`just docs`). Если вы читаете
+опубликованный сайт, он был создан с помощью Lagrange.
 
 ## Быстрый старт
+
+Сборка сайта для этого самого репозитория:
 
 ```bash
 git clone https://github.com/celestia-island/lagrange
@@ -44,17 +51,93 @@ cd lagrange
 cargo run --release -- build --src docs --out target/site
 ```
 
-## Развёртывание
+Откройте `target/site/index.html` — он перенаправляет в английскую книгу.
 
-Вывод — статический каталог. Разворачивается на **GitHub Pages** (встроенный
-composite action), **Cloudflare Pages** или **Vercel**.
+Направьте Lagrange на любое дерево документации с той же структурой:
+
+```
+docs/
+├── logo.webp          # shared assets live at the docs root
+├── en/
+│   ├── README.md      # becomes <site>/en/index.html
+│   ├── SUMMARY.md     # drives the sidebar
+│   └── guides/*.md
+└── zhs/ …             # one directory per language
+```
+
+```bash
+lagrange build --src docs --out _site
+```
+
+`README.md` и `index.md` оба отображаются в `index.html`; символьная ссылка
+`docs/en/README.md` на корневой `README.md` — рекомендуемый способ
+синхронизации посадочной страницы GitHub и индекса документации.
+
+## Развёртывание сайта
+
+Lagrange создаёт обычный статический каталог, поэтому развёртывается где
+угодно. Сборка выполняется командой `lagrange build --src docs --out <dir>`
+(или `cargo run --release -- build …` при работе из исходного кода).
+
+### GitHub Actions → GitHub Pages
+
+Готовый composite action извлекает Lagrange рядом с вашим репозиторием и
+запускает сборку. Именно так использует его сам Lagrange
+([`.github/workflows/docs.yml`](../../.github/workflows/docs.yml)):
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: celestia-island/lagrange/.github/actions/build@dev
+        with:
+          src: docs
+          out: _site
+      - run: echo "your-project.docs.celestia.world" > _site/CNAME
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+```
+
+### Cloudflare Pages
+
+Команда сборки `cargo run --release -- build --src docs --out _site`, выходной
+каталог `_site`. Для предварительно собранного Lagrange — зеркалируйте
+[`celestia-island/lagrange`](https://github.com/celestia-island/lagrange) и
+запустите
+`cargo run --release -- build --src $DOCS_DIR --site_url $CF_PAGES_URL --out _site`.
+`--site_url` необязателен и влияет только на абсолютные ссылки в
+переключателе языков.
+
+### Vercel
+
+Предустановка фреймворка **Other**, команда сборки
+`cargo run --release -- build --src docs --out public`, выходной каталог
+`public`. (Vercel требуется инструментарий Rust — используйте
+[`vercel-rust`](https://github.com/vercel-community/rust) runtime builder,
+либо соберите в предыдущем шаге CI и разверните статический вывод.)
 
 ## Возможности
 
-- **Парсер Markdown на основе pest** (блоки+inline, сырой HTML сохранён)
-- **Рендеринг VDom tairitsu**
-- **Многоязычный** — каталог на язык, встроенный переключатель
-- **Самодокументирование** — документация Lagrange собрана самим Lagrange
+- **Парсер Markdown на основе pest** — блочный + строчный, по образцу
+  [ratatui-markdown](https://github.com/celestia-island/ratatui-markdown),
+  плюс сквозной пропуск сырых HTML-блоков, чтобы центрированная разметка
+  README сохранялась.
+- **Рендеринг VDom tairitsu** — документы становятся деревьями `VNode`,
+  сериализуются через `render_to_html`.
+- **Многоязычность** — один каталог на язык, встроенный переключатель
+  языков и корневой редирект на английский.
+- **Самодокументирование** — документация Lagrange собрана самим Lagrange.
 
 ## Лицензия
 

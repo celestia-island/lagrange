@@ -120,7 +120,7 @@ switcher.
 
 Framework preset **Other**, build command
 `cargo run --release -- build --src docs --out public`, output directory
-`public`. (Vervel needs the Rust toolchain — use the
+`public`. (Vercel needs the Rust toolchain — use the
 [`vercel-rust`](https://github.com/vercel-community/rust) runtime builder, or
 build in a prior CI step and deploy the static output.)
 
