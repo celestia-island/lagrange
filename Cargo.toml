@@ -13,6 +13,9 @@ keywords = ["documentation", "markdown", "ssg", "wasi", "static-site"]
 categories = ["command-line-utilities", "text-processing", "web-programming"]
 exclude = ["docs/", "justfile", ".github/"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 name = "lagrange_library"
 path = "src/lib.rs"

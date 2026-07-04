@@ -15,7 +15,7 @@
 - **当前分支**：`dev`
 - **工作区**：干净
 - **最近提交时间**：2026-07-04
-- **最近提交**：docs: use GitHub raw URL for logo, bold English without self-link
+- **最近提交**：docs: add docs.rs badge + metadata + refresh PLAN.md
 - **分支对比**：`dev` 领先 `master` 39 个提交
 
 ## 3. 未提交改动
@@ -33,7 +33,12 @@
 
 ## 5. 后续计划
 
-1. 完善文档示例与 `crates.io` 发布元数据（rust-version / metadata / docs.rs badge）。
+1. ~~完善文档示例与 `crates.io` 发布元数据（rust-version / metadata / docs.rs badge）。~~ ✅
 2. 补充单元/集成测试，保持 `just test` 与 clippy `-D warnings` 通过。
 3. 定期刷新本 PLAN.md 以反映最新状态。
+
+### 已完成
+- `rust-version = "1.80"` ✅（已有）
+- `keywords` / `categories` / `description` / `repository` ✅（已有）
+- `docs.rs` badge + `[package.metadata.docs.rs]` all-features ✅（2026-07-04）
 
