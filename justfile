@@ -1,4 +1,6 @@
 set shell := ["bash", "-c"]
+import "./celestia-devtools.just"
+
 default:
     @just --list
 fmt:
@@ -23,4 +25,4 @@ docs:
 dev:
     cargo run --release -- dev --src docs --out dist --port 0
 
-ci: fmt-check && clippy && test
+ci: fmt-check clippy test

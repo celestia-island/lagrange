@@ -10,17 +10,17 @@
 //!
 //! The output is flat — no per-language subdirectories in the URL.
 
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::Instant;
-
 use anyhow::{Context, Result};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+    time::Instant,
+};
+
 use tracing::info;
 
-use crate::markdown;
-use crate::render;
-use crate::theme;
+use crate::{markdown, render, theme};
 
 /// Options for [`build`].
 pub struct BuildOptions {

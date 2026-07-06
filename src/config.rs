@@ -1,8 +1,7 @@
 //! Site configuration via `lagrange.toml`.
 
-use std::path::Path;
-
 use serde::Deserialize;
+use std::path::Path;
 
 /// Top-level configuration read from `lagrange.toml`.
 #[derive(Deserialize, Default)]

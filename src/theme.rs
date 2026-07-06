@@ -1,16 +1,16 @@
 //! Page theme — a self-contained stylesheet whose base colours come from the
 //! hikari palette (used directly, dogfooding hikari).
 
-use hikari_palette::{PURE_BLACK, PURE_WHITE};
+use hikari_palette::Color;
 
-fn hex(rgb: (u8, u8, u8)) -> String {
-    format!("#{:02x}{:02x}{:02x}", rgb.0, rgb.1, rgb.2)
+fn hex(c: &Color) -> String {
+    format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b())
 }
 
 /// Render the full site stylesheet.
 pub fn stylesheet() -> String {
-    let bg = hex(PURE_WHITE.rgb);
-    let fg = hex(PURE_BLACK.rgb);
+    let bg = hex(&Color::from_rgb_hex(0xff, 0xff, 0xff));
+    let fg = hex(&Color::from_rgb_hex(0x00, 0x00, 0x00));
     format!(
         r#":root {{
 --bg:{bg};--bg-subtle:#f7f7fa;--fg:{fg};--fg-sec:#5a5a6a;

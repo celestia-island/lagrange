@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.webp" alt="Lagrange" width="240" /></p>
+<p align="center"><img src="https://raw.githubusercontent.com/celestia-island/lagrange/master/docs/logo.webp" alt="Lagrange" width="240" /></p>
 
 <h1 align="center">Lagrange</h1>
 
@@ -8,13 +8,14 @@
 
 [![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](./LICENSE)
 [![Checks](https://img.shields.io/github/actions/workflow/status/celestia-island/lagrange/checks.yml)](https://github.com/celestia-island/lagrange/actions/workflows/checks.yml)
+[![crates.io](https://img.shields.io/crates/v/lagrange-library)](https://crates.io/crates/lagrange-library)
 [![Docs](https://img.shields.io/badge/docs-lagrange.docs.celestia.world-blue)](https://lagrange.docs.celestia.world)
 
 </div>
 
 <div align="center">
 
-[English](./docs/en/README.md) ·
+**English** ·
 [简体中文](./docs/zhs/README.md) ·
 [繁體中文](./docs/zht/README.md) ·
 [日本語](./docs/ja/README.md) ·
@@ -25,8 +26,6 @@
 [العربية](./docs/ar/README.md)
 
 </div>
-
-## Introduction
 
 Lagrange turns a folder of markdown into a static, multilingual documentation
 site — WASI-rendered, with a built-in language switcher and root redirect to
