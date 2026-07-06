@@ -46,5 +46,5 @@ tower-http = { version = "^0.6", features = ["fs"] }
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
 tairitsu-vdom = "^0.5"
 # Theming: hikari color palette + icon system.
-hikari-palette = "^0.2"
-hikari-icons = { version = "^0.1", default-features = false }
+hikari-palette = "^0.3"
+hikari-icons = { version = "^0.3", default-features = false }
