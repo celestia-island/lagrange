@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](../../LICENSE)
+[![License: SySL-1.0](https://img.shields.io/badge/License-SySL--1.0-blue.svg)](https://sysl.celestia.world)
 [![Checks](https://img.shields.io/github/actions/workflow/status/celestia-island/lagrange/checks.yml)](https://github.com/celestia-island/lagrange/actions/workflows/checks.yml)
 [![Docs](https://img.shields.io/badge/docs-lagrange.docs.celestia.world-blue)](https://lagrange.docs.celestia.world)
 
@@ -137,4 +137,4 @@ jobs:
 
 ## Лицензия
 
-SySL-1.0 (Synthetic Source License). См. [LICENSE](../../LICENSE).
+SySL-1.0 (Synthetic Source License). См. [LICENSE](https://sysl.celestia.world).
