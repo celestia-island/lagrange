@@ -173,6 +173,16 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 4. Build the search index.
     crate::search::write_index(&opts.out, &multi)?;
 
+    // ── 5. Emit a CNAME file when a custom domain is configured, so static
+    //      hosts (GitHub Pages / Cloudflare Pages / Vercel) pick it up without
+    //      a separate pipeline step.
+    if let Some(domain) = &config.site.cname {
+        let cname_path = opts.out.join("CNAME");
+        fs::write(&cname_path, format!("{domain}\n"))
+            .with_context(|| format!("write {}", cname_path.display()))?;
+        info!("wrote CNAME for {domain}");
+    }
+
     info!(
         "wrote {} pages in {:.1}s total",
         page_count,
