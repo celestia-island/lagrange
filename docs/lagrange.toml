@@ -1,6 +1,7 @@
 [site]
 title = "Lagrange"
 description = "A pest-based markdown documentation renderer"
+cname = "lagrange.docs.celestia.world"
 
 [languages]
 default = "en"

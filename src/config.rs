@@ -12,11 +12,16 @@ pub struct Config {
     pub languages: LanguagesConfig,
 }
 
-/// Site-wide settings (title, description).
+/// Site-wide settings (title, description, custom domain).
 #[derive(Deserialize, Default)]
 pub struct SiteConfig {
     pub title: Option<String>,
     pub description: Option<String>,
+    /// Custom domain for the deployed site. When set, the build writes a
+    /// `_site/CNAME` file containing this value so static hosts (GitHub Pages,
+    /// Cloudflare Pages, Vercel, …) bind the configured hostname without any
+    /// per-pipeline `echo` step.
+    pub cname: Option<String>,
 }
 
 /// Language ordering and default selection.
