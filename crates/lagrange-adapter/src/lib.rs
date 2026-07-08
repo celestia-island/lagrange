@@ -26,4 +26,9 @@ pub mod storage {
     pub use sqlite::SqliteStore;
 }
 
-pub use storage::{MemoryStore, SqliteStore};
+// Re-export the always-available store; the sqlite-backed one is gated so a
+// no-sqlite consumer (e.g. the edge crate) does not pull in rusqlite.
+#[cfg(feature = "memory")]
+pub use storage::MemoryStore;
+#[cfg(feature = "sqlite")]
+pub use storage::SqliteStore;

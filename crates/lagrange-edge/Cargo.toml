@@ -1,0 +1,22 @@
+[package]
+name = "lagrange-edge"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runtime-neutral HTTP handler for lagrange comments on the edge (CF Workers / Vercel / Firebase)"
+keywords = ["comments", "serverless", "edge", "cloudflare", "lagrange"]
+categories = ["web-programming", "api-bindings"]
+
+[dependencies]
+lagrange-protocol = { path = "../lagrange-protocol", version = "^0.1" }
+lagrange-adapter = { path = "../lagrange-adapter", version = "^0.1", default-features = false, features = ["memory"] }
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
+serde_urlencoded = "^0.7"
+tracing = "^0.1"
+
+[dev-dependencies]
+lagrange-adapter = { path = "../lagrange-adapter", default-features = false, features = ["memory"] }
