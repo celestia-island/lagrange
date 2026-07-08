@@ -62,6 +62,7 @@ members = [
     "crates/lagrange-adapter",
     "crates/lagrange-exchange",
     "crates/lagrange-migrate",
+    "crates/lagrange-server",
 ]
 resolver = "2"
 
