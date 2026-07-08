@@ -20,7 +20,12 @@ use std::{
 
 use tracing::info;
 
-use crate::{markdown, render, theme};
+use crate::{
+    comments::{self, MountInput},
+    config::CommentsConfig,
+    frontmatter::{self, FrontMatter},
+    markdown, render, theme,
+};
 
 /// Options for [`build`].
 pub struct BuildOptions {
@@ -35,6 +40,13 @@ pub struct LangPage {
     pub title: String,
     pub body: String,
     pub sidebar_html: String,
+    /// Parsed frontmatter (empty when the document had none). The title above
+    /// is already resolved from `frontmatter.title` if present, falling back to
+    /// the first heading — so callers do not need to re-derive it.
+    pub frontmatter: FrontMatter,
+    /// Pre-rendered comment mount-point HTML for this page (empty when comments
+    /// are inactive or opted out). Appended verbatim after the article body.
+    pub comments_mount: String,
 }
 
 /// All language variants of one logical page.
@@ -97,9 +109,17 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             let rel = md_path.strip_prefix(&lang_dir).unwrap_or(&md_path);
             let source = fs::read_to_string(&md_path)
                 .with_context(|| format!("read {}", md_path.display()))?;
-            let blocks = markdown::parse(&source);
+
+            // Peel frontmatter off before parsing — the grammar never sees it.
+            let (_fm_kind, fm, body_src) = frontmatter::strip(&source);
+            let blocks = markdown::parse(body_src);
             let body_raw = render::render_to_html(&blocks);
-            let title = first_heading(&blocks).unwrap_or_else(|| "Lagrange".to_string());
+            // Title: explicit frontmatter wins, else first heading, else default.
+            let title = fm
+                .title
+                .clone()
+                .or_else(|| first_heading(&blocks))
+                .unwrap_or_else(|| "Lagrange".to_string());
 
             // Compute output page path (README/index → index.html).
             let mut out_rel = rel.with_extension("html");
@@ -129,6 +149,16 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             // Rewrite asset paths (logo from README `docs/logo.webp`).
             let body = rewrite_asset_paths(&body_raw, &page_path);
 
+            // Compute the comment mount point for this page. `canonical` is the
+            // frontmatter value, falling back to nothing (the component will
+            // use `window.location.href`).
+            let comments_mount = build_comments_mount(
+                &config.comments,
+                &fm,
+                &page_path,
+                fm.canonical.as_deref(),
+            );
+
             let entry = multi.entry(page_path.clone()).or_insert_with(|| MultiPage {
                 pages: BTreeMap::new(),
                 page_path: page_path.clone(),
@@ -139,6 +169,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                     title,
                     body,
                     sidebar_html,
+                    frontmatter: fm,
+                    comments_mount,
                 },
             );
         }
@@ -169,6 +201,14 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 
     // ── 3. Copy assets.
     copy_root_assets(&opts.src, &opts.out)?;
+
+    // 3b. Copy the crate-shipped comment runtime (`assets/`) into
+    //     `_site/assets/` whenever the build references a custom-element mount
+    //     point. Skipped for the pure-static / public-embed modes so nothing
+    //     extra is shipped.
+    if needs_comment_runtime(&config.comments) {
+        copy_crate_assets(&opts.out)?;
+    }
 
     // ── 4. Build the search index.
     crate::search::write_index(&opts.out, &multi)?;
@@ -248,7 +288,13 @@ fn write_multi_page(
          <main class=\"content\" id=\"lg-body\">\n",
     );
     html.push_str(&default.body);
-    html.push_str("\n</main>\n</div>\n");
+    html.push_str("\n</main>\n");
+
+    // Comment mount point (empty when comments are inactive — pure static).
+    // Appended as a sibling after </main>, never inside the article body.
+    html.push_str(&default.comments_mount);
+
+    html.push_str("</div>\n");
 
     // Embedded language data.
     html.push_str("<script type=\"application/json\" id=\"lg-data\">");
@@ -356,11 +402,42 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
 impl serde::Serialize for LangPage {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("LangPage", 3)?;
+        // Three "live" fields (consumed by the client language switcher) plus a
+        // `meta` bag carrying frontmatter-derived fields the front-end may want
+        // (title is duplicated here intentionally so a language switch does not
+        // lose the explicit frontmatter title). The comment mount is NOT
+        // serialised — it is static HTML, identical across languages.
+        let mut st = s.serialize_struct("LangPage", 4)?;
         st.serialize_field("title", &self.title)?;
         st.serialize_field("body", &self.body)?;
         st.serialize_field("sidebar_html", &self.sidebar_html)?;
+        st.serialize_field("meta", &PageMeta::from(&self.frontmatter))?;
         st.end()
+    }
+}
+
+/// The subset of frontmatter surfaced to the client (for the language switcher
+/// and any future progressive enhancement). Kept small and optional.
+#[derive(serde::Serialize)]
+struct PageMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+impl From<&FrontMatter> for PageMeta {
+    fn from(fm: &FrontMatter) -> Self {
+        Self {
+            date: fm.date.clone(),
+            category: fm.category.clone(),
+            tags: fm.tags.clone(),
+            description: fm.description.clone(),
+        }
     }
 }
 
@@ -402,6 +479,24 @@ fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
 }
 
 // ── markdown helpers ──────────────────────────────────────────────────────
+
+/// Build the per-page comment mount-point HTML. Thin wrapper around
+/// [`comments::mount_html`] that assembles the [`MountInput`] from the site
+/// config and the page's frontmatter.
+fn build_comments_mount(
+    config: &CommentsConfig,
+    fm: &FrontMatter,
+    page_path: &str,
+    canonical: Option<&str>,
+) -> String {
+    let input = MountInput {
+        config,
+        frontmatter: fm,
+        page_path,
+        canonical,
+    };
+    comments::mount_html(&input)
+}
 
 fn first_heading(blocks: &[markdown::Block]) -> Option<String> {
     for b in blocks {
@@ -529,6 +624,61 @@ fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// True when the configured comment mode needs the lagrange comment runtime
+/// (the `<lagrange-comments>` custom element + its JS/CSS). The third-party
+/// embeds (`disqus`/`giscus`/`github-issue`) ship their own scripts, so they
+/// do not need our runtime; `none` obviously needs nothing.
+fn needs_comment_runtime(config: &CommentsConfig) -> bool {
+    use crate::config::CommentMode;
+    config.is_active()
+        && matches!(
+            config.mode,
+            CommentMode::Faas | CommentMode::SelfHost | CommentMode::StaticJson
+        )
+}
+
+/// Copy the crate-shipped `assets/` directory (next to `src/`) into
+/// `<out>/assets/`. The runtime files (`lagrange-comments.js`, its CSS) live
+/// in the source tree so they are versioned alongside the Rust code that
+/// emits the mount points.
+fn copy_crate_assets(out: &Path) -> Result<()> {
+    let crate_assets = crate_assets_dir();
+    if !crate_assets.is_dir() {
+        // Nothing to ship (e.g. the runtime has not been added yet). Warn
+        // rather than fail so an in-progress tree still builds.
+        tracing::warn!(
+            "comment mode needs /assets/ but crate assets dir not found at {}; \
+             pages will reference /assets/lagrange-comments.js which will 404",
+            crate_assets.display()
+        );
+        return Ok(());
+    }
+    let dest = out.join("assets");
+    fs::create_dir_all(&dest)?;
+    for entry in fs::read_dir(&crate_assets)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            fs::copy(&path, dest.join(entry.file_name()))?;
+        }
+    }
+    info!("copied comment runtime assets → {}", dest.display());
+    Ok(())
+}
+
+/// Locate the crate's bundled `assets/` directory. Resolved relative to the
+/// compiled binary's CARGO_MANIFEST_DIR when available (dev/test), otherwise
+/// falls back to a sibling of the executable.
+fn crate_assets_dir() -> PathBuf {
+    if let Some(manifest) = option_env!("CARGO_MANIFEST_DIR") {
+        return PathBuf::from(manifest).join("assets");
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("assets")))
+        .unwrap_or_else(|| PathBuf::from("assets"))
 }
 
 // ── utils ─────────────────────────────────────────────────────────────────
