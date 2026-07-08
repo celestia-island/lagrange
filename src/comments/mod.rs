@@ -348,6 +348,13 @@ mod tests {
     }
 
     #[test]
+    fn github_issue_mount_emits_utterances() {
+        let html = mount(CommentMode::GithubIssue, &fm());
+        assert!(html.contains("utteranc.es/client.js"));
+        assert!(html.contains("repo=\"owner/repo\""));
+    }
+
+    #[test]
     fn node_id_falls_back_to_slug_then_page_path() {
         // No explicit node_id, but a slug.
         let mut fm = fm();

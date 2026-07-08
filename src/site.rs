@@ -213,6 +213,13 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 4. Build the search index.
     crate::search::write_index(&opts.out, &multi)?;
 
+    // 4b. BBS projection: when enabled, emit a boards index per language that
+    //     groups pages by their frontmatter `category`. Pure static — the board
+    //     listing is just another generated HTML page linking to the articles.
+    if config.bbs.enabled {
+        write_boards_index(&opts.out, &multi, &langs, &css, &config.bbs.boards_path)?;
+    }
+
     // ── 5. Emit a CNAME file when a custom domain is configured, so static
     //      hosts (GitHub Pages / Cloudflare Pages / Vercel) pick it up without
     //      a separate pipeline step.
@@ -679,6 +686,77 @@ fn crate_assets_dir() -> PathBuf {
         .ok()
         .and_then(|p| p.parent().map(|p| p.join("assets")))
         .unwrap_or_else(|| PathBuf::from("assets"))
+}
+
+/// Emit a per-language boards index page when `[bbs] enabled = true`.
+///
+/// For each language, group every page that carries a `category` frontmatter
+/// by that category, and write `<out>/<boards_path>/index.html` listing the
+/// boards with their post counts and links. Pages without a category are
+/// omitted (they don't belong to a board). This is a pure-static projection —
+/// no new data model, just a generated listing over the same pages.
+fn write_boards_index(
+    out: &Path,
+    multi: &BTreeMap<String, MultiPage>,
+    langs: &[String],
+    css: &str,
+    boards_path: &str,
+) -> Result<()> {
+    for lang in langs {
+        // Collect (category, title, url) for every page in this language that
+        // has a category.
+        let mut boards: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+        for mp in multi.values() {
+            let Some(page) = mp.pages.get(lang) else {
+                continue;
+            };
+            let Some(cat) = &page.frontmatter.category else {
+                continue;
+            };
+            let title = page.title.clone();
+            let url = format!("/{}", mp.page_path);
+            boards
+                .entry(cat.clone())
+                .or_default()
+                .push((title, url));
+        }
+        if boards.is_empty() {
+            continue;
+        }
+
+        let dir = out.join(lang).join(boards_path);
+        fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+
+        let mut body = String::new();
+        body.push_str("<h1>Boards</h1>\n");
+        // Sort each board's posts, then render alphabetically by board name.
+        for posts in boards.values_mut() {
+            posts.sort();
+        }
+        for (cat, posts) in boards.iter() {
+            body.push_str(&format!("<h2>{}</h2>\n<ul>\n", html_escape_text(cat)));
+            for (title, url) in posts {
+                body.push_str(&format!(
+                    "  <li><a href=\"{}\">{}</a></li>\n",
+                    url,
+                    html_escape_text(title)
+                ));
+            }
+            body.push_str("</ul>\n");
+        }
+
+        let html = format!(
+            "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n\
+             <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n\
+             <title>Boards</title>\n<style>\n{css}\n</style>\n</head>\n<body>\n\
+             <div class=\"layout\"><main class=\"content\">\n{body}\n</main></div>\n\
+             </body>\n</html>\n"
+        );
+        let path = dir.join("index.html");
+        fs::write(&path, html).with_context(|| format!("write {}", path.display()))?;
+        info!("wrote boards index for {lang} ({} board(s))", boards.len());
+    }
+    Ok(())
 }
 
 // ── utils ─────────────────────────────────────────────────────────────────
