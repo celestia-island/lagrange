@@ -646,47 +646,56 @@ fn needs_comment_runtime(config: &CommentsConfig) -> bool {
         )
 }
 
-/// Copy the crate-shipped `assets/` directory (next to `src/`) into
-/// `<out>/assets/`. The runtime files (`lagrange-comments.js`, its CSS) live
-/// in the source tree so they are versioned alongside the Rust code that
-/// emits the mount points.
+/// Copy the crate-shipped browser runtime (`lagrange-comments.js` + CSS) into
+/// `<out>/assets/`.
+///
+/// The asset bytes are embedded into the binary at compile time (via
+/// [`build.rs`](../build.rs), following the hikari-components `OUT_DIR` +
+/// `include_str!` convention), so this works for a prebuilt binary installed
+/// from crates.io — no source tree or exe-sibling filesystem lookup needed.
 fn copy_crate_assets(out: &Path) -> Result<()> {
-    let crate_assets = crate_assets_dir();
-    if !crate_assets.is_dir() {
-        // Nothing to ship (e.g. the runtime has not been added yet). Warn
-        // rather than fail so an in-progress tree still builds.
+    #[cfg(lagrange_assets_empty)]
+    {
+        // build.rs found no assets to embed (stripped source tree). The site
+        // still builds; pages referencing /assets/lagrange-comments.js will
+        // 404 unless the operator supplies their own runtime.
         tracing::warn!(
-            "comment mode needs /assets/ but crate assets dir not found at {}; \
-             pages will reference /assets/lagrange-comments.js which will 404",
-            crate_assets.display()
+            "comment mode needs /assets/ but no browser runtime was embedded at \
+             build time; pages will reference /assets/lagrange-comments.js which will 404"
         );
         return Ok(());
     }
-    let dest = out.join("assets");
-    fs::create_dir_all(&dest)?;
-    for entry in fs::read_dir(&crate_assets)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_file() {
-            fs::copy(&path, dest.join(entry.file_name()))?;
+
+    #[cfg(not(lagrange_assets_empty))]
+    {
+        let dest = out.join("assets");
+        fs::create_dir_all(&dest)?;
+        for (name, bytes) in EMBEDDED_ASSETS {
+            fs::write(dest.join(name), bytes)?;
         }
+        info!(
+            "embedded {} browser runtime asset(s) → {}",
+            EMBEDDED_ASSETS.len(),
+            dest.display()
+        );
+        Ok(())
     }
-    info!("copied comment runtime assets → {}", dest.display());
-    Ok(())
 }
 
-/// Locate the crate's bundled `assets/` directory. Resolved relative to the
-/// compiled binary's CARGO_MANIFEST_DIR when available (dev/test), otherwise
-/// falls back to a sibling of the executable.
-fn crate_assets_dir() -> PathBuf {
-    if let Some(manifest) = option_env!("CARGO_MANIFEST_DIR") {
-        return PathBuf::from(manifest).join("assets");
-    }
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.join("assets")))
-        .unwrap_or_else(|| PathBuf::from("assets"))
-}
+/// The browser-side assets embedded at compile time by `build.rs`. Each entry
+/// is `(filename, bytes)`. Adding a new asset only requires dropping it in
+/// `assets/` and listing it here.
+#[cfg(not(lagrange_assets_empty))]
+const EMBEDDED_ASSETS: &[(&str, &str)] = &[
+    (
+        "lagrange-comments.js",
+        include_str!(concat!(env!("OUT_DIR"), "/lagrange_assets/lagrange-comments.js")),
+    ),
+    (
+        "lagrange-comments.css",
+        include_str!(concat!(env!("OUT_DIR"), "/lagrange_assets/lagrange-comments.css")),
+    ),
+];
 
 /// Emit a per-language boards index page when `[bbs] enabled = true`.
 ///
