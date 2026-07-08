@@ -58,12 +58,12 @@ hikari-icons = { version = "^0.3", default-features = false }
 # and are published independently.
 [workspace]
 members = [
-    "crates/lagrange-protocol",
-    "crates/lagrange-adapter",
-    "crates/lagrange-exchange",
-    "crates/lagrange-migrate",
-    "crates/lagrange-server",
-    "crates/lagrange-edge",
+    "packages/protocol",
+    "packages/adapter",
+    "packages/exchange",
+    "packages/migrate",
+    "packages/server",
+    "packages/edge",
 ]
 resolver = "2"
 

@@ -15,7 +15,7 @@ name = "lagrange-migrate"
 path = "src/main.rs"
 
 [dependencies]
-lagrange-exchange = { path = "../lagrange-exchange", version = "^0.1" }
+lagrange-exchange = { path = "../exchange", version = "^0.1" }
 clap = { version = "^4", features = ["derive"] }
 anyhow = "^1"
 tracing = "^0.1"

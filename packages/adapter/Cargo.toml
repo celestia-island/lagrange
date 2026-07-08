@@ -11,7 +11,7 @@ keywords = ["comments", "storage", "sqlite", "lagrange", "adapter"]
 categories = ["web-programming", "database"]
 
 [dependencies]
-lagrange-protocol = { path = "../lagrange-protocol", version = "^0.1" }
+lagrange-protocol = { path = "../protocol", version = "^0.1" }
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 # Markdown → sanitised HTML for comment bodies. Enable the `html` feature

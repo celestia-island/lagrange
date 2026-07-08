@@ -15,8 +15,8 @@ name = "lagrange-server"
 path = "src/main.rs"
 
 [dependencies]
-lagrange-protocol = { path = "../lagrange-protocol", version = "^0.1" }
-lagrange-adapter = { path = "../lagrange-adapter", version = "^0.1" }
+lagrange-protocol = { path = "../protocol", version = "^0.1" }
+lagrange-adapter = { path = "../adapter", version = "^0.1" }
 rusqlite = { version = "^0.32", features = ["bundled"] }
 axum = "^0.8"
 tokio = { version = "^1", features = ["full"] }
