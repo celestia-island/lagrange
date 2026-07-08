@@ -50,3 +50,19 @@ tairitsu-vdom = "^0.5"
 # Theming: hikari color palette + icon system.
 hikari-palette = "^0.3"
 hikari-icons = { version = "^0.3", default-features = false }
+
+# ── workspace ──────────────────────────────────────────────────────────────
+# The root package (this crate, `lagrange-library`) is a workspace member by
+# default. Sibling crates under `crates/` implement the comment backend and
+# migration facilities; they depend on `lagrange-protocol` for the wire format
+# and are published independently.
+[workspace]
+members = ["crates/lagrange-protocol", "crates/lagrange-adapter"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.80"
+authors = ["langyo <langyo.china@gmail.com>"]
+license = "SySL-1.0"
+repository = "https://github.com/celestia-island/lagrange"
