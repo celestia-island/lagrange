@@ -57,7 +57,12 @@ hikari-icons = { version = "^0.3", default-features = false }
 # migration facilities; they depend on `lagrange-protocol` for the wire format
 # and are published independently.
 [workspace]
-members = ["crates/lagrange-protocol", "crates/lagrange-adapter"]
+members = [
+    "crates/lagrange-protocol",
+    "crates/lagrange-adapter",
+    "crates/lagrange-exchange",
+    "crates/lagrange-migrate",
+]
 resolver = "2"
 
 [workspace.package]

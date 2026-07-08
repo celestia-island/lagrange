@@ -1,0 +1,22 @@
+[package]
+name = "lagrange-migrate"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI to migrate content from WordPress / Hexo / Zola / Hugo / Jekyll into lagrange"
+keywords = ["migration", "wordpress", "hexo", "lagrange", "cli"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "lagrange-migrate"
+path = "src/main.rs"
+
+[dependencies]
+lagrange-exchange = { path = "../lagrange-exchange", version = "^0.1" }
+clap = { version = "^4", features = ["derive"] }
+anyhow = "^1"
+tracing = "^0.1"
+tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
