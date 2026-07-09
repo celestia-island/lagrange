@@ -4,6 +4,7 @@
 //! Code blocks are rendered through hikari's `CodeHighlight` component;
 //! the document body is wrapped in a hikari `Card` for consistent styling.
 
+use hikari_components::basic::{Card, CardProps};
 use hikari_components::production::{CodeHighlight, CodeHighlightProps};
 use tairitsu_vdom::{el, txt, VNode};
 
@@ -18,7 +19,12 @@ pub fn render_to_html(blocks: &[Block]) -> String {
 /// HTML for any [`Block::LiveComponent`] blocks supplied via `live_html`.
 /// Keys in `live_html` are the source strings (matching the AST).
 pub fn render_to_html_with_live(blocks: &[Block], live_html: &std::collections::HashMap<String, String>) -> String {
-    render_blocks_with_live(blocks, live_html).render_to_html()
+    let inner = render_blocks_with_live(blocks, live_html);
+    // Wrap the entire body in a hikari Card for consistent visual framing.
+    Card(CardProps {
+        children: inner,
+        ..Default::default()
+    }).render_to_html()
 }
 
 /// Render markdown blocks to a tairitsu [`VNode`] fragment.

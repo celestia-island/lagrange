@@ -64,7 +64,8 @@ hikari-palette = "^0.3"
 hikari-icons = { version = "^0.3", default-features = false }
 # Hikari UI components (Card, CodeHighlight, Typography, etc.) — rendered via
 # tairitsu-vdom SSR at build time, same VNode→HTML path lagrange already uses.
-hikari-components = "^0.3"
+# Uses local path for dev; crates.io consumers get the published version.
+hikari-components = { version = "^0.3", path = "../hikari/packages/components" }
 
 [dev-dependencies]
 tempfile = "^3"
