@@ -59,6 +59,40 @@ pub enum Command {
         /// interfaces and prints the chosen address.
         #[arg(long, default_value = "0")]
         port: u16,
+        /// Also start a local comment backend (in-memory, port --comments-port).
+        /// Pages built with `mode = proxied` will find it automatically.
+        #[arg(long)]
+        comments: bool,
+        /// Port for the local comment backend when `--comments` is set.
+        #[arg(long, default_value = "18099")]
+        comments_port: u16,
+    },
+    /// Scaffold a new lagrange documentation site.
+    Init {
+        /// Target directory. Defaults to the current directory.
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        /// Site title.
+        #[arg(long)]
+        title: Option<String>,
+        /// Default language code.
+        #[arg(long, default_value = "en")]
+        lang: String,
+        /// Comment source to wire: none | native | github-discussions | disqus.
+        #[arg(long, default_value = "none")]
+        comments: String,
+    },
+    /// Link a comment source: fetch the IDs needed and update lagrange.toml.
+    CommentsLink {
+        /// Source root containing lagrange.toml.
+        #[arg(long, default_value = "docs")]
+        src: PathBuf,
+        /// GitHub repo as owner/name (for github-discussions source).
+        #[arg(long)]
+        repo: Option<String>,
+        /// Disqus shortname (for disqus source).
+        #[arg(long)]
+        disqus: Option<String>,
     },
 }
 
@@ -86,6 +120,8 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             interval,
             port,
             default_lang,
+            comments,
+            comments_port,
         } => {
             info!("lagrange dev — build + watch ({interval}s poll)");
             let opts = BuildOptions {
@@ -130,6 +166,18 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             });
 
+            // Optionally start a local in-memory comment backend on its own
+            // thread, so pages built with `mode = proxied` can talk to it.
+            if comments {
+                let cport = comments_port;
+                std::thread::spawn(move || {
+                    if let Err(e) = crate::scaffold::run_dev_comments(cport) {
+                        tracing::error!("comment backend error: {e}");
+                    }
+                });
+                info!("comment backend on http://127.0.0.1:{comments_port} (in-memory)");
+            }
+
             info!(
                 "watching {} …  open http://{bind_addr}/index.html?lang={dl}",
                 src.display(),
@@ -138,6 +186,15 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             // watch_loop blocks forever; rt stays alive in this scope.
             watch_loop(src, out, site_url, default_lang, interval)?;
             Ok(())
+        }
+        Command::Init {
+            dir,
+            title,
+            lang,
+            comments,
+        } => crate::scaffold::init_site(&dir, title.as_deref(), &lang, &comments),
+        Command::CommentsLink { src, repo, disqus } => {
+            crate::scaffold::comments_link(&src, repo.as_deref(), disqus.as_deref())
         }
     }
 }

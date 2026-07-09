@@ -14,6 +14,7 @@ pub mod frontmatter;
 pub mod icons;
 pub mod markdown;
 pub mod render;
+pub mod scaffold;
 pub mod search;
 pub mod site;
 pub mod theme;
