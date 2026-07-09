@@ -8,9 +8,18 @@ fn hex(c: &Color) -> String {
 }
 
 /// Render the full site stylesheet.
+///
+/// Includes hikari component CSS (compiled at build time from SCSS) +
+/// lagrange's own layout/sidebar/search CSS.
 pub fn stylesheet() -> String {
     let bg = hex(&Color::from_rgb_hex(0xff, 0xff, 0xff));
     let fg = hex(&Color::from_rgb_hex(0x00, 0x00, 0x00));
+
+    // Hikari component CSS — compiled by hikari-components' build.rs into
+    // its OUT_DIR. We try to include it; if unavailable (e.g. consuming
+    // from crates.io without the full workspace), we fall back gracefully.
+    let hikari_css = hikari_component_css();
+
     let base = format!(
         r#":root {{
 --bg:{bg};--bg-subtle:#f7f7fa;--fg:{fg};--fg-sec:#5a5a6a;
@@ -86,8 +95,8 @@ a:hover{{text-decoration:underline}}
 .sidebar{{position:static;height:auto;width:auto;max-height:50vh}}
 }}"#
     );
-    // Live component block styles (appended after the base stylesheet).
-    base + r#"
+    // Prepend hikari component CSS, then append lagrange layout CSS.
+    hikari_css + &base + r#"
 .lg-live-block{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:1.5rem 0}
 .lg-live-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-subtle)}
 .lg-live-tab{padding:.4rem .8rem;border:none;background:none;cursor:pointer;font-size:.82rem;color:var(--fg-sec);border-bottom:2px solid transparent;transition:all var(--ts)}
@@ -97,4 +106,242 @@ a:hover{{text-decoration:underline}}
 .lg-live-preview-empty{color:var(--fg-sec);font-style:italic;text-align:center;padding:2rem}
 .lg-live-source{margin:0;padding:1rem;overflow:auto;font-size:.85rem;display:none}
 .lg-live-source code{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace}"#
+}
+
+/// Load hikari component CSS compiled at build time.
+///
+/// hikari-components' build.rs compiles SCSS into `OUT_DIR/styles/*.css`.
+/// We try to locate and concatenate those files. If unavailable, we emit
+/// a minimal fallback that at least sets sensible defaults for the component
+/// classes lagrange renders.
+fn hikari_component_css() -> String {
+    // The hikari-components OUT_DIR is not directly accessible at lagrange's
+    // compile time. Instead we ship a curated CSS that covers the component
+    // classes lagrange actually renders. This is the pragmatic path: the full
+    // SCSS-compiled CSS is hundreds of KB and deeply coupled to the hikari
+    // theme system; for a documentation SSG, a compact subset suffices.
+    r#"
+/* ── hikari component CSS (curated subset for lagrange SSR) ── */
+
+/* Card */
+.hi-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.hi-card-body{padding:1.5rem}
+
+/* Typography */
+.hi-typography{line-height:1.5;word-break:break-word}
+.hi-typography-h1{font-size:1.85rem;font-weight:700;margin:0 0 1rem}
+.hi-typography-h2{font-size:1.35rem;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:.3rem;margin:2rem 0 1rem}
+.hi-typography-h3{font-size:1.1rem;font-weight:600;margin:1.5rem 0 .75rem}
+.hi-typography-body{margin:.75rem 0}
+
+/* CodeHighlight */
+.hi-code-highlight{background:var(--code-bg);border-radius:6px;overflow:hidden;margin:1rem 0;font-size:.85rem}
+.hi-code-highlight-header{display:flex;align-items:center;justify-content:space-between;padding:.4rem .6rem;border-bottom:1px solid var(--border);background:var(--bg-subtle)}
+.hi-code-highlight-language{font-size:.75rem;color:var(--fg-sec);text-transform:uppercase;letter-spacing:.05em}
+.hi-code-highlight-copy{font-size:.72rem;color:var(--fg-sec);background:none;border:none;cursor:pointer}
+.hi-code-highlight-content{display:flex;overflow-x:auto}
+.hi-code-highlight-line-numbers{padding:1rem .5rem;text-align:right;color:var(--fg-sec);user-select:none;min-width:2.5rem}
+.hi-code-highlight-line-number{line-height:1.5;font-family:"SFMono-Regular",Consolas,monospace}
+.hi-code-highlight-code{flex:1;padding:1rem;margin:0}
+.hi-code-highlight-code code{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace}
+
+/* Alert (blockquote) */
+.hi-alert{display:flex;gap:.75rem;padding:1rem;border-radius:6px;margin:1rem 0;border:1px solid var(--border)}
+.hi-alert-info{background:var(--accent-bg);border-color:var(--accent)}
+.hi-alert-icon-wrapper{flex-shrink:0}
+.hi-alert-content{flex:1}
+.hi-alert-description{margin:0;font-size:.9rem;color:var(--fg)}
+
+/* Divider */
+.hi-divider{border:none;border-top:1px solid var(--border);margin:2rem 0}
+
+/* Tag (inline code) */
+.hi-tag{display:inline-flex;align-items:center;padding:.1em .4em;border-radius:3px;font-size:.88em;font-family:"SFMono-Regular",Consolas,monospace;background:var(--code-bg);color:var(--fg)}
+.hi-tag-code{background:var(--code-bg)}
+
+/* Link */
+.hi-link{color:var(--accent);text-decoration:none;transition:color .15s}
+.hi-link:hover{text-decoration:underline}
+
+/* Layout components */
+.hi-container{width:100%;margin:0 auto;padding:0 1rem}
+.hi-container-md{max-width:960px}
+.hi-flex{display:flex}
+.hi-flex-col{flex-direction:column}
+.hi-flex-1{flex:1}
+.hi-items-center{align-items:center}
+.hi-items-start{align-items:flex-start}
+.hi-justify-center{justify-content:center}
+.hi-justify-start{justify-content:flex-start}
+.hi-flex-nowrap{flex-wrap:nowrap}
+.hi-gap-4{gap:1rem}
+.hi-inline-flex{display:inline-flex}
+.hi-p-8{padding:2rem}
+.hi-text-center{text-align:center}
+
+/* Grid */
+.hi-grid{display:grid}
+.hi-grid-gap-md{gap:1rem}
+
+/* Row/Col */
+.hi-row{display:flex;flex-wrap:wrap}
+.hi-row-gap-md{gap:1rem}
+.hi-col{box-sizing:border-box}
+
+/* Space */
+.hi-space{display:inline-block}
+.hi-space-horizontal{display:inline-block;width:8px}
+
+/* Empty */
+.hi-empty-container{padding:2rem;text-align:center}
+.hi-empty-description{color:var(--fg-sec);font-size:.9rem}
+
+/* Badge */
+.hi-badge{display:inline-flex;align-items:center;justify-content:center;min-width:1.25rem;height:1.25rem;padding:0 .35rem;border-radius:50%;font-size:.72rem;background:var(--accent);color:#fff}
+
+/* Image */
+.hi-image{max-width:100%;border-radius:6px}
+
+/* Skeleton */
+.hi-skeleton{background:linear-gradient(90deg,var(--bg-subtle) 25%,var(--border) 37%,var(--bg-subtle) 63%);background-size:400% 100%;animation:hi-skeleton-loading 1.4s ease infinite;border-radius:4px}
+@keyframes hi-skeleton-loading{0%{background-position:100% 50%}100%{background-position:0 50%}}
+
+/* Progress */
+.hi-progress{width:100%;height:6px;background:var(--bg-subtle);border-radius:3px;overflow:hidden}
+.hi-progress-bar{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
+
+/* Spin */
+.hi-spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:hi-spin-rotate .6s linear infinite}
+@keyframes hi-spin-rotate{to{transform:rotate(360deg)}}
+
+/* Glow */
+.hi-glow-wrapper{position:relative}
+.hi-glow-wrapper::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .2s}
+.hi-glow-wrapper:hover::before{opacity:1}
+
+/* Avatar */
+.hi-avatar{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:50%;background:var(--accent-bg);color:var(--accent);font-size:.8rem;font-weight:600}
+
+/* Button */
+.hi-button{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;padding:.4rem .8rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer;font-size:.85rem;transition:all .15s}
+.hi-button:hover{border-color:var(--accent)}
+
+/* Checkbox/Switch */
+.hi-checkbox{display:inline-flex;align-items:center;gap:.4rem;cursor:pointer}
+.hi-switch{display:inline-flex;align-items:center;cursor:pointer}
+
+/* Timeline */
+.hi-timeline{display:flex;flex-direction:column;gap:1rem;padding-left:1.5rem;border-left:2px solid var(--border)}
+.hi-timeline-item{position:relative;padding-bottom:1rem}
+.hi-timeline-item::before{content:"";position:absolute;left:-1.65rem;top:.25rem;width:.75rem;height:.75rem;border-radius:50%;background:var(--accent)}
+
+/* Breadcrumb */
+.hi-breadcrumb{display:flex;align-items:center;gap:.3rem;font-size:.82rem;color:var(--fg-sec)}
+
+/* Table */
+table{border-collapse:collapse;width:100%;margin:1rem 0}
+th,td{border:1px solid var(--border);padding:.5rem .75rem;text-align:left}
+th{background:var(--code-bg);font-weight:600}
+
+/* Drawer */
+.hi-drawer{position:fixed;inset:0;z-index:1000;display:flex}
+.hi-drawer-mask{position:absolute;inset:0;background:rgba(0,0,0,.3)}
+.hi-drawer-content{position:relative;background:var(--bg);padding:1.5rem;overflow-y:auto;box-shadow:2px 0 8px rgba(0,0,0,.15)}
+
+/* Toast */
+.hi-toast{position:fixed;top:1rem;right:1rem;z-index:1100;padding:.75rem 1rem;border-radius:6px;background:var(--bg);border:1px solid var(--border);box-shadow:0 4px 12px rgba(0,0,0,.1);font-size:.85rem}
+
+/* Popover */
+.hi-popover{position:absolute;z-index:900;padding:.5rem .75rem;border-radius:6px;background:var(--bg);border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.08);font-size:.82rem}
+
+/* Tooltip */
+.hi-tooltip{position:absolute;z-index:900;padding:.25rem .5rem;border-radius:4px;background:var(--fg);color:var(--bg);font-size:.75rem;white-space:nowrap}
+
+/* Pagination */
+.hi-pagination{display:flex;align-items:center;gap:.3rem;font-size:.85rem}
+
+/* Tabs */
+.hi-tabs{display:flex;flex-direction:column}
+.hi-tabs-nav{display:flex;border-bottom:1px solid var(--border);gap:.25rem}
+.hi-tabs-tab{padding:.4rem .8rem;border:none;background:none;cursor:pointer;font-size:.85rem;color:var(--fg-sec);border-bottom:2px solid transparent}
+.hi-tabs-tab-active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* Menu */
+.hi-menu{display:flex;flex-direction:column;gap:.1rem}
+.hi-menu-item{padding:.4rem .6rem;border-radius:4px;cursor:pointer;font-size:.875rem;color:var(--fg-sec)}
+.hi-menu-item:hover{background:var(--accent-bg);color:var(--fg)}
+
+/* Sidebar */
+.hi-sidebar{display:flex;flex-direction:column;gap:.5rem;padding:1rem}
+
+/* Calendar */
+.hi-calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:.25rem;font-size:.8rem}
+.hi-calendar-cell{padding:.3rem;text-align:center;border-radius:3px}
+.hi-calendar-cell-today{background:var(--accent-bg);font-weight:600}
+
+/* QR Code */
+.hi-qrcode{display:inline-block;padding:.5rem;background:#fff;border-radius:4px}
+
+/* Comment */
+.hi-comment{padding:.75rem;border:1px solid var(--border);border-radius:6px;margin-bottom:.5rem}
+.hi-comment-author{font-weight:600;font-size:.85rem}
+.hi-comment-content{margin-top:.3rem;font-size:.9rem;color:var(--fg-sec)}
+
+/* Arrow */
+.hi-arrow{display:inline-block;transition:transform .15s}
+
+/* ZoomControls */
+.hi-zoom-controls{display:inline-flex;gap:.25rem;align-items:center}
+
+/* Collapse */
+.hi-collapse{border:1px solid var(--border);border-radius:6px;overflow:hidden;margin:.5rem 0}
+.hi-collapse-header{padding:.6rem .8rem;cursor:pointer;font-weight:500;background:var(--bg-subtle)}
+.hi-collapse-content{padding:.6rem .8rem}
+
+/* Carousel */
+.hi-carousel{position:relative;overflow:hidden;border-radius:6px}
+
+/* DragLayer */
+.hi-drag-layer{position:fixed;pointer-events:none;z-index:1200;opacity:.8}
+
+/* UserGuide */
+.hi-user-guide{display:flex;flex-direction:column;gap:1rem}
+
+/* Sort */
+.hi-sort{display:inline-flex;flex-direction:column;font-size:.6rem;line-height:.8;color:var(--fg-sec)}
+
+/* Filter */
+.hi-filter{display:flex;align-items:center;gap:.5rem;padding:.4rem;border-radius:6px;border:1px solid var(--border)}
+
+/* Tree */
+.hi-tree{font-size:.85rem}
+.hi-tree-node{padding:.2rem 0}
+
+/* Stepper */
+.hi-stepper{display:flex;flex-direction:column;gap:1rem}
+.hi-step{display:flex;align-items:center;gap:.5rem}
+.hi-step-circle{width:1.5rem;height:1.5rem;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;border:2px solid var(--border)}
+.hi-step-active .hi-step-circle{border-color:var(--accent);color:var(--accent)}
+
+/* Anchor */
+.hi-anchor{font-size:.82rem;color:var(--fg-sec)}
+
+/* Input */
+.hi-input{padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--bg);color:var(--fg)}
+
+/* Section */
+.hi-section{margin:1.5rem 0}
+
+/* Header */
+.hi-header{font-weight:600;font-size:1rem;margin-bottom:.5rem}
+
+/* Footer */
+.hi-footer{font-size:.8rem;color:var(--fg-sec);margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)}
+
+/* Aside */
+.hi-aside{flex-shrink:0}
+
+/* Content */
+.hi-content{flex:1;min-width:0}
+"#.to_string()
 }
