@@ -94,11 +94,24 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     let css = theme::stylesheet();
 
     // Live component blocks: scan all markdown for ```hikari blocks, compile
-    // them at build time (if a codegen pass is configured), and collect the
-    // pre-rendered HTML. For now this is empty — the L3 codegen pass will
-    // populate it. The render layer gracefully falls back to source-only.
-    let live_html: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    // them at build time, and collect the pre-rendered HTML. The render layer
+    // gracefully falls back to source-only for any blocks that fail to compile.
+    let mut all_live_sources: Vec<String> = Vec::new();
+    for lang in &langs {
+        let lang_dir = opts.src.join(lang);
+        for md_path in walk_md(&lang_dir).unwrap_or_default() {
+            let source = std::fs::read_to_string(&md_path).unwrap_or_default();
+            let (_, _, body_src) = frontmatter::strip(&source);
+            let blocks = markdown::parse(body_src);
+            all_live_sources.extend(crate::live::collect_sources(&blocks));
+        }
+    }
+    let live_html = if all_live_sources.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        info!("compiling {} live component block(s)…", all_live_sources.len());
+        crate::live::compile_all(&all_live_sources, &opts.out)
+    };
 
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.

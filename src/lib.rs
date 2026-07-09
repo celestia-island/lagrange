@@ -12,6 +12,7 @@ pub mod comments;
 pub mod config;
 pub mod frontmatter;
 pub mod icons;
+pub mod live;
 pub mod markdown;
 pub mod render;
 pub mod scaffold;
