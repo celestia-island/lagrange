@@ -103,11 +103,8 @@ fn split_delim(input: &str) -> (FrontMatterKind, Option<&str>, &str) {
         if bare == close {
             // The frontmatter text is everything up to (not including) this
             // closing line; the body starts after it.
-            let line_start_byte: usize = rest
-                .split_inclusive('\n')
-                .take(idx)
-                .map(|l| l.len())
-                .sum();
+            let line_start_byte: usize =
+                rest.split_inclusive('\n').take(idx).map(|l| l.len()).sum();
             close_pos = Some(line_start_byte);
             break;
         }
@@ -244,9 +241,7 @@ fn toml_to_json(v: &toml::Value) -> serde_json::Value {
             .unwrap_or(serde_json::Value::Null),
         toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
         toml::Value::Datetime(d) => serde_json::Value::String(d.to_string()),
-        toml::Value::Array(a) => {
-            serde_json::Value::Array(a.iter().map(toml_to_json).collect())
-        }
+        toml::Value::Array(a) => serde_json::Value::Array(a.iter().map(toml_to_json).collect()),
         toml::Value::Table(t) => {
             let mut obj = serde_json::Map::new();
             for (k, val) in t {
@@ -261,9 +256,7 @@ impl FrontMatter {
     /// Derive the comment-mount node id, preferring an explicit `node_id`,
     /// then `slug`, then `None` (the caller falls back to the page path).
     pub fn effective_node_id(&self) -> Option<&str> {
-        self.node_id
-            .as_deref()
-            .or(self.slug.as_deref())
+        self.node_id.as_deref().or(self.slug.as_deref())
     }
 }
 

@@ -23,15 +23,20 @@ pub fn init_site(dir: &Path, title: Option<&str>, lang: &str, comments: &str) ->
     let toml = render_init_toml(title, lang, comments);
     let toml_path = dir.join("lagrange.toml");
     if toml_path.exists() {
-        anyhow::bail!("{} already exists — refusing to overwrite", toml_path.display());
+        anyhow::bail!(
+            "{} already exists — refusing to overwrite",
+            toml_path.display()
+        );
     }
-    std::fs::write(&toml_path, toml)
-        .with_context(|| format!("write {}", toml_path.display()))?;
+    std::fs::write(&toml_path, toml).with_context(|| format!("write {}", toml_path.display()))?;
 
     // docs/<lang>/README.md (the landing page)
     let readme_path = dir.join(lang).join("README.md");
     if !readme_path.exists() {
-        std::fs::write(&readme_path, format!("# {title}\n\nWelcome to your new lagrange site.\n"))?;
+        std::fs::write(
+            &readme_path,
+            format!("# {title}\n\nWelcome to your new lagrange site.\n"),
+        )?;
     }
     // docs/<lang>/SUMMARY.md (sidebar)
     let summary_path = dir.join(lang).join("SUMMARY.md");
@@ -43,7 +48,10 @@ pub fn init_site(dir: &Path, title: Option<&str>, lang: &str, comments: &str) ->
     println!("  created: {}", toml_path.display());
     println!("  created: {}", readme_path.display());
     println!("  created: {}", summary_path.display());
-    println!("\n  Next: lagrange build --src {} --out _site", dir.display());
+    println!(
+        "\n  Next: lagrange build --src {} --out _site",
+        dir.display()
+    );
     if comments != "none" {
         println!("  Then: lagrange comments link --src {}", dir.display());
     }
@@ -125,7 +133,8 @@ category = \"{cat_name}\"
 category_id = \"{cat_id}\"
 # A read token (PAT with public_repo scope) — required even for public-repo reads.
 read_token = \"ghp_YOUR_TOKEN_HERE\"
-");
+"
+    );
     std::fs::write(&proxy_cfg, config)?;
     info!("✓ wrote proxy config: {}", proxy_cfg.display());
     println!("  repo:        {repo}");
@@ -141,9 +150,7 @@ struct GhCategory {
 }
 
 fn fetch_github_ids_via_gh(repo: &str) -> Result<(String, Vec<GhCategory>)> {
-    let (owner, name) = repo
-        .split_once('/')
-        .context("repo must be owner/name")?;
+    let (owner, name) = repo.split_once('/').context("repo must be owner/name")?;
 
     // repo node id
     let repo_id = std::process::Command::new("gh")
@@ -196,7 +203,8 @@ shortname = \"{shortname}\"
 api_key = \"YOUR_DISQUS_API_KEY\"
 # Secret key (server-side only, for guest writes). Optional for read-only.
 api_secret = \"\"
-");
+"
+    );
     std::fs::write(&proxy_cfg, config)?;
     info!("✓ wrote proxy config: {}", proxy_cfg.display());
     println!("  shortname: {shortname}");
@@ -270,14 +278,15 @@ pub fn run_dev_comments(port: u16) -> Result<()> {
         let listener = tokio::net::TcpListener::bind(&bind).await?;
         tracing::info!("dev comments backend on http://{bind}");
         axum::serve(listener, app).await
-    }).map_err(|e| anyhow::anyhow!("dev comments server: {e}"))
+    })
+    .map_err(|e| anyhow::anyhow!("dev comments server: {e}"))
 }
 
 // ── minimal dev store (not production-grade; just enough for local testing) ─
 
 #[derive(Default)]
 struct DevStore {
-    threads: HashMap<String, String>,      // node_id → thread_id
+    threads: HashMap<String, String>, // node_id → thread_id
     comments: Vec<serde_json::Value>,
 }
 
@@ -288,7 +297,9 @@ fn dev_get_thread(
     let node = q.get("node").cloned().unwrap_or_default();
     let s = store.lock().unwrap();
     if let Some(tid) = s.threads.get(&node) {
-        axum::Json(serde_json::json!({"status":"found","id":tid,"node_id":node,"comment_count":s.comments.iter().filter(|c|c["node_id"]==node).count(),"locked":false}))
+        axum::Json(
+            serde_json::json!({"status":"found","id":tid,"node_id":node,"comment_count":s.comments.iter().filter(|c|c["node_id"]==node).count(),"locked":false}),
+        )
     } else {
         axum::Json(serde_json::json!({"status":"missing","node_id":node}))
     }

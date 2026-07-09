@@ -43,10 +43,7 @@ fn collect_sources_inner(blocks: &[Block], out: &mut Vec<String>) {
 /// If compilation fails for a snippet, it is simply omitted from the map
 /// (the renderer falls back to source-only display). Errors are logged but
 /// do not fail the build.
-pub fn compile_all(
-    sources: &[String],
-    work_dir: &Path,
-) -> HashMap<String, String> {
+pub fn compile_all(sources: &[String], work_dir: &Path) -> HashMap<String, String> {
     let mut result = HashMap::new();
     if sources.is_empty() {
         return result;
@@ -66,7 +63,11 @@ pub fn compile_all(
         }
     }
 
-    info!("compiled {} of {} live component block(s)", result.len(), sources.len());
+    info!(
+        "compiled {} of {} live component block(s)",
+        result.len(),
+        sources.len()
+    );
     result
 }
 
@@ -92,7 +93,10 @@ fn compile_one(source: &str, base_dir: &Path) -> anyhow::Result<String> {
 
     if !build.status.success() {
         let stderr = String::from_utf8_lossy(&build.stderr);
-        anyhow::bail!("cargo build failed for live block {hash}: {}", stderr_tail(&stderr, 500));
+        anyhow::bail!(
+            "cargo build failed for live block {hash}: {}",
+            stderr_tail(&stderr, 500)
+        );
     }
 
     // Locate the compiled binary.
@@ -104,7 +108,10 @@ fn compile_one(source: &str, base_dir: &Path) -> anyhow::Result<String> {
     let run = Command::new(&bin).output()?;
     if !run.status.success() {
         let stderr = String::from_utf8_lossy(&run.stderr);
-        anyhow::bail!("execution failed for live block {hash}: {}", stderr_tail(&stderr, 500));
+        anyhow::bail!(
+            "execution failed for live block {hash}: {}",
+            stderr_tail(&stderr, 500)
+        );
     }
 
     let html = String::from_utf8_lossy(&run.stdout).to_string();
@@ -155,7 +162,10 @@ fn render_main_rs(source: &str) -> String {
     // If the source already starts with `rsx!`, use it directly; otherwise
     // wrap it in rsx! so bare component calls work too.
     let trimmed = source.trim();
-    let expr = if trimmed.starts_with("rsx") || trimmed.starts_with("Button") || trimmed.starts_with("Card") {
+    let expr = if trimmed.starts_with("rsx")
+        || trimmed.starts_with("Button")
+        || trimmed.starts_with("Card")
+    {
         trimmed.to_string()
     } else {
         format!("rsx! {{ {trimmed} }}")

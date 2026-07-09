@@ -211,10 +211,7 @@ mod tests {
         let mut fm = fm();
         fm.comments = Some(false);
         // Even with a fully-wired proxied config, the page is silent.
-        assert_eq!(
-            mount(CommentMode::Proxied, CommentSource::Native, &fm),
-            ""
-        );
+        assert_eq!(mount(CommentMode::Proxied, CommentSource::Native, &fm), "");
     }
 
     #[test]

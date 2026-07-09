@@ -109,7 +109,10 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     let live_html = if all_live_sources.is_empty() {
         std::collections::HashMap::new()
     } else {
-        info!("compiling {} live component block(s)…", all_live_sources.len());
+        info!(
+            "compiling {} live component block(s)…",
+            all_live_sources.len()
+        );
         crate::live::compile_all(&all_live_sources, &opts.out)
     };
 
@@ -173,12 +176,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             // Compute the comment mount point for this page. `canonical` is the
             // frontmatter value, falling back to nothing (the component will
             // use `window.location.href`).
-            let comments_mount = build_comments_mount(
-                &config.comments,
-                &fm,
-                &page_path,
-                fm.canonical.as_deref(),
-            );
+            let comments_mount =
+                build_comments_mount(&config.comments, &fm, &page_path, fm.canonical.as_deref());
 
             let entry = multi.entry(page_path.clone()).or_insert_with(|| MultiPage {
                 pages: BTreeMap::new(),
@@ -360,7 +359,8 @@ fn live_block_js() -> String {
   });
  });
 })();
-</script>"##.to_string()
+</script>"##
+        .to_string()
 }
 
 fn lagrange_js() -> String {
@@ -686,8 +686,7 @@ fn needs_comment_runtime(config: &CommentsConfig) -> bool {
     use crate::config::CommentMode;
     // Every mode except None renders the <lagrange-comments> component and
     // thus needs the embedded runtime JS/CSS.
-    config.is_active()
-        && matches!(config.mode, CommentMode::Proxied | CommentMode::StaticJson)
+    config.is_active() && matches!(config.mode, CommentMode::Proxied | CommentMode::StaticJson)
 }
 
 /// Write the browser-side comment runtime (`lagrange-comments.js` + CSS) into
@@ -716,7 +715,10 @@ fn copy_crate_assets(out: &Path) -> Result<()> {
 /// asset means dropping the file in `src/comments/` and adding one entry.
 const EMBEDDED_ASSETS: &[(&str, &str)] = &[
     ("lagrange-comments.js", include_str!("comments/runtime.js")),
-    ("lagrange-comments.css", include_str!("comments/runtime.css")),
+    (
+        "lagrange-comments.css",
+        include_str!("comments/runtime.css"),
+    ),
 ];
 
 /// Emit a per-language boards index page when `[bbs] enabled = true`.
@@ -746,10 +748,7 @@ fn write_boards_index(
             };
             let title = page.title.clone();
             let url = format!("/{}", mp.page_path);
-            boards
-                .entry(cat.clone())
-                .or_default()
-                .push((title, url));
+            boards.entry(cat.clone()).or_default().push((title, url));
         }
         if boards.is_empty() {
             continue;
