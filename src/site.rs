@@ -341,7 +341,13 @@ fn write_multi_page(
 
 /// Minimal JS for live block tab toggling (preview ↔ source).
 fn live_block_js() -> String {
-    r##"<script>
+    // Embed the overlay scrollbar and modal system JS (vanilla, no framework).
+    let scrollbar_js = include_str!("comments/scrollbar.js");
+    let modal_js = include_str!("comments/modal.js");
+    let prefix = format!(
+        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n"
+    );
+    let suffix = r##"<script>
 (function(){
  document.querySelectorAll('.lg-live-block').forEach(function(block){
   var tabs=block.querySelectorAll('.lg-live-tab');
@@ -359,8 +365,8 @@ fn live_block_js() -> String {
   });
  });
 })();
-</script>"##
-        .to_string()
+</script>"##;
+    prefix + &suffix
 }
 
 fn lagrange_js() -> String {
