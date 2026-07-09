@@ -11,7 +11,7 @@ fn hex(c: &Color) -> String {
 pub fn stylesheet() -> String {
     let bg = hex(&Color::from_rgb_hex(0xff, 0xff, 0xff));
     let fg = hex(&Color::from_rgb_hex(0x00, 0x00, 0x00));
-    format!(
+    let base = format!(
         r#":root {{
 --bg:{bg};--bg-subtle:#f7f7fa;--fg:{fg};--fg-sec:#5a5a6a;
 --accent:#3a6ea5;--accent-bg:rgba(58,110,165,.08);--border:#e2e2ea;
@@ -85,5 +85,16 @@ a:hover{{text-decoration:underline}}
 .layout{{flex-direction:column}}
 .sidebar{{position:static;height:auto;width:auto;max-height:50vh}}
 }}"#
-    )
+    );
+    // Live component block styles (appended after the base stylesheet).
+    base + r#"
+.lg-live-block{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:1.5rem 0}
+.lg-live-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-subtle)}
+.lg-live-tab{padding:.4rem .8rem;border:none;background:none;cursor:pointer;font-size:.82rem;color:var(--fg-sec);border-bottom:2px solid transparent;transition:all var(--ts)}
+.lg-live-tab:hover{color:var(--fg)}
+.lg-live-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.lg-live-preview{padding:1.5rem}
+.lg-live-preview-empty{color:var(--fg-sec);font-style:italic;text-align:center;padding:2rem}
+.lg-live-source{margin:0;padding:1rem;overflow:auto;font-size:.85rem;display:none}
+.lg-live-source code{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace}"#
 }

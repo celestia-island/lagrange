@@ -93,6 +93,13 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 
     let css = theme::stylesheet();
 
+    // Live component blocks: scan all markdown for ```hikari blocks, compile
+    // them at build time (if a codegen pass is configured), and collect the
+    // pre-rendered HTML. For now this is empty — the L3 codegen pass will
+    // populate it. The render layer gracefully falls back to source-only.
+    let live_html: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
@@ -113,7 +120,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             // Peel frontmatter off before parsing — the grammar never sees it.
             let (_fm_kind, fm, body_src) = frontmatter::strip(&source);
             let blocks = markdown::parse(body_src);
-            let body_raw = render::render_to_html(&blocks);
+            // Render with live component HTML if any were pre-compiled.
+            let body_raw = render::render_to_html_with_live(&blocks, &live_html);
             // Title: explicit frontmatter wins, else first heading, else default.
             let title = fm
                 .title
@@ -308,8 +316,9 @@ fn write_multi_page(
     html.push_str(&json_data);
     html.push_str("</script>\n");
 
-    // Client-side language logic.
+    // Client-side language logic + live block tab toggling.
     html.push_str(&lagrange_js());
+    html.push_str(&live_block_js());
     html.push_str("</body>\n</html>\n");
 
     fs::write(&out_path, html).with_context(|| format!("write {}", out_path.display()))?;
@@ -317,6 +326,29 @@ fn write_multi_page(
 }
 
 // ── inline JavaScript ─────────────────────────────────────────────────────
+
+/// Minimal JS for live block tab toggling (preview ↔ source).
+fn live_block_js() -> String {
+    r##"<script>
+(function(){
+ document.querySelectorAll('.lg-live-block').forEach(function(block){
+  var tabs=block.querySelectorAll('.lg-live-tab');
+  var preview=block.querySelector('.lg-live-preview');
+  var source=block.querySelector('.lg-live-source');
+  if(!tabs.length) return;
+  tabs.forEach(function(tab){
+   tab.onclick=function(){
+    tabs.forEach(function(t){t.classList.remove('active')});
+    tab.classList.add('active');
+    var isSource=tab.dataset.tab==='source';
+    if(preview) preview.style.display=isSource?'none':'';
+    if(source) source.style.display=isSource?'block':'none';
+   };
+  });
+ });
+})();
+</script>"##.to_string()
+}
 
 fn lagrange_js() -> String {
     let translate = crate::icons::icon_svg("translate", 16);
