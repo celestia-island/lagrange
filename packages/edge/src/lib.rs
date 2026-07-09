@@ -6,7 +6,7 @@
 //! pure function:
 //!
 //! ```ignore
-//! handle(method, path, query, headers, body, &store, &auth_verifier)
+//! handle_native(method, path, query, headers, body, &store, &auth_verifier)
 //!     -> EdgeResponse { status, headers, body }
 //! ```
 //!
@@ -36,6 +36,49 @@ use lagrange_protocol::{
     types::*,
     PROTOCOL_VERSION,
 };
+
+/// Describes the data source backing a proxy — surfaced at the `/meta`
+/// endpoint so the front-end can hide unsupported actions. Implemented by
+/// each adapter alongside [`CommentService`].
+pub trait SourceMeta {
+    fn source(&self) -> &'static str;
+    fn capabilities(&self) -> Capabilities;
+}
+
+/// What a source supports. Kept local to avoid dragging the adapter `proxy`
+/// feature into every edge consumer.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct Capabilities {
+    pub read: bool,
+    pub login_write: bool,
+    pub guest_write: bool,
+    pub edit: bool,
+    pub delete: bool,
+    pub vote: bool,
+    pub moderate: bool,
+}
+
+/// A native-source meta: full capabilities (the lagrange backend owns its
+/// data and supports every operation). Use when the store is a native
+/// SqliteStore/MemoryStore behind the edge handler.
+pub struct NativeMeta;
+
+impl SourceMeta for NativeMeta {
+    fn source(&self) -> &'static str {
+        "native"
+    }
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            read: true,
+            login_write: true,
+            guest_write: true,
+            edit: true,
+            delete: true,
+            vote: true,
+            moderate: true,
+        }
+    }
+}
 
 /// A minimal HTTP response. Platform bindings translate this into their
 /// native response object.
@@ -103,7 +146,8 @@ impl CallerResolver for AnonymousResolver {
 ///
 /// The handler routes by `method + path`, parses inputs, calls the protocol
 /// trait on `store`, and maps the result to an [`EdgeResponse`].
-pub fn handle<S: CommentService, R: CallerResolver>(
+#[allow(clippy::too_many_arguments)]
+pub fn handle<S: CommentService, R: CallerResolver, M: SourceMeta>(
     method: &str,
     path: &str,
     query: &str,
@@ -111,6 +155,7 @@ pub fn handle<S: CommentService, R: CallerResolver>(
     body: &str,
     store: &S,
     resolver: &R,
+    meta: &M,
 ) -> EdgeResponse {
     // CORS preflight short-circuit.
     if method == "OPTIONS" {
@@ -143,6 +188,16 @@ pub fn handle<S: CommentService, R: CallerResolver>(
             200,
             &serde_json::to_string(&serde_json::json!({
                 "status": "ok",
+                "protocol": PROTOCOL_VERSION,
+            }))
+            .unwrap(),
+        ),
+
+        ("GET", "/meta") => EdgeResponse::json(
+            200,
+            &serde_json::to_string(&serde_json::json!({
+                "source": meta.source(),
+                "capabilities": meta.capabilities(),
                 "protocol": PROTOCOL_VERSION,
             }))
             .unwrap(),
@@ -233,6 +288,21 @@ struct VoteBody {
     dir: VoteDir,
 }
 
+/// Convenience wrapper: `handle` with [`NativeMeta`] (the common case for a
+/// sqlite/memory backend). Proxy-backed deploys call [`handle`] directly with
+/// their adapter's `SourceMeta` impl.
+pub fn handle_native<S: CommentService, R: CallerResolver>(
+    method: &str,
+    path: &str,
+    query: &str,
+    headers: &HashMap<String, String>,
+    body: &str,
+    store: &S,
+    resolver: &R,
+) -> EdgeResponse {
+    handle(method, path, query, headers, body, store, resolver, &NativeMeta)
+}
+
 fn parse_query(q: &str) -> HashMap<String, String> {
     // serde_urlencoded parses a+b as space and decodes %xx; for our keys
     // (node ids, cursors) that's the right behaviour.
@@ -265,20 +335,32 @@ mod tests {
 
     #[test]
     fn health_reports_protocol() {
-        let r = handle("GET", "/health", "", &headers(), "", &store(), &AnonymousResolver);
+        let r = handle_native("GET", "/health", "", &headers(), "", &store(), &AnonymousResolver);
         assert_eq!(r.status, 200);
         assert!(r.body.contains(PROTOCOL_VERSION));
     }
 
     #[test]
+    fn meta_reports_native_capabilities() {
+        let r = handle_native("GET", "/meta", "", &headers(), "", &store(), &AnonymousResolver);
+        assert_eq!(r.status, 200);
+        let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
+        assert_eq!(v["source"], "native");
+        // Native backend supports everything.
+        assert_eq!(v["capabilities"]["read"], true);
+        assert_eq!(v["capabilities"]["guest_write"], true);
+        assert_eq!(v["capabilities"]["moderate"], true);
+    }
+
+    #[test]
     fn unknown_route_is_404() {
-        let r = handle("GET", "/nope", "", &headers(), "", &store(), &AnonymousResolver);
+        let r = handle_native("GET", "/nope", "", &headers(), "", &store(), &AnonymousResolver);
         assert_eq!(r.status, 404);
     }
 
     #[test]
     fn cors_preflight_short_circuits() {
-        let r = handle("OPTIONS", "/comments", "", &headers(), "", &store(), &AnonymousResolver);
+        let r = handle_native("OPTIONS", "/comments", "", &headers(), "", &store(), &AnonymousResolver);
         assert_eq!(r.status, 204);
         assert_eq!(r.headers.get("access-control-allow-origin"), Some(&"*".to_string()));
     }
@@ -288,7 +370,7 @@ mod tests {
         let s = store();
         // Create as anonymous.
         let body = r#"{"node_id":"n1","body_markdown":"hello","author_name":"guest"}"#;
-        let r = handle("POST", "/comments", "", &headers(), body, &s, &AnonymousResolver);
+        let r = handle_native("POST", "/comments", "", &headers(), body, &s, &AnonymousResolver);
         assert_eq!(r.status, 201);
         let c: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert_eq!(c["status"], "pending"); // anonymous → pending
@@ -296,7 +378,7 @@ mod tests {
 
         // Public list is empty (pending not shown).
         let q = format!("thread={tid}");
-        let r = handle("GET", "/comments", &q, &headers(), "", &s, &AnonymousResolver);
+        let r = handle_native("GET", "/comments", &q, &headers(), "", &s, &AnonymousResolver);
         let list: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert!(list["comments"].as_array().unwrap().is_empty());
     }
@@ -305,7 +387,7 @@ mod tests {
     fn thread_lookup_round_trip() {
         let s = store();
         // Missing before any comment.
-        let r = handle("GET", "/threads", "node=zzz", &headers(), "", &s, &AnonymousResolver);
+        let r = handle_native("GET", "/threads", "node=zzz", &headers(), "", &s, &AnonymousResolver);
         let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert_eq!(v["status"], "missing");
 
@@ -332,10 +414,10 @@ mod tests {
             }
         }
         let _ = author; // silence unused binding
-        let r = handle("POST", "/comments", "", &headers(), body, &s, &Authed);
+        let r = handle_native("POST", "/comments", "", &headers(), body, &s, &Authed);
         assert_eq!(r.status, 201);
 
-        let r = handle("GET", "/threads", "node=zzz", &headers(), "", &s, &Authed);
+        let r = handle_native("GET", "/threads", "node=zzz", &headers(), "", &s, &Authed);
         let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert_eq!(v["status"], "found");
         assert_eq!(v["comment_count"], 1);
@@ -358,14 +440,14 @@ mod tests {
             }
         }
         let body = r#"{"node_id":"v","body_markdown":"x"}"#;
-        let r = handle("POST", "/comments", "", &headers(), body, &s, &Authed);
+        let r = handle_native("POST", "/comments", "", &headers(), body, &s, &Authed);
         let cid = serde_json::from_str::<serde_json::Value>(&r.body).unwrap()["id"]
             .as_str()
             .unwrap()
             .to_string();
 
         // Anonymous cannot vote.
-        let r = handle(
+        let r = handle_native(
             "POST",
             &format!("/comments/{cid}/vote"),
             "",
@@ -377,7 +459,7 @@ mod tests {
         assert_eq!(r.status, 403);
 
         // Authed can.
-        let r = handle(
+        let r = handle_native(
             "POST",
             &format!("/comments/{cid}/vote"),
             "",
@@ -391,7 +473,7 @@ mod tests {
 
     #[test]
     fn validation_error_maps_to_400() {
-        let r = handle(
+        let r = handle_native(
             "POST",
             "/comments",
             "",
@@ -407,7 +489,7 @@ mod tests {
 
     #[test]
     fn invalid_json_is_400() {
-        let r = handle(
+        let r = handle_native(
             "POST",
             "/comments",
             "",
