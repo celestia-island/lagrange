@@ -2,3 +2,5 @@
 /dist
 .cargo/
 /Cargo.lock
+
+dist/
