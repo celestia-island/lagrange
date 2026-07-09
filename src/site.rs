@@ -646,55 +646,33 @@ fn needs_comment_runtime(config: &CommentsConfig) -> bool {
         )
 }
 
-/// Copy the crate-shipped browser runtime (`lagrange-comments.js` + CSS) into
+/// Write the browser-side comment runtime (`lagrange-comments.js` + CSS) into
 /// `<out>/assets/`.
 ///
-/// The asset bytes are embedded into the binary at compile time (via
-/// [`build.rs`](../build.rs), following the hikari-components `OUT_DIR` +
-/// `include_str!` convention), so this works for a prebuilt binary installed
-/// from crates.io — no source tree or exe-sibling filesystem lookup needed.
+/// The runtime lives in `src/comments/runtime.{js,css}` and is embedded into
+/// the binary at compile time via `include_str!`, so this works for a prebuilt
+/// binary installed from crates.io — no source tree or exe-sibling filesystem
+/// lookup needed.
 fn copy_crate_assets(out: &Path) -> Result<()> {
-    #[cfg(lagrange_assets_empty)]
-    {
-        // build.rs found no assets to embed (stripped source tree). The site
-        // still builds; pages referencing /assets/lagrange-comments.js will
-        // 404 unless the operator supplies their own runtime.
-        tracing::warn!(
-            "comment mode needs /assets/ but no browser runtime was embedded at \
-             build time; pages will reference /assets/lagrange-comments.js which will 404"
-        );
-        return Ok(());
+    let dest = out.join("assets");
+    fs::create_dir_all(&dest)?;
+    for (name, bytes) in EMBEDDED_ASSETS {
+        fs::write(dest.join(name), bytes)?;
     }
-
-    #[cfg(not(lagrange_assets_empty))]
-    {
-        let dest = out.join("assets");
-        fs::create_dir_all(&dest)?;
-        for (name, bytes) in EMBEDDED_ASSETS {
-            fs::write(dest.join(name), bytes)?;
-        }
-        info!(
-            "embedded {} browser runtime asset(s) → {}",
-            EMBEDDED_ASSETS.len(),
-            dest.display()
-        );
-        Ok(())
-    }
+    info!(
+        "embedded {} browser runtime asset(s) → {}",
+        EMBEDDED_ASSETS.len(),
+        dest.display()
+    );
+    Ok(())
 }
 
-/// The browser-side assets embedded at compile time by `build.rs`. Each entry
-/// is `(filename, bytes)`. Adding a new asset only requires dropping it in
-/// `assets/` and listing it here.
-#[cfg(not(lagrange_assets_empty))]
+/// The browser-side assets embedded at compile time straight from
+/// `src/comments/`. Listing them here keeps the set explicit; adding a new
+/// asset means dropping the file in `src/comments/` and adding one entry.
 const EMBEDDED_ASSETS: &[(&str, &str)] = &[
-    (
-        "lagrange-comments.js",
-        include_str!(concat!(env!("OUT_DIR"), "/lagrange_assets/lagrange-comments.js")),
-    ),
-    (
-        "lagrange-comments.css",
-        include_str!(concat!(env!("OUT_DIR"), "/lagrange_assets/lagrange-comments.css")),
-    ),
+    ("lagrange-comments.js", include_str!("comments/runtime.js")),
+    ("lagrange-comments.css", include_str!("comments/runtime.css")),
 ];
 
 /// Emit a per-language boards index page when `[bbs] enabled = true`.

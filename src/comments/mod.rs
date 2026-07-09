@@ -9,8 +9,8 @@
 //!   existed. This is the load-bearing "pure static" guarantee.
 //! - **a `<lagrange-comments>` custom element** — for `faas` / `self-host` /
 //!   `static-json`. The element's `data-*` attributes carry the wiring; the
-//!   actual fetch/render happens client-side in `assets/lagrange-comments.js`
-//!   (a separate, framework-free Web Component).
+//!   actual fetch/render happens client-side in `runtime.js` (a separate,
+//!   framework-free Web Component embedded into the binary at compile time).
 //! - **a third-party embed** — for `disqus` / `giscus` / `github-issue`. These
 //!   inject the vendor's own script; no lagrange runtime is shipped.
 //!
