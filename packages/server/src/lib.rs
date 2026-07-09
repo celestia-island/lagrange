@@ -22,7 +22,10 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         // Protocol routes (mirror lagrange_protocol::api::routes).
         .route("/threads", routing::get(handlers::get_thread))
-        .route("/comments", routing::get(handlers::list_comments).post(handlers::create_comment))
+        .route(
+            "/comments",
+            routing::get(handlers::list_comments).post(handlers::create_comment),
+        )
         .route(
             "/comments/{id}",
             routing::patch(handlers::edit_comment).delete(handlers::delete_comment),

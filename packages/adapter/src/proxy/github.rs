@@ -30,8 +30,8 @@ use lagrange_protocol::{
     types::*,
 };
 
-use super::capabilities::{Capabilities, Source};
 use super::block_on;
+use super::capabilities::{Capabilities, Source};
 
 /// Configuration for the GitHub Discussions adapter.
 #[derive(Debug, Clone)]
@@ -136,11 +136,7 @@ query($repo: String!, $category: ID!, $term: String!) {
 }"#;
 
 impl CommentService for GitHubDiscussionsStore {
-    fn get_thread(
-        &self,
-        node_id: &str,
-        _caller: &Caller,
-    ) -> Result<ThreadLookup, ProtocolError> {
+    fn get_thread(&self, node_id: &str, _caller: &Caller) -> Result<ThreadLookup, ProtocolError> {
         let token = self.token_for(_caller);
         let data = self.graphql(
             token,

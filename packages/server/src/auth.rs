@@ -79,8 +79,8 @@ pub fn hash_password(password: &str) -> Result<String, ApiError> {
 
 /// Verify a password against a stored argon2 hash.
 pub fn verify_password(hash: &str, password: &str) -> Result<bool, ApiError> {
-    let parsed = PasswordHash::new(hash)
-        .map_err(|e| ApiError::internal(format!("argon2 parse: {e}")))?;
+    let parsed =
+        PasswordHash::new(hash).map_err(|e| ApiError::internal(format!("argon2 parse: {e}")))?;
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())

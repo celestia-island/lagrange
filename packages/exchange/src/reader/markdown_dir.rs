@@ -64,11 +64,14 @@ impl super::Reader for MarkdownDirReader {
         collect_md(&self.root, &mut files)?;
         files.sort();
         for path in files {
-            let source =
-                std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+            let source = std::fs::read_to_string(&path)
+                .with_context(|| format!("read {}", path.display()))?;
             let (fm, body) = strip_frontmatter(&source, self.style);
             let fm = fm.unwrap_or_default();
-            let node_id = fm.slug.clone().unwrap_or_else(|| slug_from_path(&self.root, &path));
+            let node_id = fm
+                .slug
+                .clone()
+                .unwrap_or_else(|| slug_from_path(&self.root, &path));
             docs.push(ExchangeDoc {
                 node_id,
                 kind: self.kind,
@@ -331,11 +334,7 @@ mod tests {
             "---\ntitle: Hello\ndate: 2026-01-01\ntags: [x]\n---\n# Hi\n",
         )
         .unwrap();
-        fs::write(
-            posts.join("world.md"),
-            "---\ntitle: World\n---\n# World\n",
-        )
-        .unwrap();
+        fs::write(posts.join("world.md"), "---\ntitle: World\n---\n# World\n").unwrap();
 
         let reader = hexo(&posts);
         let docs = reader.read().unwrap();

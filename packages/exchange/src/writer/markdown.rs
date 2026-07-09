@@ -67,8 +67,7 @@ impl Writer for MarkdownWriter {
         } else {
             self.out.join(&self.default_lang).join(subdir)
         };
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("create {}", dir.display()))?;
+        std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
         let path = dir.join(format!("{slug}.md"));
 
         let fm = render_frontmatter(doc);
@@ -78,8 +77,7 @@ impl Writer for MarkdownWriter {
             doc.body_md.clone()
         };
         let content = format!("{fm}\n{body}");
-        std::fs::write(&path, content)
-            .with_context(|| format!("write {}", path.display()))?;
+        std::fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
         Ok(())
     }
 }
@@ -130,7 +128,9 @@ fn yaml_quote(s: &str) -> String {
         return "\"\"".to_string();
     }
     // If it's a simple bareword (no special chars), emit unquoted for readability.
-    let safe = s.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '/' | '.' | ' '));
+    let safe = s
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '/' | '.' | ' '));
     if safe && !s.starts_with(' ') && !s.ends_with(' ') {
         return s.to_string();
     }

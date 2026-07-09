@@ -214,7 +214,10 @@ fn run_import(args: ImportArgs) -> Result<()> {
     );
 
     if dry_run {
-        println!("dry-run: parsed {} document(s), {} comment(s) — nothing written", article_count, comment_count);
+        println!(
+            "dry-run: parsed {} document(s), {} comment(s) — nothing written",
+            article_count, comment_count
+        );
         for d in docs.iter().take(10) {
             println!(
                 "  • {} [{}] ({} comment{})",
@@ -234,9 +237,8 @@ fn run_import(args: ImportArgs) -> Result<()> {
     let writers = build_writers(&writes, &outs, &lang, nested)?;
     for doc in &docs {
         for w in &writers {
-            w.write(doc).with_context(|| {
-                format!("write doc {} via {}", doc.node_id, w.name())
-            })?;
+            w.write(doc)
+                .with_context(|| format!("write doc {} via {}", doc.node_id, w.name()))?;
         }
     }
 

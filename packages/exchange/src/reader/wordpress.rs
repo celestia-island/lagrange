@@ -67,9 +67,8 @@ fn parse_wxr(xml: &str) -> Result<Vec<ExchangeDoc>> {
             continue;
         }
 
-        let title = decode_entities(
-            &text_between(&item_xml, "<title>", "</title>").unwrap_or_default(),
-        );
+        let title =
+            decode_entities(&text_between(&item_xml, "<title>", "</title>").unwrap_or_default());
         let link = text_between(&item_xml, "<link>", "</link>").unwrap_or_default();
         let pub_date = text_between(&item_xml, "<pubDate>", "</pubDate>")
             .unwrap_or_default()
@@ -85,9 +84,10 @@ fn parse_wxr(xml: &str) -> Result<Vec<ExchangeDoc>> {
             .to_string();
 
         // Body: prefer content:encoded (rendered HTML) over description.
-        let body_html = text_between_cdata_aware(&item_xml, "<content:encoded>", "</content:encoded>")
-            .or_else(|| text_between_cdata_aware(&item_xml, "<description>", "</description>"))
-            .unwrap_or_default();
+        let body_html =
+            text_between_cdata_aware(&item_xml, "<content:encoded>", "</content:encoded>")
+                .or_else(|| text_between_cdata_aware(&item_xml, "<description>", "</description>"))
+                .unwrap_or_default();
         let body_md = html_to_markdown(&body_html);
 
         // Categories / tags from <category> elements.
@@ -235,8 +235,9 @@ fn extract_comments(item_xml: &str) -> Vec<ExchangeComment> {
             .unwrap_or_default()
             .trim()
             .to_string();
-        let body_html = text_between_cdata_aware(c, "<wp:comment_content>", "</wp:comment_content>")
-            .unwrap_or_default();
+        let body_html =
+            text_between_cdata_aware(c, "<wp:comment_content>", "</wp:comment_content>")
+                .unwrap_or_default();
         let body_md = html_to_markdown(&body_html);
         let status = text_between(c, "<wp:comment_approved>", "</wp:comment_approved>")
             .unwrap_or_default()

@@ -32,8 +32,8 @@ pub struct MemoryStore {
 
 #[derive(Debug, Default)]
 struct Inner {
-    threads: HashMap<String, Thread>,       // thread_id → thread
-    comments: HashMap<String, Comment>,     // comment_id → comment
+    threads: HashMap<String, Thread>,          // thread_id → thread
+    comments: HashMap<String, Comment>,        // comment_id → comment
     votes: HashMap<(String, String), VoteDir>, // (comment_id, author_id) → dir
     /// node_id → thread_id (so get_thread is O(1)).
     node_to_thread: HashMap<String, String>,
@@ -57,7 +57,12 @@ impl MemoryStore {
         Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
     }
 
-    fn ensure_thread(&self, inner: &mut Inner, node_id: &str, canonical_url: Option<&str>) -> String {
+    fn ensure_thread(
+        &self,
+        inner: &mut Inner,
+        node_id: &str,
+        canonical_url: Option<&str>,
+    ) -> String {
         if let Some(tid) = inner.node_to_thread.get(node_id) {
             return tid.clone();
         }
@@ -72,17 +77,15 @@ impl MemoryStore {
             created_at: Some(Self::now()),
         };
         inner.threads.insert(tid.clone(), thread);
-        inner.node_to_thread.insert(node_id.to_string(), tid.clone());
+        inner
+            .node_to_thread
+            .insert(node_id.to_string(), tid.clone());
         tid
     }
 }
 
 impl CommentService for MemoryStore {
-    fn get_thread(
-        &self,
-        node_id: &str,
-        _caller: &Caller,
-    ) -> Result<ThreadLookup, ProtocolError> {
+    fn get_thread(&self, node_id: &str, _caller: &Caller) -> Result<ThreadLookup, ProtocolError> {
         let inner = self.lock();
         match inner.node_to_thread.get(node_id) {
             Some(tid) => {
@@ -152,11 +155,10 @@ impl CommentService for MemoryStore {
                 .with_field("body_markdown"));
         }
         if body_markdown.chars().count() > 16_000 {
-            return Err(ProtocolError::new(
-                "validation",
-                "comment body exceeds 16000 characters",
-            )
-            .with_field("body_markdown"));
+            return Err(
+                ProtocolError::new("validation", "comment body exceeds 16000 characters")
+                    .with_field("body_markdown"),
+            );
         }
 
         let mut inner = self.lock();
@@ -165,7 +167,9 @@ impl CommentService for MemoryStore {
         let thread_id = match (&req.thread_id, inner.node_to_thread.get(&req.node_id)) {
             (Some(tid), _) => tid.clone(),
             (None, Some(tid)) => tid.clone(),
-            (None, None) => self.ensure_thread(&mut inner, &req.node_id, req.canonical_url.as_deref()),
+            (None, None) => {
+                self.ensure_thread(&mut inner, &req.node_id, req.canonical_url.as_deref())
+            }
         };
 
         // Enforce thread lock.
@@ -242,7 +246,10 @@ impl CommentService for MemoryStore {
             .get_mut(comment_id)
             .ok_or_else(|| ProtocolError::new("not_found", "comment not found"))?;
         if !can_edit(caller, &comment.author) {
-            return Err(ProtocolError::new("forbidden", "only the author or a moderator may delete"));
+            return Err(ProtocolError::new(
+                "forbidden",
+                "only the author or a moderator may delete",
+            ));
         }
         comment.status = CommentStatus::Deleted;
         comment.body_markdown = "[deleted]".into();
@@ -482,7 +489,11 @@ mod tests {
             )
             .unwrap();
         assert_eq!(c.status, CommentStatus::Visible);
-        assert!(c.body_html.as_deref().unwrap().contains("<strong>hi</strong>"));
+        assert!(c
+            .body_html
+            .as_deref()
+            .unwrap()
+            .contains("<strong>hi</strong>"));
         let list = store
             .list_comments(
                 &ListComments {
@@ -626,7 +637,9 @@ mod tests {
         assert_eq!(err.code, "forbidden");
 
         // Mod sees it pending.
-        let list = store.list_moderation(ModerationFilter::Pending, &mod_()).unwrap();
+        let list = store
+            .list_moderation(ModerationFilter::Pending, &mod_())
+            .unwrap();
         assert_eq!(list.comments.len(), 1);
 
         // Mod approves.

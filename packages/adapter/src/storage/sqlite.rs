@@ -119,8 +119,7 @@ fn row_to_thread(row: &rusqlite::Row<'_>) -> rusqlite::Result<Thread> {
 // Helper: load a comment row into a Comment struct.
 fn row_to_comment(row: &rusqlite::Row<'_>) -> rusqlite::Result<Comment> {
     let author_json: String = row.get(5)?;
-    let author: Author =
-        serde_json::from_str(&author_json).unwrap_or_else(|_| anonymous_author());
+    let author: Author = serde_json::from_str(&author_json).unwrap_or_else(|_| anonymous_author());
     let status_str: String = row.get(9)?;
     let status = match status_str.as_str() {
         "pending" => CommentStatus::Pending,
@@ -158,11 +157,7 @@ fn anonymous_author() -> Author {
 }
 
 impl CommentService for SqliteStore {
-    fn get_thread(
-        &self,
-        node_id: &str,
-        _caller: &Caller,
-    ) -> Result<ThreadLookup, ProtocolError> {
+    fn get_thread(&self, node_id: &str, _caller: &Caller) -> Result<ThreadLookup, ProtocolError> {
         let conn = self.lock();
         let mut stmt = conn
             .prepare("SELECT id, node_id, canonical_url, title, locked, comment_count, created_at FROM threads WHERE node_id = ?1")
@@ -214,7 +209,11 @@ impl CommentService for SqliteStore {
                 .map_err(db_err)?,
             // No cursor: bind thread_id at ?1, NULL at ?2 (unused), limit at ?3.
             None => stmt
-                .query(rusqlite::params![req.thread_id, Option::<String>::None, limit])
+                .query(rusqlite::params![
+                    req.thread_id,
+                    Option::<String>::None,
+                    limit
+                ])
                 .map_err(db_err)?,
         };
         let mut comments = Vec::new();
@@ -243,11 +242,10 @@ impl CommentService for SqliteStore {
                 .with_field("body_markdown"));
         }
         if body_markdown.chars().count() > 16_000 {
-            return Err(ProtocolError::new(
-                "validation",
-                "comment body exceeds 16000 characters",
-            )
-            .with_field("body_markdown"));
+            return Err(
+                ProtocolError::new("validation", "comment body exceeds 16000 characters")
+                    .with_field("body_markdown"),
+            );
         }
 
         let mut conn = self.lock();
@@ -305,9 +303,8 @@ impl CommentService for SqliteStore {
         let id = Self::new_id("c");
         let now = Self::now();
         let body_html = markdown::render(body_markdown);
-        let author_json = serde_json::to_string(&author).map_err(|e| {
-            ProtocolError::new("internal", format!("author serialise failed: {e}"))
-        })?;
+        let author_json = serde_json::to_string(&author)
+            .map_err(|e| ProtocolError::new("internal", format!("author serialise failed: {e}")))?;
 
         tx.execute(
             "INSERT INTO comments (id, thread_id, parent_id, node_id, canonical_url, author_json, body_markdown, body_html, created_at, status) \
@@ -362,7 +359,8 @@ impl CommentService for SqliteStore {
         }
         let conn = self.lock();
         let existing = load_comment(&conn, comment_id)?;
-        let existing = existing.ok_or_else(|| ProtocolError::new("not_found", "comment not found"))?;
+        let existing =
+            existing.ok_or_else(|| ProtocolError::new("not_found", "comment not found"))?;
         if !can_edit(caller, &existing.author) {
             return Err(ProtocolError::new("forbidden", "not the author"));
         }
@@ -442,7 +440,12 @@ impl CommentService for SqliteStore {
                    SUM(CASE WHEN dir = 'down' THEN 1 ELSE 0 END) \
                  FROM votes WHERE comment_id = ?1",
                 rusqlite::params![comment_id],
-                |r| Ok((r.get::<_, Option<i64>>(0)?.unwrap_or(0), r.get::<_, Option<i64>>(1)?.unwrap_or(0))),
+                |r| {
+                    Ok((
+                        r.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                        r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                    ))
+                },
             )
             .map_err(db_err)?;
         tx.execute(
@@ -561,10 +564,7 @@ fn db_err(e: rusqlite::Error) -> ProtocolError {
     ProtocolError::new("internal", format!("database error: {e}"))
 }
 
-fn load_comment(
-    conn: &rusqlite::Connection,
-    id: &str,
-) -> Result<Option<Comment>, ProtocolError> {
+fn load_comment(conn: &rusqlite::Connection, id: &str) -> Result<Option<Comment>, ProtocolError> {
     let mut stmt = conn
         .prepare(
             "SELECT id, thread_id, parent_id, node_id, canonical_url, author_json, \
@@ -653,7 +653,9 @@ mod tests {
             )
             .unwrap();
         assert_eq!(c.status, CommentStatus::Pending);
-        let approved = store.moderate(&c.id, ModerationAction::Approve, &mod_()).unwrap();
+        let approved = store
+            .moderate(&c.id, ModerationAction::Approve, &mod_())
+            .unwrap();
         assert_eq!(approved.status, CommentStatus::Visible);
     }
 
@@ -683,7 +685,9 @@ mod tests {
             )
             .unwrap();
         store.delete_comment(&c.id, &mod_()).unwrap();
-        let deleted = store.list_moderation(ModerationFilter::Deleted, &mod_()).unwrap();
+        let deleted = store
+            .list_moderation(ModerationFilter::Deleted, &mod_())
+            .unwrap();
         assert_eq!(deleted.comments.len(), 1);
     }
 

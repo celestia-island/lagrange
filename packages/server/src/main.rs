@@ -66,7 +66,11 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
-        Command::Serve { bind, db, jwt_secret } => serve(bind, db, jwt_secret),
+        Command::Serve {
+            bind,
+            db,
+            jwt_secret,
+        } => serve(bind, db, jwt_secret),
         Command::CreateAdmin {
             db,
             jwt_secret,
@@ -115,9 +119,7 @@ fn serve(bind: String, db: String, jwt_secret: Option<String>) -> Result<()> {
             "lagrange-server listening on http://{bind}  (protocol {})",
             lagrange_protocol::PROTOCOL_VERSION
         );
-        axum::serve(listener, app)
-            .await
-            .context("serve")
+        axum::serve(listener, app).await.context("serve")
     })?;
     Ok(())
 }
@@ -150,12 +152,15 @@ fn create_admin(
         anyhow::bail!("password must be at least 8 characters");
     }
 
-    let hash = lagrange_server::auth::hash_password(&password)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let hash =
+        lagrange_server::auth::hash_password(&password).map_err(|e| anyhow::anyhow!("{e}"))?;
     let account = state
         .create_account(&name, &hash, true)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    info!("created moderator account '{}' (id={})", account.name, account.id);
+    info!(
+        "created moderator account '{}' (id={})",
+        account.name, account.id
+    );
     println!("✓ moderator '{}' created", account.name);
     Ok(())
 }
@@ -175,8 +180,7 @@ fn prompt(msg: &str) -> Result<String> {
 }
 
 fn prompt_secret(msg: &str) -> Result<String> {
-    let password = rpassword::prompt_password(msg)
-        .context("read password")?;
+    let password = rpassword::prompt_password(msg).context("read password")?;
     if password.is_empty() {
         anyhow::bail!("password required");
     }

@@ -93,10 +93,7 @@ impl EdgeResponse {
     pub fn json(status: u16, json: &str) -> Self {
         let mut headers = HashMap::new();
         headers.insert("content-type", "application/json; charset=utf-8".into());
-        headers.insert(
-            "access-control-allow-origin",
-            "*".into(),
-        );
+        headers.insert("access-control-allow-origin", "*".into());
         Self {
             status,
             headers,
@@ -115,7 +112,10 @@ impl EdgeResponse {
     }
 
     pub fn error(status: u16, err: ProtocolError) -> Self {
-        Self::json(status, &serde_json::to_string(&err).unwrap_or_else(|_| "{}".into()))
+        Self::json(
+            status,
+            &serde_json::to_string(&err).unwrap_or_else(|_| "{}".into()),
+        )
     }
 }
 
@@ -165,7 +165,10 @@ pub fn handle<S: CommentService, R: CallerResolver, M: SourceMeta>(
             "access-control-allow-methods",
             "GET,POST,PATCH,DELETE,OPTIONS".into(),
         );
-        h.insert("access-control-allow-headers", "authorization,content-type".into());
+        h.insert(
+            "access-control-allow-headers",
+            "authorization,content-type".into(),
+        );
         return EdgeResponse {
             status: 204,
             headers: h,
@@ -205,7 +208,10 @@ pub fn handle<S: CommentService, R: CallerResolver, M: SourceMeta>(
 
         ("GET", "/threads") => {
             let Some(node) = params.get("node") else {
-                return EdgeResponse::error(400, ProtocolError::new("validation", "missing ?node="));
+                return EdgeResponse::error(
+                    400,
+                    ProtocolError::new("validation", "missing ?node="),
+                );
             };
             match store.get_thread(node, &caller) {
                 Ok(ThreadLookup::Found(t)) => EdgeResponse::json(
@@ -222,7 +228,10 @@ pub fn handle<S: CommentService, R: CallerResolver, M: SourceMeta>(
 
         ("GET", "/comments") => {
             let Some(thread) = params.get("thread") else {
-                return EdgeResponse::error(400, ProtocolError::new("validation", "missing ?thread="));
+                return EdgeResponse::error(
+                    400,
+                    ProtocolError::new("validation", "missing ?thread="),
+                );
             };
             let req = ListComments {
                 thread_id: thread.clone(),
@@ -238,7 +247,10 @@ pub fn handle<S: CommentService, R: CallerResolver, M: SourceMeta>(
         ("POST", "/comments") => {
             let parsed: Result<CreateComment, _> = serde_json::from_str(body);
             let Ok(req) = parsed else {
-                return EdgeResponse::error(400, ProtocolError::new("validation", "invalid JSON body"));
+                return EdgeResponse::error(
+                    400,
+                    ProtocolError::new("validation", "invalid JSON body"),
+                );
             };
             match store.create_comment(&req, &caller) {
                 Ok(c) => EdgeResponse::json(201, &serde_json::to_string(&c).unwrap()),
@@ -250,7 +262,10 @@ pub fn handle<S: CommentService, R: CallerResolver, M: SourceMeta>(
             let id = p.trim_start_matches("/comments/");
             let parsed: Result<EditComment, _> = serde_json::from_str(body);
             let Ok(req) = parsed else {
-                return EdgeResponse::error(400, ProtocolError::new("validation", "invalid JSON body"));
+                return EdgeResponse::error(
+                    400,
+                    ProtocolError::new("validation", "invalid JSON body"),
+                );
             };
             match store.edit_comment(id, &req, &caller) {
                 Ok(c) => EdgeResponse::json(200, &serde_json::to_string(&c).unwrap()),
@@ -271,7 +286,10 @@ pub fn handle<S: CommentService, R: CallerResolver, M: SourceMeta>(
             let id = id.trim_end_matches("/vote");
             let parsed: Result<VoteBody, _> = serde_json::from_str(body);
             let Ok(vb) = parsed else {
-                return EdgeResponse::error(400, ProtocolError::new("validation", "invalid JSON body"));
+                return EdgeResponse::error(
+                    400,
+                    ProtocolError::new("validation", "invalid JSON body"),
+                );
             };
             match store.vote(id, vb.dir, &caller) {
                 Ok(s) => EdgeResponse::json(200, &serde_json::to_string(&s).unwrap()),
@@ -300,7 +318,16 @@ pub fn handle_native<S: CommentService, R: CallerResolver>(
     store: &S,
     resolver: &R,
 ) -> EdgeResponse {
-    handle(method, path, query, headers, body, store, resolver, &NativeMeta)
+    handle(
+        method,
+        path,
+        query,
+        headers,
+        body,
+        store,
+        resolver,
+        &NativeMeta,
+    )
 }
 
 fn parse_query(q: &str) -> HashMap<String, String> {
@@ -335,14 +362,30 @@ mod tests {
 
     #[test]
     fn health_reports_protocol() {
-        let r = handle_native("GET", "/health", "", &headers(), "", &store(), &AnonymousResolver);
+        let r = handle_native(
+            "GET",
+            "/health",
+            "",
+            &headers(),
+            "",
+            &store(),
+            &AnonymousResolver,
+        );
         assert_eq!(r.status, 200);
         assert!(r.body.contains(PROTOCOL_VERSION));
     }
 
     #[test]
     fn meta_reports_native_capabilities() {
-        let r = handle_native("GET", "/meta", "", &headers(), "", &store(), &AnonymousResolver);
+        let r = handle_native(
+            "GET",
+            "/meta",
+            "",
+            &headers(),
+            "",
+            &store(),
+            &AnonymousResolver,
+        );
         assert_eq!(r.status, 200);
         let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert_eq!(v["source"], "native");
@@ -354,15 +397,34 @@ mod tests {
 
     #[test]
     fn unknown_route_is_404() {
-        let r = handle_native("GET", "/nope", "", &headers(), "", &store(), &AnonymousResolver);
+        let r = handle_native(
+            "GET",
+            "/nope",
+            "",
+            &headers(),
+            "",
+            &store(),
+            &AnonymousResolver,
+        );
         assert_eq!(r.status, 404);
     }
 
     #[test]
     fn cors_preflight_short_circuits() {
-        let r = handle_native("OPTIONS", "/comments", "", &headers(), "", &store(), &AnonymousResolver);
+        let r = handle_native(
+            "OPTIONS",
+            "/comments",
+            "",
+            &headers(),
+            "",
+            &store(),
+            &AnonymousResolver,
+        );
         assert_eq!(r.status, 204);
-        assert_eq!(r.headers.get("access-control-allow-origin"), Some(&"*".to_string()));
+        assert_eq!(
+            r.headers.get("access-control-allow-origin"),
+            Some(&"*".to_string())
+        );
     }
 
     #[test]
@@ -370,7 +432,15 @@ mod tests {
         let s = store();
         // Create as anonymous.
         let body = r#"{"node_id":"n1","body_markdown":"hello","author_name":"guest"}"#;
-        let r = handle_native("POST", "/comments", "", &headers(), body, &s, &AnonymousResolver);
+        let r = handle_native(
+            "POST",
+            "/comments",
+            "",
+            &headers(),
+            body,
+            &s,
+            &AnonymousResolver,
+        );
         assert_eq!(r.status, 201);
         let c: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert_eq!(c["status"], "pending"); // anonymous → pending
@@ -378,7 +448,15 @@ mod tests {
 
         // Public list is empty (pending not shown).
         let q = format!("thread={tid}");
-        let r = handle_native("GET", "/comments", &q, &headers(), "", &s, &AnonymousResolver);
+        let r = handle_native(
+            "GET",
+            "/comments",
+            &q,
+            &headers(),
+            "",
+            &s,
+            &AnonymousResolver,
+        );
         let list: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert!(list["comments"].as_array().unwrap().is_empty());
     }
@@ -387,7 +465,15 @@ mod tests {
     fn thread_lookup_round_trip() {
         let s = store();
         // Missing before any comment.
-        let r = handle_native("GET", "/threads", "node=zzz", &headers(), "", &s, &AnonymousResolver);
+        let r = handle_native(
+            "GET",
+            "/threads",
+            "node=zzz",
+            &headers(),
+            "",
+            &s,
+            &AnonymousResolver,
+        );
         let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
         assert_eq!(v["status"], "missing");
 

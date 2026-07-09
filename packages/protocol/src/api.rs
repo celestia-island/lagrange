@@ -88,7 +88,9 @@ pub struct ListComments {
 pub enum ThreadLookup {
     Found(Thread),
     /// The node has no comments yet. The backend may still accept a create.
-    Missing { node_id: String },
+    Missing {
+        node_id: String,
+    },
 }
 
 /// The domain service every backend implements. All methods are `async`-able;

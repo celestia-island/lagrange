@@ -25,10 +25,8 @@ pub fn render(body_markdown: &str) -> String {
 }
 
 fn options() -> Options {
-    Options::ENABLE_TABLES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_SMART_PUNCTUATION
-        // NOTE: deliberately NOT enabling ENABLE_*_HTML — raw HTML stays text.
+    Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_SMART_PUNCTUATION
+    // NOTE: deliberately NOT enabling ENABLE_*_HTML — raw HTML stays text.
 }
 
 /// Replace unsafe link/image destinations with empty strings, and strip raw

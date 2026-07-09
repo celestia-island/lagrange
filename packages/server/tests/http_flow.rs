@@ -18,11 +18,14 @@ async fn seeded_app() -> (axum::Router, String) {
     let state = AppState::open_in_memory(b"test-secret").unwrap();
     let hash = lagrange_server::auth::hash_password("admin-pass").unwrap();
     let _account = state.create_account("admin", &hash, true).unwrap();
-    let token = state.auth.issue(&lagrange_server::auth::Account {
-        id: _account.id.clone(),
-        name: _account.name.clone(),
-        moderator: _account.moderator,
-    }).unwrap();
+    let token = state
+        .auth
+        .issue(&lagrange_server::auth::Account {
+            id: _account.id.clone(),
+            name: _account.name.clone(),
+            moderator: _account.moderator,
+        })
+        .unwrap();
     (app(state), token)
 }
 
@@ -46,7 +49,12 @@ async fn body_string(resp: axum::response::Response) -> String {
 async fn health_reports_protocol_version() {
     let app = app(AppState::open_in_memory(b"s").unwrap());
     let resp = app
-        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -106,7 +114,12 @@ async fn full_comment_flow_as_moderator() {
     });
     let resp = app
         .clone()
-        .oneshot(auth_request(&token, "POST", "/comments", create.to_string()))
+        .oneshot(auth_request(
+            &token,
+            "POST",
+            "/comments",
+            create.to_string(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
@@ -282,7 +295,12 @@ async fn validation_error_on_empty_body() {
     let (app, token) = seeded_app().await;
     let create = serde_json::json!({"node_id": "x", "body_markdown": "   "});
     let resp = app
-        .oneshot(auth_request(&token, "POST", "/comments", create.to_string()))
+        .oneshot(auth_request(
+            &token,
+            "POST",
+            "/comments",
+            create.to_string(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -307,7 +325,12 @@ async fn me_endpoint_reports_identity() {
     // Anonymous.
     let anon_router = lagrange_server::app(AppState::open_in_memory(b"s2").unwrap());
     let resp = anon_router
-        .oneshot(Request::builder().uri("/auth/me").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/auth/me")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     let v: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();

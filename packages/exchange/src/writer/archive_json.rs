@@ -65,8 +65,7 @@ impl Writer for ArchiveJsonWriter {
                 .collect(),
         };
         let json = serde_json::to_string_pretty(&archive)?;
-        std::fs::write(&path, json)
-            .with_context(|| format!("write {}", path.display()))?;
+        std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
         Ok(())
     }
 }
