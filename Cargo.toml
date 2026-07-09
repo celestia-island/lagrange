@@ -55,9 +55,16 @@ tower-http = { version = "^0.6", features = ["fs"] }
 
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
 tairitsu-vdom = "^0.5"
+# tairitsu hooks runtime (needed by hikari components).
+tairitsu-hooks = "^0.5"
+# tairitsu macros (rsx!, component!, define_props — needed by hikari components).
+tairitsu-macros = "^0.5"
 # Theming: hikari color palette + icon system.
 hikari-palette = "^0.3"
 hikari-icons = { version = "^0.3", default-features = false }
+# Hikari UI components (Card, CodeHighlight, Typography, etc.) — rendered via
+# tairitsu-vdom SSR at build time, same VNode→HTML path lagrange already uses.
+hikari-components = "^0.3"
 
 [dev-dependencies]
 tempfile = "^3"

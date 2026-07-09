@@ -10,9 +10,30 @@ pub fn render_to_html(blocks: &[Block]) -> String {
     render_blocks(blocks).render_to_html()
 }
 
+/// Render markdown blocks to a self-contained HTML string, with pre-rendered
+/// HTML for any [`Block::LiveComponent`] blocks supplied via `live_html`.
+/// Keys in `live_html` are the source strings (matching the AST).
+pub fn render_to_html_with_live(blocks: &[Block], live_html: &std::collections::HashMap<String, String>) -> String {
+    render_blocks_with_live(blocks, live_html).render_to_html()
+}
+
 /// Render markdown blocks to a tairitsu [`VNode`] fragment.
 pub fn render_blocks(blocks: &[Block]) -> VNode {
     VNode::Fragment(blocks.iter().map(render_block).collect())
+}
+
+/// Render markdown blocks to a [`VNode`] fragment, injecting pre-rendered
+/// HTML for live component blocks.
+fn render_blocks_with_live(
+    blocks: &[Block],
+    live_html: &std::collections::HashMap<String, String>,
+) -> VNode {
+    VNode::Fragment(
+        blocks
+            .iter()
+            .map(|b| render_block_with_live(b, live_html))
+            .collect(),
+    )
 }
 
 fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
@@ -20,6 +41,13 @@ fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
 }
 
 fn render_block(b: &Block) -> VNode {
+    render_block_with_live(b, &std::collections::HashMap::new())
+}
+
+fn render_block_with_live(
+    b: &Block,
+    live_html: &std::collections::HashMap<String, String>,
+) -> VNode {
     match b {
         Block::Heading { level, text } => el_node(&format!("h{level}"), render_inlines(text)),
         Block::Paragraph(inlines) => el_node("p", render_inlines(inlines)),
@@ -32,6 +60,12 @@ fn render_block(b: &Block) -> VNode {
             }
             code_el = code_el.child(txt(code));
             VNode::Element(Box::new(el("pre").child(VNode::Element(Box::new(code_el)))))
+        }
+        Block::LiveComponent { source } => {
+            // Look up pre-rendered HTML (produced by the build-time compiler).
+            // If not yet compiled, fall back to a source-only display.
+            let rendered = live_html.get(source);
+            render_live_block(source, rendered)
         }
         Block::List { ordered, items } => {
             let tag = if *ordered { "ol" } else { "ul" };
@@ -151,4 +185,82 @@ fn rewrite_link(url: &str) -> String {
         Some(f) => format!("{rewritten}#{f}"),
         None => rewritten,
     }
+}
+
+/// Escape HTML special characters in a string (for source display).
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Render a live component block as a preview/source-toggle card.
+///
+/// If `rendered_html` is `Some`, the block was successfully compiled at build
+/// time and the HTML is shown in the preview pane. If `None`, only the source
+/// is displayed (e.g. the compiler wasn't available).
+fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
+    let escaped_source = html_escape(source);
+
+    let mut children = Vec::new();
+
+    // Tab bar.
+    children.push(VNode::Element(Box::new(
+        el("div")
+            .attr("class", "lg-live-tabs")
+            .children(vec![
+                VNode::Element(
+                    Box::new(
+                        el("button")
+                            .attr("class", "lg-live-tab active")
+                            .attr("data-tab", "preview")
+                            .child(txt("Preview")),
+                    ),
+                ),
+                VNode::Element(
+                    Box::new(
+                        el("button")
+                            .attr("class", "lg-live-tab")
+                            .attr("data-tab", "source")
+                            .child(txt("Source")),
+                    ),
+                ),
+            ]),
+    )));
+
+    // Preview pane.
+    let preview_inner = if let Some(html) = rendered_html {
+        VNode::Element(Box::new(
+            el("div")
+                .attr("class", "lg-live-preview-inner")
+                .dangerous_inner_html(html),
+        ))
+    } else {
+        VNode::Element(Box::new(
+            el("div")
+                .attr("class", "lg-live-preview-empty")
+                .child(txt("(live preview unavailable — not compiled)")),
+        ))
+    };
+    children.push(VNode::Element(Box::new(
+        el("div").attr("class", "lg-live-preview").child(preview_inner),
+    )));
+
+    // Source pane (hidden by default).
+    children.push(VNode::Element(Box::new(
+        el("pre")
+            .attr("class", "lg-live-source")
+            .attr("hidden", "")
+            .child(VNode::Element(Box::new(
+                el("code")
+                    .attr("class", "language-rust")
+                    .dangerous_inner_html(&escaped_source),
+            ))),
+    )));
+
+    VNode::Element(Box::new(
+        el("div")
+            .attr("class", "lg-live-block")
+            .children(children),
+    ))
 }
