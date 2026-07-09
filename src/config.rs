@@ -108,8 +108,16 @@ pub struct CommentsConfig {
     pub disqus_shortname: Option<String>,
     /// Giscus repo as `owner/repo` (`mode = "giscus"`).
     pub giscus_repo: Option<String>,
-    /// Giscus category id/name (`mode = "giscus"`).
+    /// Giscus repo id — the GraphQL node id, e.g. `R_kgDOTMziaQ`.
+    /// Required by the giscus widget; obtainable from giscus.app or
+    /// `gh api repos/owner/repo --jq .node_id`.
+    pub giscus_repo_id: Option<String>,
+    /// Giscus category name (e.g. `Comments`). Human-readable; shown in the UI.
     pub giscus_category: Option<String>,
+    /// Giscus category id — the GraphQL node id, e.g. `DIC_kwDOTMziac4DAzj6`.
+    /// Required by the giscus widget; obtainable from giscus.app or the
+    /// `discussionCategories` GraphQL field.
+    pub giscus_category_id: Option<String>,
 }
 
 impl CommentsConfig {
@@ -231,11 +239,19 @@ disqus_shortname = "mysite"
 enabled = true
 mode = "giscus"
 giscus_repo = "owner/repo"
-giscus_category = "Announcements"
+giscus_repo_id = "R_kgDOtest"
+giscus_category = "Comments"
+giscus_category_id = "DIC_kwDOtest"
 "#;
         let cfg: Config = toml::from_str(toml).unwrap();
         assert_eq!(cfg.comments.mode, CommentMode::Giscus);
         assert_eq!(cfg.comments.giscus_repo.as_deref(), Some("owner/repo"));
+        assert_eq!(cfg.comments.giscus_repo_id.as_deref(), Some("R_kgDOtest"));
+        assert_eq!(cfg.comments.giscus_category.as_deref(), Some("Comments"));
+        assert_eq!(
+            cfg.comments.giscus_category_id.as_deref(),
+            Some("DIC_kwDOtest")
+        );
     }
 
     #[test]

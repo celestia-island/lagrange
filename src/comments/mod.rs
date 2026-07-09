@@ -154,15 +154,17 @@ var disqus_config = function () {{
 
 fn giscus_embed(input: &MountInput<'_>, node_id: &str) -> String {
     let repo = input.config.giscus_repo.as_deref().unwrap_or("");
+    let repo_id = input.config.giscus_repo_id.as_deref().unwrap_or("");
     let category = input.config.giscus_category.as_deref().unwrap_or("");
+    let category_id = input.config.giscus_category_id.as_deref().unwrap_or("");
     format!(
         r#"
 <section class="lg-comments-section" aria-label="Comments">
 <script src="https://giscus.app/client.js"
   data-repo="{repo}"
-  data-repo-id=""
+  data-repo-id="{repo_id}"
   data-category="{cat}"
-  data-category-id=""
+  data-category-id="{cat_id}"
   data-mapping="specific"
   data-term="{nid}"
   data-strict="0"
@@ -177,7 +179,9 @@ fn giscus_embed(input: &MountInput<'_>, node_id: &str) -> String {
 </section>
 "#,
         repo = escape_attr(repo),
+        repo_id = escape_attr(repo_id),
         cat = escape_attr(category),
+        cat_id = escape_attr(category_id),
         nid = escape_attr(node_id),
     )
 }
@@ -252,7 +256,9 @@ mod tests {
             archive_dir: "comments".into(),
             disqus_shortname: Some("mysite".into()),
             giscus_repo: Some("owner/repo".into()),
-            giscus_category: Some("Announcements".into()),
+            giscus_repo_id: Some("R_kgDOtest".into()),
+            giscus_category: Some("Comments".into()),
+            giscus_category_id: Some("DIC_kwDOtest".into()),
         }
     }
 
@@ -344,6 +350,9 @@ mod tests {
         let html = mount(CommentMode::Giscus, &fm());
         assert!(html.contains("giscus.app/client.js"));
         assert!(html.contains("data-repo=\"owner/repo\""));
+        assert!(html.contains("data-repo-id=\"R_kgDOtest\""));
+        assert!(html.contains("data-category=\"Comments\""));
+        assert!(html.contains("data-category-id=\"DIC_kwDOtest\""));
         assert!(html.contains("data-term=\"2026/launch\""));
     }
 

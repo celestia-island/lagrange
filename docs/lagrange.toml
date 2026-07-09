@@ -6,3 +6,14 @@ cname = "lagrange.docs.celestia.world"
 [languages]
 default = "en"
 order = ["en", "zhs", "zht", "ja", "ko", "fr", "es", "ru", "ar"]
+
+[comments]
+enabled = true
+mode = "giscus"
+# Stores comments in GitHub Discussions → "Comments" category, so the repo's
+# Issue tracker stays clean. IDs are the GraphQL node ids (from giscus.app or
+# `gh api`); giscus requires both the repo and category node ids.
+giscus_repo = "celestia-island/lagrange"
+giscus_repo_id = "R_kgDOTMziaQ"
+giscus_category = "Comments"
+giscus_category_id = "DIC_kwDOTMziac4DAzj6"
