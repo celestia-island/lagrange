@@ -16,6 +16,14 @@ exclude = ["docs/", "justfile", ".github/"]
 [package.metadata.docs.rs]
 all-features = true
 
+# cargo-binstall: fetch the prebuilt binary from GitHub Releases instead of
+# compiling from source. The URL pattern matches the archives produced by
+# .github/workflows/release.yml.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/lagrange-v{ version }-{ target }.tar.{ archive-format }"
+bin-dir = "lagrange{ binary-ext }"
+pkg-fmt = "tgz"
+
 [lib]
 name = "lagrange_library"
 path = "src/lib.rs"
