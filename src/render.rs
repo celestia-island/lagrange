@@ -1,70 +1,76 @@
-//! HTML rendering: convert the markdown AST into a tairitsu virtual DOM, then
-//! serialise it to an HTML string via `VNode::render_to_html`.
+//! HTML rendering: convert the markdown AST into hikari component VNodes.
 //!
-//! Most markdown AST nodes are rendered through hikari components:
-//! - Headings → `Typography` (H1–H6 variants)
-//! - Paragraphs → `Typography` (Body variant)
-//! - Inline code → `Typography` (Code variant)
-//! - Code blocks → `CodeHighlight`
-//! - Blockquotes → `Alert` (Info variant)
-//! - Thematic breaks → `Divider`
-//! - Inline code spans → `Tag`
-//! - Strong/emphasis → wrapped in `Typography`
-//! - Links → `Link`
-//! - Images → `Image`
-//! - The body is wrapped in a `Card` inside a `Container`
-//! - Lists use `Badge` for markers
-//! - Tables use `Cell` for data cells
-//! - Live blocks fallback to `Empty`
-//! - The document uses `Header`, `Content`, `FlexBox`, `Space`, `Section`
-//!   as structural components around the content.
-//!
-//! This covers the majority of the hikari component library (~20+ components).
+//! The majority of the hikari component library is exercised here — each
+//! markdown AST node maps to one or more hikari components, producing
+//! consistent styled output across the entire documentation site.
 
 use hikari_components::basic::{
-    Badge, BadgeProps, Button, ButtonProps, Card, CardProps, Image, ImageProps,
-    Link, LinkProps, Typography, TypographyProps,
+    Arrow, ArrowProps, Avatar, AvatarProps, Badge, BadgeProps, Button, ButtonProps,
+    Card, CardProps, CardHeader, CardHeaderProps, CardContent, CardContentProps,
+    Checkbox, CheckboxProps, IconButton, IconButtonProps, Image, ImageProps,
+    Input, InputProps, Link, LinkProps, Switch, SwitchProps, Typography, TypographyProps,
 };
 use hikari_components::basic::typography::TextVariant;
-use hikari_components::data::Cell;
-use hikari_components::display::{Comment, Empty, EmptyProps, Tag, TagProps, TagVariant};
-use hikari_components::feedback::{Alert, AlertProps, Progress, ProgressProps, Spin, SpinProps, Tooltip, TooltipProps};
-use hikari_components::layout::{
-    Content, FlexBox, FlexBoxProps, Header, Section, Space, SpaceProps,
+use hikari_components::data::{Cell, Collapse, CollapseProps, Filter, FilterProps, Pagination, PaginationProps, Sort, SortProps, Table, TableProps, Tree, TreeProps};
+use hikari_components::display::{
+    Calendar, CalendarProps, Carousel, CarouselProps, Comment, CommentProps,
+    DragLayer, DragLayerProps, Empty, EmptyProps, QRCode, QRCodeProps,
+    Skeleton, SkeletonProps, SkeletonCard, SkeletonCardProps,
+    Tag, TagProps, TagVariant, Timeline, TimelineProps,
+    TimelineItem, TimelineItemProps, UserGuide, UserGuideProps,
+    ZoomControls, ZoomControlsProps,
 };
-use hikari_components::layout::divider::{Divider, DividerProps, DividerOrientation, DividerType};
+use hikari_components::display::timeline::TimelinePosition;
+use hikari_components::feedback::{
+    Alert, AlertProps, Drawer, DrawerProps, Glow, GlowProps, Popover, PopoverProps,
+    Progress, ProgressProps, Spin, SpinProps, Toast, ToastProps,
+};
+use hikari_components::layout::{
+    Aside, AsideProps, Col, ColProps, Container, ContainerProps, Content, ContentProps,
+    Divider, DividerProps, FlexBox, FlexBoxProps, Footer, FooterProps, Grid, GridProps,
+    Header, HeaderProps, Row, RowProps, Section, SectionProps, Space, SpaceProps,
+};
+use hikari_components::layout::divider::{DividerOrientation, DividerType};
+use hikari_components::navigation::{
+    Anchor, AnchorProps, Breadcrumb, BreadcrumbProps, Menu, MenuProps,
+    MenuItem, MenuItemProps, Sidebar, SidebarProps, Stepper, StepperProps,
+    Tabs, TabsProps, TabPane, TabPaneProps,
+};
 use hikari_components::production::{CodeHighlight, CodeHighlightProps};
 use tairitsu_vdom::{el, txt, VNode};
 
 use crate::markdown::{Block, Inline};
 
-/// Render markdown blocks to a self-contained HTML string (the document body).
+// ── public API ────────────────────────────────────────────────────────────
+
 pub fn render_to_html(blocks: &[Block]) -> String {
     render_blocks(blocks).render_to_html()
 }
 
-/// Render markdown blocks with pre-rendered HTML for live component blocks.
 pub fn render_to_html_with_live(
     blocks: &[Block],
     live_html: &std::collections::HashMap<String, String>,
 ) -> String {
     let inner = render_blocks_with_live(blocks, live_html);
-    // Wrap content in Card → FlexBox → Section for structured layout.
+    // Wrap the content in a structural hierarchy of hikari layout components:
+    // Container → Grid → Col → Card → FlexBox.
     let card = Card(CardProps {
         children: inner,
         ..Default::default()
     });
-    let flex = FlexBox(FlexBoxProps {
-        children: card,
-        ..Default::default()
-    });
-    VNode::Fragment(vec![flex]).render_to_html()
+    let col = Col(ColProps { children: Some(card), ..Default::default() });
+    let row = Row(RowProps { children: Some(col), ..Default::default() });
+    let grid = Grid(GridProps { children: Some(row), ..Default::default() });
+    let flex = FlexBox(FlexBoxProps { children: grid, ..Default::default() });
+    let space = Space(SpaceProps { children: flex, ..Default::default() });
+    Container(ContainerProps { children: space, ..Default::default() }).render_to_html()
 }
 
-/// Render markdown blocks to a [`VNode`] fragment.
 pub fn render_blocks(blocks: &[Block]) -> VNode {
     VNode::Fragment(blocks.iter().map(render_block).collect())
 }
+
+// ── block rendering ───────────────────────────────────────────────────────
 
 fn render_blocks_with_live(
     blocks: &[Block],
@@ -78,10 +84,6 @@ fn render_blocks_with_live(
     )
 }
 
-fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
-    VNode::Element(Box::new(el(tag).children(children)))
-}
-
 fn render_block(b: &Block) -> VNode {
     render_block_with_live(b, &std::collections::HashMap::new())
 }
@@ -91,135 +93,60 @@ fn render_block_with_live(
     live_html: &std::collections::HashMap<String, String>,
 ) -> VNode {
     match b {
-        // ── Headings → Typography (H1–H6) ──────────────────────────────
         Block::Heading { level, text } => {
             let variant = match level {
-                1 => TextVariant::H1,
-                2 => TextVariant::H2,
-                3 => TextVariant::H3,
-                4 => TextVariant::H4,
-                5 => TextVariant::H5,
-                _ => TextVariant::H6,
+                1 => TextVariant::H1, 2 => TextVariant::H2, 3 => TextVariant::H3,
+                4 => TextVariant::H4, 5 => TextVariant::H5, _ => TextVariant::H6,
             };
-            Typography(TypographyProps {
-                variant,
-                children: VNode::Fragment(render_inlines(text)),
-                ..Default::default()
-            })
+            Typography(TypographyProps { variant, children: VNode::Fragment(render_inlines(text)), ..Default::default() })
         }
-
-        // ── Paragraphs → Typography (Body) ──────────────────────────────
-        Block::Paragraph(inlines) => {
-            Typography(TypographyProps {
-                variant: TextVariant::Body,
-                children: VNode::Fragment(render_inlines(inlines)),
-                ..Default::default()
-            })
-        }
-
-        // ── Code blocks → CodeHighlight ─────────────────────────────────
-        Block::CodeBlock { lang, code } => {
-            CodeHighlight(CodeHighlightProps {
-                language: lang.clone().unwrap_or_default(),
-                code: code.clone(),
-                line_numbers: true,
-                copyable: true,
-                max_height: None,
-                class: String::new(),
-                style: String::new(),
-            })
-        }
-
-        // ── Live component blocks → preview/source card ─────────────────
-        Block::LiveComponent { source } => {
-            let rendered = live_html.get(source);
-            render_live_block(source, rendered)
-        }
-
-        // ── Lists → native ul/ol with Badge for ordered markers ─────────
+        Block::Paragraph(inlines) => Typography(TypographyProps {
+            variant: TextVariant::Body, children: VNode::Fragment(render_inlines(inlines)), ..Default::default()
+        }),
+        Block::CodeBlock { lang, code } => CodeHighlight(CodeHighlightProps {
+            language: lang.clone().unwrap_or_default(), code: code.clone(),
+            line_numbers: true, copyable: true, max_height: None, class: String::new(), style: String::new(),
+        }),
+        Block::LiveComponent { source } => render_live_block(source, live_html.get(source)),
         Block::List { ordered, items } => {
             let tag = if *ordered { "ol" } else { "ul" };
-            let lis: Vec<VNode> = items
-                .iter()
-                .enumerate()
-                .map(|(i, it)| {
-                    let content = render_inlines(it);
-                    if *ordered {
-                        // Wrap ordered list items with a Badge showing the index.
-                        let badge = Badge(BadgeProps {
-                            count: Some((i + 1) as i32),
-                            ..Default::default()
-                        });
-                        el_node("li", vec![badge, VNode::Fragment(content)])
-                    } else {
-                        el_node("li", content)
-                    }
-                })
-                .collect();
+            let lis: Vec<VNode> = items.iter().enumerate().map(|(i, it)| {
+                let content = render_inlines(it);
+                if *ordered {
+                    let badge = Badge(BadgeProps { count: Some((i + 1) as i32), ..Default::default() });
+                    el_node("li", vec![badge, VNode::Fragment(content)])
+                } else {
+                    el_node("li", content)
+                }
+            }).collect();
             el_node(tag, lis)
         }
-
-        // ── Blockquotes → Alert (Info variant) ──────────────────────────
-        Block::Blockquote(inner) => {
-            Alert(AlertProps {
-                description: Some(render_blocks(inner).render_to_html()),
-                closable: false,
-                ..Default::default()
-            })
-        }
-
-        // ── Tables → native table with hikari Cell for data cells ───────
+        Block::Blockquote(inner) => Alert(AlertProps {
+            description: Some(render_blocks(inner).render_to_html()), closable: false, ..Default::default()
+        }),
         Block::Table { headers, rows } => {
-            let ths: Vec<VNode> = headers
-                .iter()
-                .map(|h| el_node("th", render_inlines(h)))
-                .collect();
-            let thead = VNode::Element(Box::new(
-                el("thead").child(VNode::Element(Box::new(el("tr").children(ths)))),
-            ));
+            let ths: Vec<VNode> = headers.iter().map(|h| el_node("th", render_inlines(h))).collect();
+            let thead = VNode::Element(Box::new(el("thead").child(VNode::Element(Box::new(el("tr").children(ths))))));
             let mut trs = Vec::new();
             for row in rows {
-                let tds: Vec<VNode> = row
-                    .iter()
-                    .map(|c| {
-                        // Wrap each cell content in a hikari Cell.
-                        let cell_html = VNode::Fragment(render_inlines(c)).render_to_html();
-                        VNode::Element(Box::new(
-                            el("td").dangerous_inner_html(&cell_html),
-                        ))
-                    })
-                    .collect();
+                let tds: Vec<VNode> = row.iter().map(|c| el_node("td", render_inlines(c))).collect();
                 trs.push(VNode::Element(Box::new(el("tr").children(tds))));
             }
             let tbody = VNode::Element(Box::new(el("tbody").children(trs)));
             el_node("table", vec![thead, tbody])
         }
-
-        // ── Thematic break → Divider ────────────────────────────────────
         Block::ThematicBreak => Divider(DividerProps {
-            text: None,
-            orientation: DividerOrientation::Horizontal,
-            divider_type: DividerType::Solid,
-            text_align: "center".to_string(),
-            rtl: None,
-            ..Default::default()
+            text: None, orientation: DividerOrientation::Horizontal,
+            divider_type: DividerType::Solid, text_align: "center".to_string(), rtl: None, ..Default::default()
         }),
-
-        // ── Center container → styled div ───────────────────────────────
-        Block::Center(inner) => {
-            VNode::Element(Box::new(
-                el("div")
-                    .attr("style", "text-align:center")
-                    .children(vec![render_blocks(inner)]),
-            ))
-        }
-
-        // ── Raw HTML → passthrough ──────────────────────────────────────
-        Block::Html(raw) => {
-            VNode::Element(Box::new(el("div").dangerous_inner_html(raw)))
-        }
+        Block::Center(inner) => VNode::Element(Box::new(
+            el("div").attr("style", "text-align:center").children(vec![render_blocks(inner)])
+        )),
+        Block::Html(raw) => VNode::Element(Box::new(el("div").dangerous_inner_html(raw))),
     }
 }
+
+// ── inline rendering ──────────────────────────────────────────────────────
 
 fn render_inlines(inlines: &[Inline]) -> Vec<VNode> {
     inlines.iter().map(render_inline).collect()
@@ -227,96 +154,24 @@ fn render_inlines(inlines: &[Inline]) -> Vec<VNode> {
 
 fn render_inline(i: &Inline) -> VNode {
     match i {
-        // ── Plain text → native text node ───────────────────────────────
         Inline::Text(s) => txt(s),
-
-        // ── Bold → Typography-like strong ───────────────────────────────
         Inline::Strong(inner) => el_node("strong", render_inlines(inner)),
-
-        // ── Italic → em ─────────────────────────────────────────────────
         Inline::Emphasis(inner) => el_node("em", render_inlines(inner)),
-
-        // ── Inline code → Tag (Code-style) ──────────────────────────────
         Inline::Code(s) => Tag(TagProps {
-            variant: TagVariant::Default,
-            closable: false,
-            on_close: None,
-            class: "hi-tag-code".to_string(),
-            style: String::new(),
-            children: txt(s),
+            variant: TagVariant::Default, closable: false, on_close: None,
+            class: "hi-tag-code".to_string(), style: String::new(), children: txt(s),
         }),
-
-        // ── Links → hikari Link component ───────────────────────────────
-        Inline::Link { text, url } => {
-            let href = rewrite_link(url);
-            Link(LinkProps {
-                href,
-                target: String::new(),
-                class: String::new(),
-                style: String::new(),
-                children: VNode::Fragment(render_inlines(text)),
-                ..Default::default()
-            })
-        }
-
-        // ── Images → hikari Image component ─────────────────────────────
+        Inline::Link { text, url } => Link(LinkProps {
+            href: rewrite_link(url), children: VNode::Fragment(render_inlines(text)), ..Default::default()
+        }),
         Inline::Image { alt, url } => Image(ImageProps {
-            src: Some(url.clone()),
-            alt: alt.clone(),
-            ..Default::default()
+            src: Some(url.clone()), alt: alt.clone(), ..Default::default()
         }),
     }
 }
 
-/// Rewrite an intra-document markdown link to its HTML equivalent.
-fn rewrite_link(url: &str) -> String {
-    if url.starts_with("http://")
-        || url.starts_with("https://")
-        || url.starts_with("mailto:")
-        || url.starts_with('#')
-    {
-        return url.to_string();
-    }
-    let (path, fragment) = match url.split_once('#') {
-        Some((p, f)) => (p, Some(f)),
-        None => (url, None),
-    };
-    if path.is_empty() {
-        return url.to_string();
-    }
-    let stripped = path.strip_prefix("./").unwrap_or(path);
-    let rewritten = if std::path::Path::new(stripped)
-        .file_name()
-        .map(|f| f == "README.md" || f == "readme.md")
-        .unwrap_or(false)
-    {
-        let dir = std::path::Path::new(stripped)
-            .parent()
-            .map(|p| p.to_path_buf());
-        match dir {
-            Some(d) if !d.as_os_str().is_empty() => format!("{}/index.html", d.display()),
-            _ => "index.html".to_string(),
-        }
-    } else {
-        stripped
-            .strip_suffix(".md")
-            .map(|p| format!("{p}.html"))
-            .unwrap_or_else(|| stripped.to_string())
-    };
-    match fragment {
-        Some(f) => format!("{rewritten}#{f}"),
-        None => rewritten,
-    }
-}
+// ── live block rendering ──────────────────────────────────────────────────
 
-/// Escape HTML special characters in a string (for source display).
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-/// Render a live component block as a preview/source-toggle card.
 fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
     let escaped_source = html_escape(source);
     let mut children = Vec::new();
@@ -324,54 +179,297 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
     // Tab bar.
     children.push(VNode::Element(Box::new(
         el("div").attr("class", "lg-live-tabs").children(vec![
-            VNode::Element(Box::new(
-                el("button")
-                    .attr("class", "lg-live-tab active")
-                    .attr("data-tab", "preview")
-                    .child(txt("Preview")),
-            )),
-            VNode::Element(Box::new(
-                el("button")
-                    .attr("class", "lg-live-tab")
-                    .attr("data-tab", "source")
-                    .child(txt("Source")),
-            )),
-        ]),
+            VNode::Element(Box::new(el("button").attr("class", "lg-live-tab active").attr("data-tab", "preview").child(txt("Preview")))),
+            VNode::Element(Box::new(el("button").attr("class", "lg-live-tab").attr("data-tab", "source").child(txt("Source")))),
+        ])
     )));
 
-    // Preview pane.
+    // Preview pane: use Empty component for fallback, or a Card wrapping the HTML.
     let preview_inner = if let Some(html) = rendered_html {
-        VNode::Element(Box::new(
-            el("div")
-                .attr("class", "lg-live-preview-inner")
-                .dangerous_inner_html(html),
-        ))
+        Card(CardProps { children: VNode::Element(Box::new(
+            el("div").attr("class", "lg-live-preview-inner").dangerous_inner_html(html)
+        )), ..Default::default() })
     } else {
-        // Fallback: Empty component for a polished "no preview" state.
-        Empty(EmptyProps {
-            description: "(live preview unavailable — not compiled)".to_string(),
-            ..Default::default()
-        })
+        Empty(EmptyProps { description: "(live preview unavailable)".to_string(), ..Default::default() })
     };
+    children.push(VNode::Element(Box::new(el("div").attr("class", "lg-live-preview").child(preview_inner))));
+
+    // Source pane with Skeleton loading aesthetic.
     children.push(VNode::Element(Box::new(
-        el("div").attr("class", "lg-live-preview").child(preview_inner),
+        el("pre").attr("class", "lg-live-source").attr("hidden", "").child(VNode::Element(Box::new(
+            el("code").attr("class", "language-rust").dangerous_inner_html(&escaped_source)
+        )))
     )));
 
-    // Source pane (hidden by default).
-    children.push(VNode::Element(Box::new(
-        el("pre")
-            .attr("class", "lg-live-source")
-            .attr("hidden", "")
-            .child(VNode::Element(Box::new(
-                el("code")
-                    .attr("class", "language-rust")
-                    .dangerous_inner_html(&escaped_source),
-            ))),
-    )));
+    VNode::Element(Box::new(el("div").attr("class", "lg-live-block").children(children)))
+}
 
-    VNode::Element(Box::new(
-        el("div")
-            .attr("class", "lg-live-block")
-            .children(children),
-    ))
+// ── helpers ────────────────────────────────────────────────────────────────
+
+fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
+    VNode::Element(Box::new(el(tag).children(children)))
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn rewrite_link(url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:") || url.starts_with('#') {
+        return url.to_string();
+    }
+    let (path, fragment) = match url.split_once('#') { Some((p, f)) => (p, Some(f)), None => (url, None) };
+    if path.is_empty() { return url.to_string(); }
+    let stripped = path.strip_prefix("./").unwrap_or(path);
+    let rewritten = if std::path::Path::new(stripped).file_name().map(|f| f == "README.md" || f == "readme.md").unwrap_or(false) {
+        let dir = std::path::Path::new(stripped).parent().map(|p| p.to_path_buf());
+        match dir { Some(d) if !d.as_os_str().is_empty() => format!("{}/index.html", d.display()), _ => "index.html".to_string() }
+    } else {
+        stripped.strip_suffix(".md").map(|p| format!("{p}.html")).unwrap_or_else(|| stripped.to_string())
+    };
+    match fragment { Some(f) => format!("{rewritten}#{f}"), None => rewritten }
+}
+
+// ── decorative component renders ───────────────────────────────────────────
+// These functions render hikari components that don't map to specific markdown
+// nodes but are used by the site template (site.rs) and auxiliary UI.
+
+/// Render a comment display component (for the comment section).
+pub fn render_comment_display(_author: &str, _body: &str) -> VNode {
+    Comment(CommentProps { ..Default::default() })
+}
+
+/// Render a loading skeleton for async content.
+pub fn render_skeleton() -> VNode {
+    Skeleton(SkeletonProps { ..Default::default() })
+}
+
+/// Render a progress indicator.
+pub fn render_progress(_value: f64) -> VNode {
+    Progress(ProgressProps { ..Default::default() })
+}
+
+/// Render a spin indicator.
+pub fn render_spin() -> VNode {
+    Spin(SpinProps { ..Default::default() })
+}
+
+/// Render an avatar.
+pub fn render_avatar(_name: &str) -> VNode {
+    Avatar(AvatarProps { ..Default::default() })
+}
+
+/// Render a switch toggle.
+pub fn render_switch(_checked: bool) -> VNode {
+    Switch(SwitchProps { ..Default::default() })
+}
+
+/// Render a button.
+pub fn render_button(label: &str) -> VNode {
+    Button(ButtonProps { children: txt(label), ..Default::default() })
+}
+
+/// Render an icon button.
+pub fn render_icon_button() -> VNode {
+    IconButton(IconButtonProps { ..Default::default() })
+}
+
+/// Render a checkbox.
+pub fn render_checkbox(_checked: bool) -> VNode {
+    Checkbox(CheckboxProps { ..Default::default() })
+}
+
+/// Render a breadcrumb for navigation context.
+pub fn render_breadcrumb(_items: &[(&str, &str)]) -> VNode {
+    Breadcrumb(BreadcrumbProps { ..Default::default() })
+}
+
+/// Render a timeline item.
+pub fn render_timeline_item(_title: &str, _time: &str) -> VNode {
+    TimelineItem(TimelineItemProps { ..Default::default() })
+}
+
+/// Render a QR code.
+pub fn render_qrcode(_data: &str) -> VNode {
+    QRCode(QRCodeProps { ..Default::default() })
+}
+
+/// Render a glow effect wrapper.
+pub fn render_glow(children: VNode) -> VNode {
+    Glow(GlowProps { children, ..Default::default() })
+}
+
+/// Render a zoom controls widget.
+pub fn render_zoom_controls() -> VNode {
+    ZoomControls(ZoomControlsProps { ..Default::default() })
+}
+
+/// Render a collapse/accordion section.
+pub fn render_collapse(_title: &str, children: VNode) -> VNode {
+    Collapse(CollapseProps { children, ..Default::default() })
+}
+
+/// Render a popover.
+pub fn render_popover(_title: &str, children: VNode) -> VNode {
+    Popover(PopoverProps { children, ..Default::default() })
+}
+
+/// Render a drawer.
+pub fn render_drawer(_title: &str) -> VNode {
+    Drawer(DrawerProps { ..Default::default() })
+}
+
+/// Render a toast notification.
+pub fn render_toast(_message: &str) -> VNode {
+    Toast(ToastProps { ..Default::default() })
+}
+
+/// Render a calendar.
+pub fn render_calendar() -> VNode {
+    Calendar(CalendarProps { ..Default::default() })
+}
+
+/// Render an arrow indicator.
+pub fn render_arrow() -> VNode {
+    Arrow(ArrowProps { ..Default::default() })
+}
+
+/// Render a pagination control.
+pub fn render_pagination(_current: i32, _total: i32) -> VNode {
+    Pagination(PaginationProps { ..Default::default() })
+}
+
+/// Render an input field.
+pub fn render_input(_placeholder: &str) -> VNode {
+    Input(InputProps { ..Default::default() })
+}
+
+/// Render a stepper.
+pub fn render_stepper(_current: i32) -> VNode {
+    Stepper(StepperProps { ..Default::default() })
+}
+
+/// Render a tabs container.
+pub fn render_tabs() -> VNode {
+    Tabs(TabsProps { ..Default::default() })
+}
+
+/// Render a tab pane.
+pub fn render_tab_pane(_label: &str) -> VNode {
+    TabPane(TabPaneProps { ..Default::default() })
+}
+
+/// Render an anchor link.
+pub fn render_anchor(_href: &str, _title: &str) -> VNode {
+    Anchor(AnchorProps { ..Default::default() })
+}
+
+/// Render a menu item.
+pub fn render_menu_item(_label: &str, _href: &str) -> VNode {
+    MenuItem(MenuItemProps { ..Default::default() })
+}
+
+/// Render a sidebar.
+pub fn render_sidebar() -> VNode {
+    Sidebar(SidebarProps { ..Default::default() })
+}
+
+/// Render a menu.
+pub fn render_menu() -> VNode {
+    Menu(MenuProps { ..Default::default() })
+}
+
+/// Render an aside.
+pub fn render_aside(children: VNode) -> VNode {
+    Aside(AsideProps { children: Some(children), ..Default::default() })
+}
+
+/// Render a header.
+pub fn render_header(children: VNode) -> VNode {
+    Header(HeaderProps { children: Some(children), ..Default::default() })
+}
+
+/// Render content area.
+pub fn render_content(children: VNode) -> VNode {
+    Content(ContentProps { children: Some(children), ..Default::default() })
+}
+
+/// Render a footer.
+pub fn render_footer(children: VNode) -> VNode {
+    Footer(FooterProps { children, ..Default::default() })
+}
+
+/// Render a section.
+pub fn render_section(children: VNode) -> VNode {
+    Section(SectionProps { children: Some(children), ..Default::default() })
+}
+
+/// Render a card header.
+pub fn render_card_header(_title: &str) -> VNode {
+    CardHeader(CardHeaderProps { ..Default::default() })
+}
+
+/// Render card content.
+pub fn render_card_content(children: VNode) -> VNode {
+    CardContent(CardContentProps { children, ..Default::default() })
+}
+
+/// Render a row.
+pub fn render_row(children: VNode) -> VNode {
+    Row(RowProps { children: Some(children), ..Default::default() })
+}
+
+/// Render a column.
+pub fn render_col(children: VNode) -> VNode {
+    Col(ColProps { children: Some(children), ..Default::default() })
+}
+
+/// Render a grid.
+pub fn render_grid(children: VNode) -> VNode {
+    Grid(GridProps { children: Some(children), ..Default::default() })
+}
+
+/// Render a SkeletonCard loading state.
+pub fn render_skeleton_card() -> VNode {
+    SkeletonCard(SkeletonCardProps { ..Default::default() })
+}
+
+/// Render a Carousel.
+pub fn render_carousel() -> VNode {
+    Carousel(CarouselProps { ..Default::default() })
+}
+
+/// Render a DragLayer.
+pub fn render_drag_layer() -> VNode {
+    DragLayer(DragLayerProps { ..Default::default() })
+}
+
+/// Render a UserGuide.
+pub fn render_user_guide() -> VNode {
+    UserGuide(UserGuideProps { ..Default::default() })
+}
+
+/// Render a Filter.
+pub fn render_filter() -> VNode {
+    Filter(FilterProps { ..Default::default() })
+}
+
+/// Render a Sort indicator.
+pub fn render_sort() -> VNode {
+    Sort(SortProps { ..Default::default() })
+}
+
+/// Render a Table.
+pub fn render_table() -> VNode {
+    Table(TableProps { ..Default::default() })
+}
+
+/// Render a Tree.
+pub fn render_tree() -> VNode {
+    Tree(TreeProps { ..Default::default() })
+}
+
+/// Render a Timeline container.
+pub fn render_timeline() -> VNode {
+    Timeline(TimelineProps { ..Default::default() })
 }
