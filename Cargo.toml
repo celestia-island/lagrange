@@ -51,6 +51,9 @@ tairitsu-vdom = "^0.5"
 hikari-palette = "^0.3"
 hikari-icons = { version = "^0.3", default-features = false }
 
+[dev-dependencies]
+tempfile = "^3"
+
 # ── workspace ──────────────────────────────────────────────────────────────
 # The root package (this crate, `lagrange-library`) is a workspace member by
 # default. Sibling crates under `crates/` implement the comment backend and

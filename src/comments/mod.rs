@@ -7,12 +7,13 @@
 //! - **empty string** — `mode = "none"`, `enabled = false`, or `comments: false`
 //!   in frontmatter. The page HTML stays exactly as it was before comments
 //!   existed. This is the load-bearing "pure static" guarantee.
-//! - **a `<lagrange-comments>` custom element** — for `faas` / `self-host` /
+//! - **a `<lagrange-comments>` custom element** — for `proxied` and
 //!   `static-json`. The element's `data-*` attributes carry the wiring; the
 //!   actual fetch/render happens client-side in `runtime.js` (a separate,
 //!   framework-free Web Component embedded into the binary at compile time).
-//! - **a third-party embed** — for `disqus` / `giscus` / `github-issue`. These
-//!   inject the vendor's own script; no lagrange runtime is shipped.
+//!   Every data source — native backend, GitHub Discussions/Issues proxy,
+//!   Disqus proxy — renders the *same* component. The UI is always ours;
+//!   only the data source behind `data-endpoint` varies.
 //!
 //! Comments are **never** embedded into the article body. The mount point is a
 //! sibling element appended after `</main>`. The comment ↔ article link is
@@ -53,13 +54,8 @@ pub fn mount_html(input: &MountInput<'_>) -> String {
 
     match input.config.mode {
         CommentMode::None => String::new(),
-        CommentMode::Faas | CommentMode::SelfHost => {
-            faas_or_self_host_mount(input, &node_id)
-        }
+        CommentMode::Proxied => proxied_mount(input, &node_id),
         CommentMode::StaticJson => static_json_mount(input, &node_id),
-        CommentMode::Disqus => disqus_embed(input, &node_id),
-        CommentMode::Giscus => giscus_embed(input, &node_id),
-        CommentMode::GithubIssue => github_issue_embed(input, &node_id),
     }
 }
 
@@ -78,17 +74,25 @@ fn archive_url(archive_dir: &str, node_id: &str) -> String {
     format!("/{archive_dir}/{node_id}.json")
 }
 
-fn faas_or_self_host_mount(input: &MountInput<'_>, node_id: &str) -> String {
+/// The single live-backend mount point. Covers native (`lagrange-server` /
+/// edge), and every proxied third-party source (GitHub Discussions/Issues,
+/// Disqus) — the component talks the lagrange-comment/v1 protocol at
+/// `data-endpoint` and never knows which source is behind it. `data-source`
+/// tags the source for the proxy to route on and for UI hints; the runtime
+/// component does not branch on it.
+fn proxied_mount(input: &MountInput<'_>, node_id: &str) -> String {
     let endpoint = input.config.endpoint.as_deref().unwrap_or("");
     let auth = input.config.auth_attr();
     let canonical = input.canonical.unwrap_or("");
+    let source = input.config.source_attr();
 
     format!(
         r#"
 <section class="lg-comments-section" aria-label="Comments">
 <script src="/assets/lagrange-comments.js" defer></script>
 <lagrange-comments
-  data-mode="{}"
+  data-mode="proxied"
+  data-source="{}"
   data-endpoint="{}"
   data-node-id="{}"
   data-canonical="{}"
@@ -97,7 +101,7 @@ fn faas_or_self_host_mount(input: &MountInput<'_>, node_id: &str) -> String {
 </lagrange-comments>
 </section>
 "#,
-        mode_attr(input.config.mode),
+        source,
         escape_attr(endpoint),
         escape_attr(node_id),
         escape_attr(canonical),
@@ -126,108 +130,6 @@ fn static_json_mount(input: &MountInput<'_>, node_id: &str) -> String {
     )
 }
 
-fn disqus_embed(_input: &MountInput<'_>, node_id: &str) -> String {
-    let shortname = _input.config.disqus_shortname.as_deref().unwrap_or("");
-    format!(
-        r#"
-<section class="lg-comments-section" aria-label="Comments">
-<div id="disqus_thread" data-disqus-identifier="{nid}"></div>
-<script>
-var disqus_config = function () {{
-  this.page.identifier = "{nid}";
-  this.page.url = window.location.href;
-}};
-(function() {{
-  var d = document, s = d.createElement("script");
-  s.src = "https://{short}.disqus.com/embed.js";
-  s.setAttribute("data-timestamp", +new Date());
-  (d.head || d.body).appendChild(s);
-}})();
-</script>
-<noscript>Please enable JavaScript to view the comments.</noscript>
-</section>
-"#,
-        nid = escape_attr(node_id),
-        short = escape_attr(shortname),
-    )
-}
-
-fn giscus_embed(input: &MountInput<'_>, node_id: &str) -> String {
-    let repo = input.config.giscus_repo.as_deref().unwrap_or("");
-    let repo_id = input.config.giscus_repo_id.as_deref().unwrap_or("");
-    let category = input.config.giscus_category.as_deref().unwrap_or("");
-    let category_id = input.config.giscus_category_id.as_deref().unwrap_or("");
-    format!(
-        r#"
-<section class="lg-comments-section" aria-label="Comments">
-<script src="https://giscus.app/client.js"
-  data-repo="{repo}"
-  data-repo-id="{repo_id}"
-  data-category="{cat}"
-  data-category-id="{cat_id}"
-  data-mapping="specific"
-  data-term="{nid}"
-  data-strict="0"
-  data-reactions-enabled="1"
-  data-emit-metadata="0"
-  data-input-position="top"
-  data-theme="preferred_color_scheme"
-  data-lang="en"
-  crossorigin="anonymous"
-  async>
-</script>
-</section>
-"#,
-        repo = escape_attr(repo),
-        repo_id = escape_attr(repo_id),
-        cat = escape_attr(category),
-        cat_id = escape_attr(category_id),
-        nid = escape_attr(node_id),
-    )
-}
-
-fn github_issue_embed(_input: &MountInput<'_>, node_id: &str) -> String {
-    // utterances-style: a GitHub Issue per node id. Repository is taken from
-    // giscus_repo as a fallback when only GitHub-Issue mode is configured.
-    let repo = _input.config.giscus_repo.as_deref().unwrap_or("");
-    format!(
-        r#"
-<section class="lg-comments-section" aria-label="Comments">
-<script src="https://utteranc.es/client.js"
-  repo="{repo}"
-  issue-term="og:nic"
-  label="comments"
-  theme="preferred-color-scheme"
-  crossorigin="anonymous"
-  async>
-</script>
-<script>
-// utterances does not support a custom term via data-* alone; rewrite the
-// issue-term to our node id once the script is in place.
-document.currentScript.addEventListener('load', function () {{
-  var f = document.querySelector('iframe.utterances-frame');
-  if (f) f.contentWindow.postMessage({{ type: 'set-config', config: {{ term: '{nid}' }} }}, '*');
-}});
-</script>
-</section>
-"#,
-        repo = escape_attr(repo),
-        nid = escape_attr(node_id),
-    )
-}
-
-fn mode_attr(mode: CommentMode) -> &'static str {
-    match mode {
-        CommentMode::Faas => "faas",
-        CommentMode::SelfHost => "self-host",
-        CommentMode::StaticJson => "static-json",
-        CommentMode::Disqus => "disqus",
-        CommentMode::Giscus => "giscus",
-        CommentMode::GithubIssue => "github-issue",
-        CommentMode::None => "none",
-    }
-}
-
 fn escape_attr(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -245,20 +147,22 @@ fn escape_attr(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::CommentMode;
+    use crate::config::{CommentMode, CommentSource};
 
-    fn cfg(mode: CommentMode) -> CommentsConfig {
+    fn cfg(mode: CommentMode, source: CommentSource) -> CommentsConfig {
         CommentsConfig {
             enabled: true,
             mode,
+            source,
             endpoint: Some("https://c.example.workers.dev".into()),
             auth: vec!["anonymous".into(), "github".into()],
             archive_dir: "comments".into(),
-            disqus_shortname: Some("mysite".into()),
-            giscus_repo: Some("owner/repo".into()),
-            giscus_repo_id: Some("R_kgDOtest".into()),
-            giscus_category: Some("Comments".into()),
-            giscus_category_id: Some("DIC_kwDOtest".into()),
+            // Legacy vendor fields still parse but are dead in the new model.
+            disqus_shortname: None,
+            giscus_repo: None,
+            giscus_repo_id: None,
+            giscus_category: None,
+            giscus_category_id: None,
         }
     }
 
@@ -271,8 +175,8 @@ mod tests {
         }
     }
 
-    fn mount(mode: CommentMode, frontmatter: &FrontMatter) -> String {
-        let config = cfg(mode);
+    fn mount(mode: CommentMode, source: CommentSource, frontmatter: &FrontMatter) -> String {
+        let config = cfg(mode, source);
         let input = MountInput {
             config: &config,
             frontmatter,
@@ -285,12 +189,12 @@ mod tests {
     #[test]
     fn none_mode_is_zero_injection() {
         let fm = fm();
-        assert_eq!(mount(CommentMode::None, &fm), "");
+        assert_eq!(mount(CommentMode::None, CommentSource::Native, &fm), "");
     }
 
     #[test]
     fn disabled_is_zero_injection() {
-        let mut config = cfg(CommentMode::Faas);
+        let mut config = cfg(CommentMode::Proxied, CommentSource::Native);
         config.enabled = false;
         let fm = fm();
         let input = MountInput {
@@ -306,61 +210,56 @@ mod tests {
     fn frontmatter_opt_out_is_zero_injection() {
         let mut fm = fm();
         fm.comments = Some(false);
-        // Even with a fully-wired faas config, the page is silent.
-        assert_eq!(mount(CommentMode::Faas, &fm), "");
+        // Even with a fully-wired proxied config, the page is silent.
+        assert_eq!(
+            mount(CommentMode::Proxied, CommentSource::Native, &fm),
+            ""
+        );
     }
 
     #[test]
-    fn faas_mount_emits_custom_element() {
-        let html = mount(CommentMode::Faas, &fm());
+    fn proxied_native_mount_emits_custom_element() {
+        let html = mount(CommentMode::Proxied, CommentSource::Native, &fm());
         assert!(html.contains("<lagrange-comments"), "got: {html}");
-        assert!(html.contains("data-mode=\"faas\""));
+        assert!(html.contains("data-mode=\"proxied\""));
+        assert!(html.contains("data-source=\"native\""));
         assert!(html.contains("data-endpoint=\"https://c.example.workers.dev\""));
         assert!(html.contains("data-node-id=\"2026/launch\""));
         assert!(html.contains("data-auth=\"anonymous,github\""));
         assert!(html.contains("/assets/lagrange-comments.js"));
+        // No vendor scripts leak through.
+        assert!(!html.contains("giscus.app"));
+        assert!(!html.contains("utteranc.es"));
+        assert!(!html.contains("disqus.com"));
     }
 
     #[test]
-    fn self_host_mount_emits_custom_element() {
-        let html = mount(CommentMode::SelfHost, &fm());
-        assert!(html.contains("data-mode=\"self-host\""));
-        assert!(html.contains("data-endpoint=\"https://c.example.workers.dev\""));
+    fn proxied_github_discussions_tags_source() {
+        let html = mount(
+            CommentMode::Proxied,
+            CommentSource::GitHubDiscussions,
+            &fm(),
+        );
+        assert!(html.contains("data-source=\"github-discussions\""));
+        assert!(html.contains("data-mode=\"proxied\""));
+        // Still the same component, same protocol — no giscus widget.
+        assert!(!html.contains("giscus.app/client.js"));
+    }
+
+    #[test]
+    fn proxied_disqus_tags_source() {
+        let html = mount(CommentMode::Proxied, CommentSource::Disqus, &fm());
+        assert!(html.contains("data-source=\"disqus\""));
+        assert!(!html.contains("disqus.com/embed.js"));
     }
 
     #[test]
     fn static_json_mount_points_at_archive() {
-        let html = mount(CommentMode::StaticJson, &fm());
+        let html = mount(CommentMode::StaticJson, CommentSource::Native, &fm());
         assert!(html.contains("data-mode=\"static-json\""));
         assert!(html.contains("data-archive=\"/comments/2026/launch.json\""));
         // No endpoint attribute for the read-only mode.
         assert!(!html.contains("data-endpoint"));
-    }
-
-    #[test]
-    fn disqus_mount_emits_disqus_thread() {
-        let html = mount(CommentMode::Disqus, &fm());
-        assert!(html.contains("id=\"disqus_thread\""));
-        assert!(html.contains("mysite.disqus.com/embed.js"));
-        assert!(html.contains("this.page.identifier = \"2026/launch\""));
-    }
-
-    #[test]
-    fn giscus_mount_emits_giscus_client() {
-        let html = mount(CommentMode::Giscus, &fm());
-        assert!(html.contains("giscus.app/client.js"));
-        assert!(html.contains("data-repo=\"owner/repo\""));
-        assert!(html.contains("data-repo-id=\"R_kgDOtest\""));
-        assert!(html.contains("data-category=\"Comments\""));
-        assert!(html.contains("data-category-id=\"DIC_kwDOtest\""));
-        assert!(html.contains("data-term=\"2026/launch\""));
-    }
-
-    #[test]
-    fn github_issue_mount_emits_utterances() {
-        let html = mount(CommentMode::GithubIssue, &fm());
-        assert!(html.contains("utteranc.es/client.js"));
-        assert!(html.contains("repo=\"owner/repo\""));
     }
 
     #[test]
@@ -369,12 +268,12 @@ mod tests {
         let mut fm = fm();
         fm.node_id = None;
         fm.slug = Some("my-slug".into());
-        let html = mount(CommentMode::Faas, &fm);
+        let html = mount(CommentMode::Proxied, CommentSource::Native, &fm);
         assert!(html.contains("data-node-id=\"my-slug\""));
 
         // No node_id and no slug → page path derived.
         fm.slug = None;
-        let html = mount(CommentMode::Faas, &fm);
+        let html = mount(CommentMode::Proxied, CommentSource::Native, &fm);
         assert!(html.contains("data-node-id=\"posts/2026/launch\""));
     }
 
@@ -382,7 +281,7 @@ mod tests {
     fn attr_values_are_escaped() {
         let mut fm = fm();
         fm.node_id = Some("a<b>&\"x".into());
-        let html = mount(CommentMode::Faas, &fm);
+        let html = mount(CommentMode::Proxied, CommentSource::Native, &fm);
         assert!(html.contains("a&lt;b&gt;&amp;&quot;x"));
     }
 }

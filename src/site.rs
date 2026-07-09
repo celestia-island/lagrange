@@ -639,11 +639,10 @@ fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
 /// do not need our runtime; `none` obviously needs nothing.
 fn needs_comment_runtime(config: &CommentsConfig) -> bool {
     use crate::config::CommentMode;
+    // Every mode except None renders the <lagrange-comments> component and
+    // thus needs the embedded runtime JS/CSS.
     config.is_active()
-        && matches!(
-            config.mode,
-            CommentMode::Faas | CommentMode::SelfHost | CommentMode::StaticJson
-        )
+        && matches!(config.mode, CommentMode::Proxied | CommentMode::StaticJson)
 }
 
 /// Write the browser-side comment runtime (`lagrange-comments.js` + CSS) into
