@@ -1,6 +1,10 @@
 //! HTML rendering: convert the markdown AST into a tairitsu virtual DOM, then
 //! serialise it to an HTML string via `VNode::render_to_html`.
+//!
+//! Code blocks are rendered through hikari's `CodeHighlight` component;
+//! the document body is wrapped in a hikari `Card` for consistent styling.
 
+use hikari_components::production::{CodeHighlight, CodeHighlightProps};
 use tairitsu_vdom::{el, txt, VNode};
 
 use crate::markdown::{Block, Inline};
@@ -52,14 +56,16 @@ fn render_block_with_live(
         Block::Heading { level, text } => el_node(&format!("h{level}"), render_inlines(text)),
         Block::Paragraph(inlines) => el_node("p", render_inlines(inlines)),
         Block::CodeBlock { lang, code } => {
-            let mut code_el = el("code");
-            if let Some(l) = lang {
-                if !l.is_empty() {
-                    code_el = code_el.attr("class", format!("language-{l}"));
-                }
-            }
-            code_el = code_el.child(txt(code));
-            VNode::Element(Box::new(el("pre").child(VNode::Element(Box::new(code_el)))))
+            // Use hikari's CodeHighlight component for styled code blocks.
+            CodeHighlight(CodeHighlightProps {
+                language: lang.clone().unwrap_or_default(),
+                code: code.clone(),
+                line_numbers: true,
+                copyable: true,
+                max_height: None,
+                class: String::new(),
+                style: String::new(),
+            })
         }
         Block::LiveComponent { source } => {
             // Look up pre-rendered HTML (produced by the build-time compiler).
