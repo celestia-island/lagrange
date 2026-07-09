@@ -112,7 +112,16 @@ fn compile_one(source: &str, base_dir: &Path) -> anyhow::Result<String> {
 }
 
 /// Generate the Cargo.toml for a temporary live-block crate.
+///
+/// Uses path dependencies to the local workspace so the crate compiles
+/// against the same hikari-components/tairitsu versions lagrange uses.
+/// The paths are resolved relative to the lagrange crate's CARGO_MANIFEST_DIR.
 fn render_cargo_toml(hash: &str) -> String {
+    // Resolve absolute paths to the dependency source directories.
+    // Use forward slashes — TOML string literals choke on backslashes.
+    let manifest = env!("CARGO_MANIFEST_DIR").replace('\\', "/");
+    let tairitsu_root = format!("{manifest}/../tairitsu/packages");
+    let hikari_root = format!("{manifest}/../hikari/packages");
     format!(
         r#"[package]
 name = "live-block-{hash}"
@@ -124,11 +133,15 @@ publish = false
 name = "live-block-{hash}"
 path = "src/main.rs"
 
+# Standalone workspace so cargo doesn't try to merge this into lagrange's
+# workspace (the temp crate lives under lagrange's output dir).
+[workspace]
+
 [dependencies]
-tairitsu-vdom = "^0.5"
-tairitsu-hooks = "^0.5"
-tairitsu-macros = "^0.5"
-hikari-components = "^0.3"
+tairitsu-vdom = {{ path = "{tairitsu_root}/vdom" }}
+tairitsu-hooks = {{ path = "{tairitsu_root}/hooks" }}
+tairitsu-macros = {{ path = "{tairitsu_root}/macros" }}
+hikari-components = {{ path = "{hikari_root}/components" }}
 "#
     )
 }
