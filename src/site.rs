@@ -123,7 +123,19 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     for lang in &langs {
         let t_lang = Instant::now();
         let lang_dir = opts.src.join(lang);
-        let nav = parse_summary(&lang_dir.join("SUMMARY.md")).unwrap_or_default();
+        // Parse the per-language SUMMARY.md. When it is missing (common for
+        // non-English languages that haven't been fully translated yet),
+        // fall back to the default language's SUMMARY so the sidebar is
+        // still populated — the page URLs are language-agnostic (flat site),
+        // so links work regardless of which language's nav we use.
+        let summary_path = lang_dir.join("SUMMARY.md");
+        let nav = parse_summary(&summary_path).unwrap_or_default();
+        let nav = if nav.is_empty() && lang != &default_lang {
+            let fallback = opts.src.join(&default_lang).join("SUMMARY.md");
+            parse_summary(&fallback).unwrap_or_default()
+        } else {
+            nav
+        };
 
         for md_path in walk_md(&lang_dir)? {
             if md_path.file_name().is_some_and(|f| f == "SUMMARY.md") {
