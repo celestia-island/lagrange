@@ -107,15 +107,14 @@ fn render_block_with_live(
             children: VNode::Fragment(render_inlines(inlines)),
             ..Default::default()
         }),
-        Block::CodeBlock { lang, code } => CodeHighlight(CodeHighlightProps {
-            language: lang.clone().unwrap_or_default(),
-            code: code.clone(),
-            line_numbers: true,
-            copyable: true,
-            max_height: None,
-            class: String::new(),
-            style: String::new(),
-        }),
+        Block::CodeBlock { lang, code } => {
+            // hikari CodeHighlight has an SSR bug: the code text is emitted
+            // as an attribute (code="...") instead of text content, resulting
+            // in empty <code> elements with only line numbers visible.
+            // Use plain <pre><code> with hi-code-highlight CSS classes.
+            let lang_class = format!("language-{}", lang.as_deref().unwrap_or(""));
+            el_pre_code(&lang_class, code)
+        }
         Block::LiveComponent { source } => render_live_block(source, live_html.get(source)),
         Block::List { ordered, items } => {
             let tag = if *ordered { "ol" } else { "ul" };
@@ -277,6 +276,21 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
 
 fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
     VNode::Element(Box::new(el(tag).children(children)))
+}
+
+/// Render a code block as <div class="hi-code-highlight"><pre><code>text</code></pre></div>
+fn el_pre_code(lang_class: &str, code: &str) -> VNode {
+    VNode::Element(Box::new(
+        el("div")
+            .attr("class", "hi-code-highlight")
+            .child(VNode::Element(Box::new(
+                el("pre")
+                    .attr("class", "hi-code-highlight-code")
+                    .child(VNode::Element(Box::new(
+                        el("code").attr("class", lang_class).child(txt(code)),
+                    ))),
+            ))),
+    ))
 }
 
 fn html_escape(s: &str) -> String {
