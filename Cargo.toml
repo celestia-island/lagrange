@@ -37,6 +37,8 @@ anyhow = "^1"
 clap = { version = "^4", features = ["derive"] }
 pest = "^2"
 pest_derive = "^2"
+# Build-time syntax highlighting for code blocks (syntect = pure Rust, no tree-sitter).
+syntect = { version = "^5", default-features = false, features = ["default-fancy"] }
 # Unified logging (matching the tairitsu/shirebe/kou ecosystem convention).
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }

@@ -152,11 +152,36 @@ fn hikari_component_css() -> String {
 .hi-code-highlight-language{font-size:.7rem;color:var(--fg-sec);text-transform:uppercase}
 .hi-code-highlight-copy{font-size:.7rem;color:var(--fg-sec);background:none;border:none;cursor:pointer;padding:.2rem .4rem;border-radius:4px}
 .hi-code-highlight-copy:hover{background:var(--accent-bg)}
-.hi-code-highlight-content{display:flex;overflow-x:auto;scrollbar-width:none}
+.hi-code-highlight-content{display:flex;overflow-x:auto;scrollbar-width:none;align-items:stretch}
 .hi-code-highlight-content::-webkit-scrollbar{display:none}
-.hi-code-highlight-line-numbers{padding:1rem .5rem;text-align:right;color:var(--fg-sec);user-select:none;min-width:2.5rem;opacity:.5}
+.hi-code-highlight-line-numbers{display:flex;flex-direction:column;padding:1rem .5rem;text-align:right;color:var(--fg-sec);user-select:none;min-width:2.5rem;opacity:.5;flex-shrink:0}
 .hi-code-highlight-code{flex:1;padding:1rem;margin:0;overflow-x:auto}
 .hi-code-highlight-code code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;line-height:1.5}
+.hi-code-highlight-line-number{line-height:1.5;font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;white-space:nowrap}
+
+/* syntect syntax highlighting (Spaced class style → .source, .string, .keyword, etc.)
+   These are scoped scopes from TextMate grammars. We match the most common ones. */
+.hi-code-highlight code .comment{color:#6a9955;font-style:italic}
+.hi-code-highlight code .string{color:#ce9178}
+.hi-code-highlight code .keyword{color:#569cd6}
+.hi-code-highlight code .entity{color:#4ec9b0}
+.hi-code-highlight code .constant{color:#4fc1ff}
+.hi-code-highlight code .support{color:#9cdcfe}
+.hi-code-highlight code .variable{color:#9cdcfe}
+.hi-code-highlight code .function{color:#dcdcaa}
+.hi-code-highlight code .storage{color:#c586c0}
+.hi-code-highlight code .punctuation{color:#d4d4d4}
+.hi-code-highlight code .meta{color:#9cdcfe}
+.hi-code-highlight code .tag{color:#569cd6}
+.hi-code-highlight code .attribute-name{color:#9cdcfe}
+.hi-code-highlight code .numeric{color:#b5cea8}
+.hi-code-highlight code .number{color:#b5cea8}
+.hi-code-highlight code .operator{color:#d4d4d4}
+.hi-code-highlight code .property{color:#9cdcfe}
+.hi-code-highlight code .type{color:#4ec9b0}
+.hi-code-highlight code .label{color:#c8c8c8}
+.hi-code-highlight code .annotation{color:#c586c0}
+.hi-code-highlight code .source{color:inherit}
 .hi-alert{display:flex;gap:.75rem;padding:1rem;border-radius:8px;margin:1rem 0;background:var(--accent-bg);border:1px solid var(--border)}
 .hi-alert-content{flex:1}
 .hi-alert-description{margin:0;font-size:.9rem;color:var(--fg)}

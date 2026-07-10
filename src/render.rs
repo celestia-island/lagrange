@@ -284,19 +284,54 @@ fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
     VNode::Element(Box::new(el(tag).children(children)))
 }
 
-/// Render a code block as <div class="hi-code-highlight"><pre><code>text</code></pre></div>
+/// Render a code block with syntax highlighting.
+/// Uses syntect at build time to produce highlighted HTML with inline styles.
 fn el_pre_code(lang_class: &str, code: &str) -> VNode {
+    // Try to syntax-highlight; fall back to plain escaped text.
+    let highlighted = syntax_highlight(code, lang_class.trim_start_matches("language-"));
+
+    let mut code_el = el("code");
+    if !lang_class.is_empty() {
+        code_el = code_el.attr("class", lang_class);
+    }
+    code_el = code_el.dangerous_inner_html(&highlighted);
+
     VNode::Element(Box::new(
         el("div")
             .attr("class", "hi-code-highlight")
             .child(VNode::Element(Box::new(
                 el("pre")
                     .attr("class", "hi-code-highlight-code")
-                    .child(VNode::Element(Box::new(
-                        el("code").attr("class", lang_class).child(txt(code)),
-                    ))),
+                    .child(VNode::Element(Box::new(code_el))),
             ))),
     ))
+}
+
+/// Highlight code using syntect. Returns HTML string with inline `<span style="...">`.
+/// Falls back to HTML-escaped plain text if the language is unknown.
+fn syntax_highlight(code: &str, lang: &str) -> String {
+    use syntect::parsing::SyntaxSet;
+    use syntect::html::{ClassStyle, ClassedHTMLGenerator};
+    use syntect::util::LinesWithEndings;
+
+    let ps = SyntaxSet::load_defaults_newlines();
+    let syntax = ps.find_syntax_by_token(lang)
+        .or_else(|| ps.find_syntax_by_extension(lang));
+
+    match syntax {
+        Some(syntax) => {
+            let mut generator = ClassedHTMLGenerator::new_with_class_style(
+                syntax,
+                &ps,
+                ClassStyle::Spaced,
+            );
+            for line in LinesWithEndings::from(code) {
+                generator.parse_html_for_line_which_includes_newline(line);
+            }
+            generator.finalize()
+        }
+        None => html_escape(code),
+    }
 }
 
 fn html_escape(s: &str) -> String {
