@@ -352,7 +352,7 @@ fn live_block_js() -> String {
  document.querySelectorAll('.lg-live-block').forEach(function(block){
   var tabs=block.querySelectorAll('.lg-live-tab');
   var preview=block.querySelector('.lg-live-preview');
-  var source=block.querySelector('.lg-live-source');
+  var source=block.querySelector('[data-lg-source]');
   if(!tabs.length) return;
   tabs.forEach(function(tab){
    tab.onclick=function(){

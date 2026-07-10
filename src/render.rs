@@ -88,25 +88,11 @@ fn render_block_with_live(
 ) -> VNode {
     match b {
         Block::Heading { level, text } => {
-            let variant = match level {
-                1 => TextVariant::H1,
-                2 => TextVariant::H2,
-                3 => TextVariant::H3,
-                4 => TextVariant::H4,
-                5 => TextVariant::H5,
-                _ => TextVariant::H6,
-            };
-            Typography(TypographyProps {
-                variant,
-                children: VNode::Fragment(render_inlines(text)),
-                ..Default::default()
-            })
+            // Use plain heading tags (h1-h6) — hikari Typography renders
+            // Body/Caption as <span> which breaks block layout.
+            el_node(&format!("h{level}"), render_inlines(text))
         }
-        Block::Paragraph(inlines) => Typography(TypographyProps {
-            variant: TextVariant::Body,
-            children: VNode::Fragment(render_inlines(inlines)),
-            ..Default::default()
-        }),
+        Block::Paragraph(inlines) => el_node("p", render_inlines(inlines)),
         Block::CodeBlock { lang, code } => {
             // hikari CodeHighlight has an SSR bug: the code text is emitted
             // as an attribute (code="...") instead of text content, resulting
@@ -136,11 +122,11 @@ fn render_block_with_live(
                 .collect();
             el_node(tag, lis)
         }
-        Block::Blockquote(inner) => Alert(AlertProps {
-            description: Some(render_blocks(inner).render_to_html()),
-            closable: false,
-            ..Default::default()
-        }),
+        Block::Blockquote(inner) => {
+            // Don't use hikari Alert — it escapes inner HTML as description text.
+            // Use plain <blockquote> with inner content rendered normally.
+            el_node("blockquote", vec![render_blocks(inner)])
+        }
         Block::Table { headers, rows } => {
             let ths: Vec<VNode> = headers
                 .iter()
@@ -212,7 +198,6 @@ fn render_inline(i: &Inline) -> VNode {
 // ── live block rendering ──────────────────────────────────────────────────
 
 fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
-    let escaped_source = html_escape(source);
     let mut children = Vec::new();
 
     // Tab bar.
@@ -255,15 +240,36 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
             .child(preview_inner),
     )));
 
-    // Source pane with Skeleton loading aesthetic.
+    // Source pane — use hi-code-highlight styling with line numbers.
+    let src_lines: Vec<&str> = source.lines().collect();
+    let line_count = src_lines.len();
+    let line_num_nodes: Vec<VNode> = (1..=line_count)
+        .map(|i| {
+            VNode::Element(Box::new(
+                el("div")
+                    .attr("class", "hi-code-highlight-line-number")
+                    .child(txt(&i.to_string())),
+            ))
+        })
+        .collect();
     children.push(VNode::Element(Box::new(
-        el("pre")
-            .attr("class", "lg-live-source")
-            .attr("hidden", "")
+        el("div")
+            .attr("class", "hi-code-highlight")
+            .attr("style", "display:none")
+            .attr("data-lg-source", "")
             .child(VNode::Element(Box::new(
-                el("code")
-                    .attr("class", "language-rust")
-                    .dangerous_inner_html(&escaped_source),
+                el("div")
+                    .attr("class", "hi-code-highlight-content")
+                    .child(VNode::Fragment(line_num_nodes))
+                    .child(VNode::Element(Box::new(
+                        el("pre")
+                            .attr("class", "hi-code-highlight-code")
+                            .child(VNode::Element(Box::new(
+                                el("code")
+                                    .attr("class", "language-rust")
+                                    .child(txt(source)),
+                            ))),
+                    ))),
             ))),
     )));
 
