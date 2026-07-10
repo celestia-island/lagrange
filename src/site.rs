@@ -106,6 +106,10 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             all_live_sources.extend(crate::live::collect_sources(&blocks));
         }
     }
+    // Deduplicate across all languages — the same snippet appears in every
+    // language variant of the same page, but only needs to be compiled once.
+    all_live_sources.sort();
+    all_live_sources.dedup();
     let live_html = if all_live_sources.is_empty() {
         std::collections::HashMap::new()
     } else {

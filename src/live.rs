@@ -1,13 +1,15 @@
 //! Build-time live component compiler.
 //!
 //! Scans parsed markdown blocks for [`Block::LiveComponent`] entries, generates
-//! a temporary Rust crate for each unique source snippet, compiles it against
-//! `hikari-components` + `tairitsu-macros`, executes the binary to capture
-//! rendered HTML, and returns a map of `source → html`.
+//! a **single** temporary Rust workspace crate containing one binary per unique
+//! source snippet, compiles them all in one `cargo build` invocation (so the
+//! heavy dependencies — tairitsu-vdom, hikari-components — are compiled once
+//! and shared), executes each binary to capture rendered HTML, and returns a
+//! map of `source → html`.
 //!
-//! The generated crate wraps the user's `rsx!{...}` expression in a `main()`
-//! that calls `VNode::render_to_html()` and prints the result. This is a
-//! **build-time** operation — no runtime eval, no proc-macro-at-runtime.
+//! The generated workspace has one `[[bin]]` per snippet. This is dramatically
+//! faster than per-snippet crates because the dependency tree is resolved and
+//! compiled exactly once.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -50,15 +52,93 @@ pub fn compile_all(sources: &[String], work_dir: &Path) -> HashMap<String, Strin
     }
 
     let live_dir = work_dir.join("live-blocks");
+    // Clean any stale state from a previous run so we don't hit lock files
+    // or stale fingerprints.
+    if live_dir.exists() {
+        std::fs::remove_dir_all(&live_dir).ok();
+    }
     std::fs::create_dir_all(&live_dir).ok();
 
-    for source in sources {
-        match compile_one(source, &live_dir) {
-            Ok(html) => {
-                result.insert(source.clone(), html);
+    // Generate a single workspace crate with one [[bin]] per snippet.
+    let crate_dir = live_dir.join("workspace");
+    std::fs::create_dir_all(crate_dir.join("src")).ok();
+
+    // Map each source to its hash + binary name for later lookup.
+    let entries: Vec<(String, String)> = sources
+        .iter()
+        .map(|s| {
+            let hash = short_hash(s);
+            (s.clone(), hash)
+        })
+        .collect();
+
+    // Write each snippet as src/<hash>.rs
+    for (source, hash) in &entries {
+        let file_path = crate_dir.join("src").join(format!("{hash}.rs"));
+        std::fs::write(&file_path, render_bin_rs(source)).ok();
+    }
+
+    // Generate Cargo.toml with all [[bin]] entries.
+    std::fs::write(
+        crate_dir.join("Cargo.toml"),
+        render_cargo_toml(&entries),
+    )
+    .ok();
+
+    // Compile all binaries in one invocation.
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let build = Command::new(&cargo)
+        .args(["build", "--release", "--quiet"])
+        .env("RUSTC_WRAPPER", "")
+        .env("CARGO_BUILD_RUSTC_WRAPPER", "")
+        .current_dir(&crate_dir)
+        .output();
+
+    let build = match build {
+        Ok(o) => o,
+        Err(e) => {
+            warn!("live block cargo invocation failed: {e}");
+            return result;
+        }
+    };
+
+    if !build.status.success() {
+        let stderr = String::from_utf8_lossy(&build.stderr);
+        // The error message may mention specific crate names, but we log
+        // the tail for diagnostics and mark ALL snippets as failed.
+        warn!(
+            "live block workspace build failed ({} snippets): {}",
+            entries.len(),
+            stderr_tail(&stderr, 800)
+        );
+        return result;
+    }
+
+    // Execute each compiled binary.
+    let target_dir = crate_dir.join("target");
+    for (source, hash) in &entries {
+        let bin = find_binary(&target_dir, hash);
+        match bin {
+            Some(path) => {
+                let run = Command::new(&path).output();
+                match run {
+                    Ok(r) if r.status.success() => {
+                        let html = String::from_utf8_lossy(&r.stdout).to_string();
+                        result.insert(source.clone(), html.trim().to_string());
+                    }
+                    Ok(r) => {
+                        let stderr = String::from_utf8_lossy(&r.stderr);
+                        warn!("live block execution failed for {hash}: {}", stderr_tail(&stderr, 300));
+                    }
+                    Err(e) => {
+                        warn!("live block execution error for {hash}: {e}");
+                    }
+                }
             }
-            Err(e) => {
-                warn!("live block compile failed: {e}");
+            None => {
+                // Binary wasn't built — likely a compile error in this
+                // specific snippet. The workspace build already logged it.
+                warn!("live block binary not found for {hash}");
             }
         }
     }
@@ -71,91 +151,31 @@ pub fn compile_all(sources: &[String], work_dir: &Path) -> HashMap<String, Strin
     result
 }
 
-/// Generate, compile, and execute a single live component snippet.
-fn compile_one(source: &str, base_dir: &Path) -> anyhow::Result<String> {
-    let hash = short_hash(source);
-    let crate_dir = base_dir.join(&hash);
-
-    // Generate the temporary crate.
-    std::fs::create_dir_all(crate_dir.join("src"))?;
-    std::fs::write(crate_dir.join("Cargo.toml"), render_cargo_toml(&hash))?;
-    std::fs::write(
-        crate_dir.join("src").join("main.rs"),
-        render_main_rs(source),
-    )?;
-
-    // All live-block crates share a single target directory so the heavy
-    // dependencies (tairitsu-vdom, hikari-components, etc.) are compiled
-    // once and cached across all 600+ snippets. Without this, each crate
-    // gets its own target/ and re-compiles the entire dep tree every time.
-    let shared_target = base_dir.join("target");
-
-    // Compile. Disable sccache / rustc-wrapper for these tiny single-file
-    // crates — sccache adds overhead and can fail on certain rustc invocations
-    // (e.g. "Compiler not supported" on Windows stable). The crates are too
-    // small to benefit from caching anyway.
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    let build = Command::new(&cargo)
-        .args(["build", "--release", "--quiet"])
-        .env("RUSTC_WRAPPER", "")
-        .env("CARGO_BUILD_RUSTC_WRAPPER", "")
-        .env("CARGO_TARGET_DIR", &shared_target)
-        .current_dir(&crate_dir)
-        .output()?;
-
-    if !build.status.success() {
-        let stderr = String::from_utf8_lossy(&build.stderr);
-        anyhow::bail!(
-            "cargo build failed for live block {hash}: {}",
-            stderr_tail(&stderr, 500)
-        );
-    }
-
-    // Locate the compiled binary in the shared target dir.
-    let bin = find_binary(&shared_target, &hash)
-        .ok_or_else(|| anyhow::anyhow!("compiled binary not found for {hash}"))?;
-
-    // Execute and capture stdout (the rendered HTML).
-    let run = Command::new(&bin).output()?;
-    if !run.status.success() {
-        let stderr = String::from_utf8_lossy(&run.stderr);
-        anyhow::bail!(
-            "execution failed for live block {hash}: {}",
-            stderr_tail(&stderr, 500)
-        );
-    }
-
-    let html = String::from_utf8_lossy(&run.stdout).to_string();
-    Ok(html.trim().to_string())
-}
-
-/// Generate the Cargo.toml for a temporary live-block crate.
-///
-/// Uses path dependencies to the local workspace so the crate compiles
-/// against the same hikari-components/tairitsu versions lagrange uses.
-/// The paths are resolved relative to the lagrange crate's CARGO_MANIFEST_DIR.
-fn render_cargo_toml(hash: &str) -> String {
-    // Resolve absolute paths to the dependency source directories.
-    // Use forward slashes — TOML string literals choke on backslashes.
+/// Generate the Cargo.toml for the workspace crate with all [[bin]] entries.
+fn render_cargo_toml(entries: &[(String, String)]) -> String {
     let manifest = env!("CARGO_MANIFEST_DIR").replace('\\', "/");
     let tairitsu_root = format!("{manifest}/../tairitsu/packages");
     let hikari_root = format!("{manifest}/../hikari/packages");
+
+    let mut bins = String::new();
+    for (_, hash) in entries {
+        bins.push_str(&format!(
+            "[[bin]]\nname = \"live-block-{hash}\"\npath = \"src/{hash}.rs\"\n\n"
+        ));
+    }
+
     format!(
         r#"[package]
-name = "live-block-{hash}"
+name = "live-block-workspace"
 version = "0.0.0"
 edition = "2021"
 publish = false
-
-[[bin]]
-name = "live-block-{hash}"
-path = "src/main.rs"
 
 # Standalone workspace so cargo doesn't try to merge this into lagrange's
 # workspace (the temp crate lives under lagrange's output dir).
 [workspace]
 
-[dependencies]
+{bins}[dependencies]
 tairitsu-vdom = {{ path = "{tairitsu_root}/vdom" }}
 tairitsu-hooks = {{ path = "{tairitsu_root}/hooks" }}
 tairitsu-macros = {{ path = "{tairitsu_root}/macros" }}
@@ -164,14 +184,8 @@ hikari-components = {{ path = "{hikari_root}/components" }}
     )
 }
 
-/// Generate the main.rs that wraps the user's rsx! expression.
-///
-/// The user's source is expected to be an `rsx!{...}` expression (or a
-/// component call like `Button(ButtonProps {{ ... }})`). We wrap it in a
-/// function that renders the resulting VNode to HTML.
-fn render_main_rs(source: &str) -> String {
-    // If the source already starts with `rsx!`, use it directly; otherwise
-    // wrap it in rsx! so bare component calls work too.
+/// Generate a single binary source file for one snippet.
+fn render_bin_rs(source: &str) -> String {
     let trimmed = source.trim();
     let expr = if trimmed.starts_with("rsx")
         || trimmed.starts_with("Button")
@@ -203,11 +217,11 @@ fn short_hash(s: &str) -> String {
     format!("lb{:016x}", h.finish())
 }
 
-fn find_binary(target_dir: &Path, name: &str) -> Option<PathBuf> {
+fn find_binary(target_dir: &Path, hash: &str) -> Option<PathBuf> {
     let exe_name = if cfg!(windows) {
-        format!("live-block-{name}.exe")
+        format!("live-block-{hash}.exe")
     } else {
-        format!("live-block-{name}")
+        format!("live-block-{hash}")
     };
     // Search common target subdirs.
     for sub in &["release", "debug"] {
