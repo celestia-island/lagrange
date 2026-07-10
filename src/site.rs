@@ -130,7 +130,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                 continue;
             }
             let rel = md_path.strip_prefix(&lang_dir).unwrap_or(&md_path);
-            let source = fs::read_to_string(&md_path)
+            let source = read_md_or_follow(&md_path)
                 .with_context(|| format!("read {}", md_path.display()))?;
 
             // Peel frontmatter off before parsing — the grammar never sees it.
@@ -650,6 +650,40 @@ fn walk_md(dir: &Path) -> Result<Vec<PathBuf>> {
     walk_md_inner(dir, &mut out)?;
     out.sort();
     Ok(out)
+}
+
+/// Read a markdown file, following relative-path symlinks.
+///
+/// On Windows with `core.symlinks = false`, git stores a symlink as a
+/// regular file whose content is the symlink target path (e.g.
+/// `../../README.md`). This function detects that pattern — a file whose
+/// entire content looks like a relative path pointing to another `.md`
+/// file — and transparently follows it, reading the real target instead.
+///
+/// Real symlink targets (on Unix or Windows with symlinks enabled) are
+/// resolved by the OS and work without this logic; this is a fallback
+/// for the broken-symlink-as-text-file case.
+fn read_md_or_follow(path: &Path) -> Result<String> {
+    let raw = fs::read_to_string(path)?;
+
+    // Heuristic: the file is a broken symlink if its trimmed content is a
+    // single line that looks like a relative path to a .md file.
+    let trimmed = raw.trim();
+    if trimmed.lines().count() <= 1
+        && (trimmed.starts_with("../") || trimmed.starts_with("./"))
+        && trimmed.ends_with(".md")
+    {
+        // Resolve relative to the symlink file's directory.
+        let dir = path.parent().unwrap_or(Path::new("."));
+        let target = dir.join(trimmed);
+        if target.is_file() {
+            tracing::debug!("following path-symlink: {} → {}", path.display(), target.display());
+            return fs::read_to_string(&target)
+                .with_context(|| format!("read symlink target {}", target.display()));
+        }
+    }
+
+    Ok(raw)
 }
 
 fn walk_md_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
