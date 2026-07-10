@@ -51,38 +51,13 @@ pub fn render_to_html_with_live(
     blocks: &[Block],
     live_html: &std::collections::HashMap<String, String>,
 ) -> String {
+    // Render blocks directly — NO hikari layout wrapping. The document body
+    // is a plain content flow; lagrange's own .content CSS controls width,
+    // margins, and padding. Hikari layout components (Container/Grid/Row/Col/
+    // Card) impose grid-column and max-width constraints that squeeze the
+    // content into a narrow column — they're for app UI, not documentation.
     let inner = render_blocks_with_live(blocks, live_html);
-    // Wrap the content in a structural hierarchy of hikari layout components:
-    // Container → Grid → Col → Card → FlexBox.
-    let card = Card(CardProps {
-        children: inner,
-        ..Default::default()
-    });
-    let col = Col(ColProps {
-        children: Some(card),
-        ..Default::default()
-    });
-    let row = Row(RowProps {
-        children: Some(col),
-        ..Default::default()
-    });
-    let grid = Grid(GridProps {
-        children: Some(row),
-        ..Default::default()
-    });
-    let flex = FlexBox(FlexBoxProps {
-        children: grid,
-        ..Default::default()
-    });
-    let space = Space(SpaceProps {
-        children: flex,
-        ..Default::default()
-    });
-    Container(ContainerProps {
-        children: space,
-        ..Default::default()
-    })
-    .render_to_html()
+    inner.render_to_html()
 }
 
 pub fn render_blocks(blocks: &[Block]) -> VNode {
