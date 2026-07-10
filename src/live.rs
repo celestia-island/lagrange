@@ -84,10 +84,22 @@ fn compile_one(source: &str, base_dir: &Path) -> anyhow::Result<String> {
         render_main_rs(source),
     )?;
 
-    // Compile.
+    // All live-block crates share a single target directory so the heavy
+    // dependencies (tairitsu-vdom, hikari-components, etc.) are compiled
+    // once and cached across all 600+ snippets. Without this, each crate
+    // gets its own target/ and re-compiles the entire dep tree every time.
+    let shared_target = base_dir.join("target");
+
+    // Compile. Disable sccache / rustc-wrapper for these tiny single-file
+    // crates — sccache adds overhead and can fail on certain rustc invocations
+    // (e.g. "Compiler not supported" on Windows stable). The crates are too
+    // small to benefit from caching anyway.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let build = Command::new(&cargo)
         .args(["build", "--release", "--quiet"])
+        .env("RUSTC_WRAPPER", "")
+        .env("CARGO_BUILD_RUSTC_WRAPPER", "")
+        .env("CARGO_TARGET_DIR", &shared_target)
         .current_dir(&crate_dir)
         .output()?;
 
@@ -99,9 +111,8 @@ fn compile_one(source: &str, base_dir: &Path) -> anyhow::Result<String> {
         );
     }
 
-    // Locate the compiled binary.
-    let target_dir = crate_dir.join("target");
-    let bin = find_binary(&target_dir, &hash)
+    // Locate the compiled binary in the shared target dir.
+    let bin = find_binary(&shared_target, &hash)
         .ok_or_else(|| anyhow::anyhow!("compiled binary not found for {hash}"))?;
 
     // Execute and capture stdout (the rendered HTML).
