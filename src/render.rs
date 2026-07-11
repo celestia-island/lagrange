@@ -240,9 +240,9 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
             .child(preview_inner),
     )));
 
-    // Source pane — use hi-code-highlight styling with line numbers.
-    let src_lines: Vec<&str> = source.lines().collect();
-    let line_count = src_lines.len();
+    // Source pane — syntax-highlighted with line numbers, matching el_pre_code.
+    let highlighted_src = syntax_highlight(source, "rust");
+    let line_count = source.lines().count().max(1);
     let line_num_nodes: Vec<VNode> = (1..=line_count)
         .map(|i| {
             VNode::Element(Box::new(
@@ -260,14 +260,18 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
             .child(VNode::Element(Box::new(
                 el("div")
                     .attr("class", "hi-code-highlight-content")
-                    .child(VNode::Fragment(line_num_nodes))
+                    .child(VNode::Element(Box::new(
+                        el("div")
+                            .attr("class", "hi-code-highlight-line-numbers")
+                            .children(line_num_nodes),
+                    )))
                     .child(VNode::Element(Box::new(
                         el("pre")
                             .attr("class", "hi-code-highlight-code")
                             .child(VNode::Element(Box::new(
                                 el("code")
                                     .attr("class", "language-rust")
-                                    .child(txt(source)),
+                                    .dangerous_inner_html(&highlighted_src),
                             ))),
                     ))),
             ))),
@@ -284,25 +288,63 @@ fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
     VNode::Element(Box::new(el(tag).children(children)))
 }
 
-/// Render a code block with syntax highlighting.
-/// Uses syntect at build time to produce highlighted HTML with inline styles.
+/// Render a code block with syntax highlighting, line numbers, and a copy button.
+/// Uses syntect at build time to produce highlighted HTML with CSS classes.
 fn el_pre_code(lang_class: &str, code: &str) -> VNode {
-    // Try to syntax-highlight; fall back to plain escaped text.
-    let highlighted = syntax_highlight(code, lang_class.trim_start_matches("language-"));
+    let lang = lang_class.trim_start_matches("language-");
+    let highlighted = syntax_highlight(code, lang);
 
+    // Build line numbers.
+    let line_count = code.lines().count().max(1);
+    let line_num_nodes: Vec<VNode> = (1..=line_count)
+        .map(|i| {
+            VNode::Element(Box::new(
+                el("div")
+                    .attr("class", "hi-code-highlight-line-number")
+                    .child(txt(&i.to_string())),
+            ))
+        })
+        .collect();
+
+    // Build the <code> element with highlighted HTML.
     let mut code_el = el("code");
     if !lang_class.is_empty() {
         code_el = code_el.attr("class", lang_class);
     }
     code_el = code_el.dangerous_inner_html(&highlighted);
 
+    // Header: language label + copy button.
+    let display_lang = if lang.is_empty() { "text" } else { lang };
+    let header = el("div").attr("class", "hi-code-highlight-header").children(vec![
+        VNode::Element(Box::new(
+            el("span").attr("class", "hi-code-highlight-language").child(txt(display_lang)),
+        )),
+        VNode::Element(Box::new(
+            el("button")
+                .attr("class", "hi-code-highlight-copy")
+                .attr("type", "button")
+                .attr("data-copy", code)
+                .child(txt("Copy")),
+        )),
+    ]);
+
     VNode::Element(Box::new(
         el("div")
             .attr("class", "hi-code-highlight")
+            .child(VNode::Element(Box::new(header)))
             .child(VNode::Element(Box::new(
-                el("pre")
-                    .attr("class", "hi-code-highlight-code")
-                    .child(VNode::Element(Box::new(code_el))),
+                el("div")
+                    .attr("class", "hi-code-highlight-content")
+                    .child(VNode::Element(Box::new(
+                        el("div")
+                            .attr("class", "hi-code-highlight-line-numbers")
+                            .children(line_num_nodes),
+                    )))
+                    .child(VNode::Element(Box::new(
+                        el("pre")
+                            .attr("class", "hi-code-highlight-code")
+                            .child(VNode::Element(Box::new(code_el))),
+                    ))),
             ))),
     ))
 }

@@ -49,10 +49,7 @@ a:hover{{text-decoration:underline}}
 #lg-search-input::placeholder{{color:var(--fg-sec)}}
 #lg-search-results{{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:360px;overflow:auto;scrollbar-width:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--hi-radius-md,8px);box-shadow:var(--hi-shadow-dropdown,0 4px 24px rgb(0 0 0/12%));display:none;z-index:200}}
 #lg-search-results::-webkit-scrollbar{{display:none}}
-#lg-sidebar{{flex:1;overflow-y:auto;padding:.5rem .75rem 1rem;scrollbar-width:thin;scrollbar-color:var(--border) transparent}}
-#lg-sidebar::-webkit-scrollbar{{width:6px}}
-#lg-sidebar::-webkit-scrollbar-thumb{{background:var(--border);border-radius:9999px}}
-#lg-sidebar::-webkit-scrollbar-thumb:hover{{background:var(--fg-sec)}}
+#lg-sidebar{{flex:1;overflow-y:auto;padding:.5rem .75rem 1rem}}
 .sidebar h2{{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-sec);margin:1rem .25rem .5rem}}
 .sidebar ul{{list-style:none;padding:0;margin:0}}
 .sidebar li{{margin:0}}
@@ -154,34 +151,57 @@ fn hikari_component_css() -> String {
 .hi-code-highlight-copy:hover{background:var(--accent-bg)}
 .hi-code-highlight-content{display:flex;overflow-x:auto;scrollbar-width:none;align-items:stretch}
 .hi-code-highlight-content::-webkit-scrollbar{display:none}
-.hi-code-highlight-line-numbers{display:flex;flex-direction:column;padding:1rem .5rem;text-align:right;color:var(--fg-sec);user-select:none;min-width:2.5rem;opacity:.5;flex-shrink:0}
+.hi-code-highlight-line-numbers{display:flex;flex-direction:column;padding:1rem .5rem 1rem 0;text-align:right;color:var(--fg-sec);user-select:none;min-width:2.5rem;opacity:.4;flex-shrink:0;gap:0}
 .hi-code-highlight-code{flex:1;padding:1rem;margin:0;overflow-x:auto}
-.hi-code-highlight-code code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;line-height:1.5}
-.hi-code-highlight-line-number{line-height:1.5;font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;white-space:nowrap}
+.hi-code-highlight-code code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;line-height:1.5;display:block}
+.hi-code-highlight-line-number{line-height:1.5;font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;white-space:nowrap;height:1.5em;flex-shrink:0}
+.hi-code-highlight-copy.copied{color:var(--syn-string)}
+.hi-code-highlight-copy.copied::after{content:" ✓"}
 
-/* syntect syntax highlighting (Spaced class style → .source, .string, .keyword, etc.)
-   These are scoped scopes from TextMate grammars. We match the most common ones. */
-.hi-code-highlight code .comment{color:#6a9955;font-style:italic}
-.hi-code-highlight code .string{color:#ce9178}
-.hi-code-highlight code .keyword{color:#569cd6}
-.hi-code-highlight code .entity{color:#4ec9b0}
-.hi-code-highlight code .constant{color:#4fc1ff}
-.hi-code-highlight code .support{color:#9cdcfe}
-.hi-code-highlight code .variable{color:#9cdcfe}
-.hi-code-highlight code .function{color:#dcdcaa}
-.hi-code-highlight code .storage{color:#c586c0}
-.hi-code-highlight code .punctuation{color:#d4d4d4}
-.hi-code-highlight code .meta{color:#9cdcfe}
-.hi-code-highlight code .tag{color:#569cd6}
-.hi-code-highlight code .attribute-name{color:#9cdcfe}
-.hi-code-highlight code .numeric{color:#b5cea8}
-.hi-code-highlight code .number{color:#b5cea8}
-.hi-code-highlight code .operator{color:#d4d4d4}
-.hi-code-highlight code .property{color:#9cdcfe}
-.hi-code-highlight code .type{color:#4ec9b0}
-.hi-code-highlight code .label{color:#c8c8c8}
-.hi-code-highlight code .annotation{color:#c586c0}
-.hi-code-highlight code .source{color:inherit}
+/* syntect syntax highlighting — TokyoNight-inspired palette.
+   Uses CSS variables so the theme adapts to light/dark automatically.
+   Token names come from syntect's ClassStyle::Spaced (TextMate scopes).
+   Override any of these in your site CSS to customise. */
+:root{
+--syn-comment:#7a88cf;--syn-string:#9ece6a;--syn-keyword:#bb9af7;
+--syn-entity:#2ac3de;--syn-constant:#ff9e64;--syn-support:#7aa2f7;
+--syn-variable:#c0caf5;--syn-function:#7aa2f7;--syn-storage:#bb9af7;
+--syn-punctuation:#89ddff;--syn-meta:#7dcfff;--syn-tag:#f7768e;
+--syn-attr-name:#bb9af7;--syn-number:#ff9e64;--syn-operator:#89ddff;
+--syn-property:#7aa2f7;--syn-type:#2ac3de;--syn-label:#e0af68;
+--syn-annotation:#bb9af7;--syn-source:inherit;
+}
+@media(prefers-color-scheme:dark){
+:root{
+--syn-comment:#565f89;--syn-string:#9ece6a;--syn-keyword:#bb9af7;
+--syn-entity:#2ac3de;--syn-constant:#ff9e64;--syn-support:#7aa2f7;
+--syn-variable:#c0caf5;--syn-function:#7aa2f7;--syn-storage:#bb9af7;
+--syn-punctuation:#89ddff;--syn-meta:#7dcfff;--syn-tag:#f7768e;
+--syn-attr-name:#bb9af7;--syn-number:#ff9e64;--syn-operator:#89ddff;
+--syn-property:#7aa2f7;--syn-type:#2ac3de;--syn-label:#e0af68;
+--syn-annotation:#bb9af7;--syn-source:inherit;
+}}
+.hi-code-highlight code .comment{color:var(--syn-comment);font-style:italic}
+.hi-code-highlight code .string{color:var(--syn-string)}
+.hi-code-highlight code .keyword{color:var(--syn-keyword)}
+.hi-code-highlight code .entity{color:var(--syn-entity)}
+.hi-code-highlight code .constant{color:var(--syn-constant)}
+.hi-code-highlight code .support{color:var(--syn-support)}
+.hi-code-highlight code .variable{color:var(--syn-variable)}
+.hi-code-highlight code .function{color:var(--syn-function)}
+.hi-code-highlight code .storage{color:var(--syn-storage)}
+.hi-code-highlight code .punctuation{color:var(--syn-punctuation)}
+.hi-code-highlight code .meta{color:var(--syn-meta)}
+.hi-code-highlight code .tag{color:var(--syn-tag)}
+.hi-code-highlight code .attribute-name{color:var(--syn-attr-name)}
+.hi-code-highlight code .numeric{color:var(--syn-number)}
+.hi-code-highlight code .number{color:var(--syn-number)}
+.hi-code-highlight code .operator{color:var(--syn-operator)}
+.hi-code-highlight code .property{color:var(--syn-property)}
+.hi-code-highlight code .type{color:var(--syn-type)}
+.hi-code-highlight code .label{color:var(--syn-label)}
+.hi-code-highlight code .annotation{color:var(--syn-annotation)}
+.hi-code-highlight code .source{color:var(--syn-source)}
 .hi-alert{display:flex;gap:.75rem;padding:1rem;border-radius:8px;margin:1rem 0;background:var(--accent-bg);border:1px solid var(--border)}
 .hi-alert-content{flex:1}
 .hi-alert-description{margin:0;font-size:.9rem;color:var(--fg)}

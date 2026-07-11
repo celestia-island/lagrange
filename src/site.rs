@@ -319,9 +319,9 @@ fn write_multi_page(
     html.push_str(
         "</span>\
          <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
-         <div id=\"lg-search-results\"></div>\
+         <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
          </div>\n\
-         <nav id=\"lg-sidebar\">\n",
+         <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
     );
     html.push_str(&default.sidebar_html);
     html.push_str(
@@ -355,7 +355,7 @@ fn write_multi_page(
 
 // ── inline JavaScript ─────────────────────────────────────────────────────
 
-/// Minimal JS for live block tab toggling (preview ↔ source).
+/// Minimal JS for live block tab toggling + code copy buttons.
 fn live_block_js() -> String {
     // Embed the overlay scrollbar and modal system JS (vanilla, no framework).
     let scrollbar_js = include_str!("comments/scrollbar.js");
@@ -365,6 +365,7 @@ fn live_block_js() -> String {
     );
     let suffix = r##"<script>
 (function(){
+ /* ── live block tab toggling (preview ↔ source) ── */
  document.querySelectorAll('.lg-live-block').forEach(function(block){
   var tabs=block.querySelectorAll('.lg-live-tab');
   var preview=block.querySelector('.lg-live-preview');
@@ -379,6 +380,38 @@ fn live_block_js() -> String {
     if(source) source.style.display=isSource?'block':'none';
    };
   });
+ });
+
+ /* ── code block copy buttons ──
+  * Uses the same pattern as tairitsu's browser-glue copyToClipboard:
+  * navigator.clipboard.writeText with execCommand("copy") fallback.
+  * This mirrors the ClipboardOps::copy_to_clipboard contract.
+  */
+ function copyText(text){
+  if(navigator.clipboard&&window.isSecureContext){
+   navigator.clipboard.writeText(text).catch(function(){
+    fallbackCopy(text);
+   });
+  }else{
+   fallbackCopy(text);
+  }
+ }
+ function fallbackCopy(text){
+  var ta=document.createElement('textarea');
+  ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+  document.body.appendChild(ta);ta.select();
+  try{document.execCommand('copy')}catch(e){}
+  document.body.removeChild(ta);
+ }
+ document.querySelectorAll('.hi-code-highlight-copy[data-copy]').forEach(function(btn){
+  btn.onclick=function(){
+   var text=btn.getAttribute('data-copy')||'';
+   copyText(text);
+   btn.classList.add('copied');
+   var orig=btn.textContent;
+   btn.textContent='Copied';
+   setTimeout(function(){btn.classList.remove('copied');btn.textContent=orig},1500);
+  };
  });
 })();
 </script>"##;
