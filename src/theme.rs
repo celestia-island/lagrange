@@ -157,8 +157,9 @@ fn hikari_component_css() -> String {
 .hi-code-highlight-code code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;line-height:1.5;display:block}
 .hi-code-highlight-line-number{line-height:1.5;font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;white-space:nowrap;height:1.5em;flex-shrink:0}
 .hi-code-highlight-copy.copied{color:var(--syn-string)}
-.hi-code-highlight-copy::after{content:" ✓";opacity:0;transition:opacity .15s}
-.hi-code-highlight-copy.copied::after{opacity:1}
+.hi-code-highlight-check{display:inline-flex;align-items:center;margin-left:.2rem;opacity:0;transition:opacity .15s}
+.hi-code-highlight-check svg{display:block}
+.hi-code-highlight-copy.copied .hi-code-highlight-check{opacity:1}
 
 /* syntect syntax highlighting — TokyoNight-inspired palette.
    Uses CSS variables so the theme adapts to light/dark automatically.

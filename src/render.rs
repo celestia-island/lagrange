@@ -321,7 +321,12 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
                 .attr("type", "button")
                 .attr("data-copy", code)
                 .attr("data-copied", &hikari_i18n::t("hikari.code.copied", "Copied"))
-                .child(txt(&hikari_i18n::t("hikari.code.copy", "Copy"))),
+                .child(txt(&hikari_i18n::t("hikari.code.copy", "Copy")))
+                .child(VNode::Element(Box::new(
+                    el("span")
+                        .attr("class", "hi-code-highlight-check")
+                        .dangerous_inner_html(&crate::icons::icon_svg("check", 12)),
+                ))),
         )),
     ]);
 

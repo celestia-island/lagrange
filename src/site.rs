@@ -369,8 +369,18 @@ fn live_block_js() -> String {
     let scrollbar_js = include_str!("comments/scrollbar.js");
     let modal_js = include_str!("comments/modal.js");
     let clipboard_js = include_str!("comments/clipboard.js");
+
+    // Pre-render hikari-icon SVGs for use in JS-generated DOM (modal close,
+    // comment upvote, etc.). These come from hikari-icons, same as the
+    // build-time rendered icons.
+    let icon_close = crate::icons::icon_svg("close", 14);
+    let icon_arrow_up = crate::icons::icon_svg("arrow-up", 12);
+    let icons_js = format!(
+        r#"<script>window.LAGRANGE_ICONS={{close:{icon_close:?},\x22arrow-up\x22:{icon_arrow_up:?}}};</script>"#,
+    );
+
     let prefix = format!(
-        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n"
+        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n{icons_js}\n"
     );
     let suffix = r##"<script>
 (function(){
