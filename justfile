@@ -30,7 +30,8 @@ docs:
     cargo run --release -- build --src docs --out dist
 
 # Build + watch: rebuilds the docs tree automatically on change.
+# Uses malkuth for file-watch + auto-restart (via celestia-devtools dev-watch).
 dev:
-    cargo run --release -- dev --src docs --out dist --port 0
+    just dev-watch docs src -- cargo run --release -- dev --src docs --out dist --port 3000
 
 ci: fmt-check clippy test
