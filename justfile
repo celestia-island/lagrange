@@ -1,6 +1,6 @@
 # Use Git Bash explicitly — on Windows, `bash` may resolve to WSL which lacks cargo.
 # The `windows-shell` setting takes precedence on Windows hosts.
-set windows-shell := ["C:/Program Files/Git/bin/bash.exe", "-c"]
+set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $PSDefaultParameterValues['*:Encoding'] = 'utf8';"]
 # Fallback for non-Windows: use system bash.
 set shell := ["bash", "-c"]
 # `set lists` enables which() (used by the imported celestia-devtools.just);
