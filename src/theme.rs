@@ -148,7 +148,7 @@ fn hikari_component_css() -> String {
 .hi-code-highlight{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:1rem 0;font-size:.85rem}
 .hi-code-highlight-header{display:flex;align-items:center;justify-content:space-between;padding:.4rem .6rem;border-bottom:1px solid var(--border);background:var(--bg-subtle)}
 .hi-code-highlight-language{font-size:.7rem;color:var(--fg-sec);text-transform:uppercase}
-.hi-code-highlight-copy{font-size:.7rem;color:var(--fg-sec);background:none;border:none;cursor:pointer;padding:.2rem .4rem;border-radius:4px}
+.hi-code-highlight-copy{font-size:.7rem;line-height:1.4;white-space:nowrap;color:var(--fg-sec);background:none;border:none;cursor:pointer;padding:.2rem .4rem;border-radius:4px;transition:color .15s}
 .hi-code-highlight-copy:hover{background:var(--accent-bg)}
 .hi-code-highlight-content{display:flex;overflow-x:auto;scrollbar-width:none;align-items:stretch}
 .hi-code-highlight-content::-webkit-scrollbar{display:none}
@@ -157,7 +157,8 @@ fn hikari_component_css() -> String {
 .hi-code-highlight-code code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;line-height:1.5;display:block}
 .hi-code-highlight-line-number{line-height:1.5;font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;white-space:nowrap;height:1.5em;flex-shrink:0}
 .hi-code-highlight-copy.copied{color:var(--syn-string)}
-.hi-code-highlight-copy.copied::after{content:" ✓"}
+.hi-code-highlight-copy::after{content:" ✓";opacity:0;transition:opacity .15s}
+.hi-code-highlight-copy.copied::after{opacity:1}
 
 /* syntect syntax highlighting — TokyoNight-inspired palette.
    Uses CSS variables so the theme adapts to light/dark automatically.

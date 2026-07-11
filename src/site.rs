@@ -126,6 +126,11 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 
     for lang in &langs {
         let t_lang = Instant::now();
+        // Set the i18n context for this language so hikari components
+        // render with the correct UI strings (copy/cancel/etc.).
+        let hi_lang = hikari_i18n::Language::from_code(lang)
+            .unwrap_or(hikari_i18n::Language::English);
+        hikari_i18n::provide_i18n(hi_lang, Default::default());
         let lang_dir = opts.src.join(lang);
         // Parse the per-language SUMMARY.md. When it is missing (common for
         // non-English languages that haven't been fully translated yet),
@@ -396,8 +401,9 @@ fn live_block_js() -> String {
    var text=btn.getAttribute('data-copy')||'';
    if(window.lagrangeCopy){window.lagrangeCopy(text)}
    btn.classList.add('copied');
-   var orig=btn.textContent;
-   btn.textContent='Copied';
+   var orig=btn.getAttribute('data-orig-text')||btn.textContent;
+   btn.setAttribute('data-orig-text',orig);
+   btn.textContent=btn.getAttribute('data-copied')||'Copied';
    setTimeout(function(){btn.classList.remove('copied');btn.textContent=orig},1500);
   };
  });

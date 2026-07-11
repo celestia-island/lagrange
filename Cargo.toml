@@ -68,6 +68,8 @@ hikari-icons = { version = "^0.3", default-features = false }
 # tairitsu-vdom SSR at build time, same VNode→HTML path lagrange already uses.
 # Uses local path for dev; crates.io consumers get the published version.
 hikari-components = { version = "^0.3", path = "../hikari/packages/components" }
+# Hikari i18n — component UI string translations (copy/cancel/etc.)
+hikari-i18n = { version = "^0.3", path = "../hikari/packages/i18n" }
 
 [dev-dependencies]
 tempfile = "^3"

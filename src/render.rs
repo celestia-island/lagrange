@@ -320,7 +320,8 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
                 .attr("class", "hi-code-highlight-copy")
                 .attr("type", "button")
                 .attr("data-copy", code)
-                .child(txt("Copy")),
+                .attr("data-copied", &hikari_i18n::t("hikari.code.copied", "Copied"))
+                .child(txt(&hikari_i18n::t("hikari.code.copy", "Copy"))),
         )),
     ]);
 
