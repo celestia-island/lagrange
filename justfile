@@ -61,26 +61,26 @@ docs:
 dev:
     #!/usr/bin/env bash
     set -eu
-    # Ensure MSYS /usr/bin + Git's usr/bin are on PATH (just spawns bash.exe
-    # without loading /etc/profile, so /usr/bin may be absent — breaks uname,
-    # cargo, etc.). Bash builtin only; prepend if missing.
+    # Ensure MSYS /usr/bin is on PATH (just spawns bash.exe without /etc/profile).
     case ":$PATH:" in
       *":/usr/bin:"*) ;;
       *) PATH="/usr/bin:$PATH" ;;
     esac
-    # Resolve malkuth: prefer {{malkuth_bin}} (just-resolved), verify with bash
-    # builtins, fall back to the sibling-repo release path.
+    # tracing-style log helper: <RFC3339 UTC>  INFO lagrange-dev: <msg>
+    log() { printf '%s  INFO lagrange-dev: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+    err() { printf '%s ERROR lagrange-dev: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
+    # Resolve malkuth: prefer {{malkuth_bin}}, fall back to sibling-repo release.
     malkuth="{{malkuth_bin}}"
     if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
       malkuth="../malkuth/target/release/malkuth.exe"
     fi
     if [ ! -f "$malkuth" ]; then
-      echo "[dev] malkuth not found. Build it: cd ../malkuth && cargo build --release --features cli" >&2
-      echo "[dev] Or set: export MALKUTH_BIN=/path/to/malkuth" >&2
+      err "malkuth not found. Build it: cd ../malkuth && cargo build --release --features cli"
+      err "or set: export MALKUTH_BIN=/path/to/malkuth"
       exit 1
     fi
-    echo "[dev] supervising: cargo run --release dev --src docs --out dist --port 3000"
-    echo "[dev] watching: docs src"
+    log "supervising: cargo run --release dev --src docs --out dist --port 3000"
+    log "watching: docs src"
     exec "$malkuth" --watch docs --watch src --drain-secs 2 -- \
       cargo run --release -- dev --src docs --out dist --port 3000
 
