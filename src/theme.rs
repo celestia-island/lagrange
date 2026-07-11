@@ -133,7 +133,7 @@ fn hikari_component_css() -> String {
 .hi-glass-panel{background:var(--bg-subtle);border:1px solid var(--border);border-radius:12px;box-shadow:var(--hi-shadow-panel)}
 .hi-scroll-container{overflow:auto;scrollbar-width:none!important}
 .hi-scroll-container::-webkit-scrollbar{display:none!important}
-.hi-obs-track{position:absolute;top:4px;bottom:4px;right:4px;width:8px;pointer-events:none;z-index:50;opacity:0;transition:width .15s,opacity .15s}
+.hi-obs-track{position:fixed;width:8px;pointer-events:none;z-index:9000;opacity:0;transition:width .15s,opacity .15s}
 .hi-obs-track:hover{width:14px;opacity:1;pointer-events:auto}
 .hi-obs-thumb{position:absolute;right:2px;width:4px;min-height:20px;border-radius:9999px;background:var(--fg-sec);opacity:.4;cursor:pointer;transition:width .15s,opacity .15s}
 .hi-obs-thumb:hover{width:6px;opacity:.6}

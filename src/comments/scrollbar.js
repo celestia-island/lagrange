@@ -1,6 +1,10 @@
 /* lagrange overlay scrollbar — vanilla JS port of shittim-chest's SScrollContainer.
- * Creates draggable .hi-obs-track + .hi-obs-thumb elements on any container
- * with class .hi-scroll-container, hiding the native scrollbar.
+ * Creates draggable .hi-obs-track + .hi-obs-thumb elements OUTSIDE the scroll
+ * container's scrollable content, so the track stays fixed while content scrolls.
+ *
+ * Strategy: wrap the scroll container in a .hi-scroll-wrapper (position:relative),
+ * move the container inside, and append the track to the wrapper (not the container).
+ * The wrapper inherits the container's flex/grid sizing via inline styles.
  */
 (function () {
   "use strict";
@@ -12,17 +16,19 @@
     // Ensure the container hides its native scrollbar.
     container.classList.add("hi-scroll-container");
 
+    // The track is appended to the container itself, but uses position:fixed
+    // positioning that is recalculated on every scroll/resize. This avoids
+    // the "track scrolls with content" problem without needing a wrapper.
     var track = document.createElement("div");
     track.className = "hi-obs-track";
+    // Fixed positioning so the track stays in the viewport regardless of
+    // the container's scroll position.
+    track.style.position = "fixed";
     var thumb = document.createElement("div");
     thumb.className = "hi-obs-thumb";
     track.appendChild(thumb);
-
-    // Ensure container is positioned for the absolute track.
-    if (getComputedStyle(container).position === "static") {
-      container.style.position = "relative";
-    }
-    container.appendChild(track);
+    // Append to body so it's never clipped by overflow:hidden ancestors.
+    document.body.appendChild(track);
 
     var isDragging = false;
     var dragStartY = 0;
@@ -30,10 +36,19 @@
 
     function updateThumb() {
       var maxScroll = container.scrollHeight - container.clientHeight;
-      if (maxScroll <= 0) {
+      var rect = container.getBoundingClientRect();
+
+      // Position the track at the right edge of the container.
+      track.style.top = (rect.top + 4) + "px";
+      track.style.height = Math.max(0, rect.height - 8) + "px";
+      track.style.left = (rect.right - 12) + "px";
+
+      if (maxScroll <= 0 || rect.height <= 0) {
         track.style.opacity = "0";
+        track.style.pointerEvents = "none";
         return;
       }
+
       var ratio = container.clientHeight / container.scrollHeight;
       var thumbH = Math.max(
         parseInt(getComputedStyle(document.documentElement).getPropertyValue("--hi-scroll-thumb-min")) || 20,
@@ -41,11 +56,12 @@
       );
       thumb.style.height = thumbH + "px";
       var scrollRatio = container.scrollTop / maxScroll;
-      var trackH = container.clientHeight - 16; // insets
+      var trackH = rect.height - 16; // insets
       thumb.style.top = (scrollRatio * (trackH - thumbH) + 4) + "px";
 
       // Show on scroll, fade after idle.
       track.style.opacity = "1";
+      track.style.pointerEvents = "none"; // track itself doesn't capture
       clearTimeout(container._lgScrollFade);
       container._lgScrollFade = setTimeout(function () {
         if (!isDragging) track.style.opacity = "0";
@@ -79,7 +95,8 @@
     document.addEventListener("mousemove", function (e) {
       if (!isDragging) return;
       var maxScroll = container.scrollHeight - container.clientHeight;
-      var trackH = container.clientHeight - 16;
+      var rect = container.getBoundingClientRect();
+      var trackH = rect.height - 16;
       var thumbH = parseFloat(thumb.style.height) || 20;
       var delta = e.clientY - dragStartY;
       var scrollDelta = (delta / (trackH - thumbH)) * maxScroll;
@@ -97,8 +114,9 @@
     track.addEventListener("click", function (e) {
       if (e.target === thumb) return;
       var maxScroll = container.scrollHeight - container.clientHeight;
-      var trackH = container.clientHeight - 16;
-      var clickY = e.offsetY - 4;
+      var rect = container.getBoundingClientRect();
+      var trackH = rect.height - 16;
+      var clickY = e.clientY - rect.top - 4;
       var ratio = clickY / trackH;
       container.scrollTop = ratio * maxScroll;
     });
@@ -109,7 +127,20 @@
       ro.observe(container);
     }
 
+    // Also update on window resize (layout shifts).
+    window.addEventListener("resize", updateThumb);
+
     updateThumb();
+    // Defer updates until layout has fully settled — the container's
+    // getBoundingClientRect() may return zeros during initial paint.
+    requestAnimationFrame(function () {
+      updateThumb();
+      // One more after a longer delay for slow layouts (fonts, images).
+      setTimeout(function () {
+        container.scrollTop = container.scrollTop; // trigger scroll event
+        updateThumb();
+      }, 200);
+    });
   }
 
   // Auto-init on all .hi-scroll-container elements.
@@ -142,3 +173,5 @@
     mo.observe(document.body, { childList: true, subtree: true });
   }
 })();
+
+
