@@ -80,7 +80,8 @@ dev:
     if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
       malkuth="../malkuth/target/release/malkuth.exe"
     fi
-    if [ ! -f "$malkuth" ]; then
+    # Final check: usable as command OR exists as a file.
+    if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
       err "malkuth not found. Build it: cd ../malkuth && cargo build --release --features cli"
       err "or set: export MALKUTH_BIN=/path/to/malkuth"
       exit 1
