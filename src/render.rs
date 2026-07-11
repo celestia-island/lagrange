@@ -259,7 +259,7 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
             .attr("data-lg-source", "")
             .child(VNode::Element(Box::new(
                 el("div")
-                    .attr("class", "hi-code-highlight-content")
+                    .attr("class", "hi-code-highlight-content hi-scroll-container")
                     .child(VNode::Element(Box::new(
                         el("div")
                             .attr("class", "hi-code-highlight-line-numbers")
@@ -334,7 +334,7 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
             .child(VNode::Element(Box::new(header)))
             .child(VNode::Element(Box::new(
                 el("div")
-                    .attr("class", "hi-code-highlight-content")
+                    .attr("class", "hi-code-highlight-content hi-scroll-container")
                     .child(VNode::Element(Box::new(
                         el("div")
                             .attr("class", "hi-code-highlight-line-numbers")

@@ -357,11 +357,15 @@ fn write_multi_page(
 
 /// Minimal JS for live block tab toggling + code copy buttons.
 fn live_block_js() -> String {
-    // Embed the overlay scrollbar and modal system JS (vanilla, no framework).
+    // Embed shared JS modules (vanilla, no framework):
+    // - scrollbar.js: hikari overlay scrollbar port
+    // - modal.js: stack-based popup manager
+    // - clipboard.js: tairitsu ClipboardOps::copy_to_clipboard binding
     let scrollbar_js = include_str!("comments/scrollbar.js");
     let modal_js = include_str!("comments/modal.js");
+    let clipboard_js = include_str!("comments/clipboard.js");
     let prefix = format!(
-        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n"
+        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n"
     );
     let suffix = r##"<script>
 (function(){
@@ -383,30 +387,14 @@ fn live_block_js() -> String {
  });
 
  /* ── code block copy buttons ──
-  * Uses the same pattern as tairitsu's browser-glue copyToClipboard:
-  * navigator.clipboard.writeText with execCommand("copy") fallback.
-  * This mirrors the ClipboardOps::copy_to_clipboard contract.
+  * Calls window.lagrangeCopy() which is the tairitsu ClipboardOps
+  * binding (navigator.clipboard.writeText + execCommand fallback).
+  * No hand-written clipboard logic here — see clipboard.js.
   */
- function copyText(text){
-  if(navigator.clipboard&&window.isSecureContext){
-   navigator.clipboard.writeText(text).catch(function(){
-    fallbackCopy(text);
-   });
-  }else{
-   fallbackCopy(text);
-  }
- }
- function fallbackCopy(text){
-  var ta=document.createElement('textarea');
-  ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
-  document.body.appendChild(ta);ta.select();
-  try{document.execCommand('copy')}catch(e){}
-  document.body.removeChild(ta);
- }
  document.querySelectorAll('.hi-code-highlight-copy[data-copy]').forEach(function(btn){
   btn.onclick=function(){
    var text=btn.getAttribute('data-copy')||'';
-   copyText(text);
+   if(window.lagrangeCopy){window.lagrangeCopy(text)}
    btn.classList.add('copied');
    var orig=btn.textContent;
    btn.textContent='Copied';
@@ -444,7 +432,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
  }
  /* ── language dropdown ── */
  var sw=document.getElementById('lg-sw');sw.className='lg-lang-select';
- sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel"></div>';
+ sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel hi-scroll-container"></div>';
  var trigger=sw.querySelector('.lg-lang-trigger');
  var panel=sw.querySelector('.lg-lang-panel');
  var ls=document.documentElement.dataset.langs?document.documentElement.dataset.langs.split(','):Object.keys(D).sort();
