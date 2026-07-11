@@ -54,8 +54,29 @@ docs:
     cargo run --release -- build --src docs --out dist
 
 # Build + watch: rebuilds the docs tree automatically on change.
-# Uses malkuth for file-watch + auto-restart (via celestia-devtools dev-watch).
+# Self-contained [script] (not a linewise `just dev-watch` call) so it runs under
+# the interop-pinned Git Bash even when WSL shadows PATH — malkuth + cargo are
+# found because the whole body executes in one Git Bash process.
+[script]
 dev:
-    just dev-watch docs src -- cargo run --release -- dev --src docs --out dist --port 3000
+    #!/usr/bin/env bash
+    set -euo pipefail
+    malkuth="{{malkuth_bin}}"
+    if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
+      malkuth_path=$( {{python_cmd}} -m celestia_devtools locate --crate malkuth 2>/dev/null || true )
+      if [ -n "$malkuth_path" ]; then
+        suffix="target/release/malkuth"
+        case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) suffix="target/release/malkuth.exe" ;; esac
+        malkuth="$malkuth_path/$suffix"
+      fi
+    fi
+    if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
+      echo "[dev] malkuth not found. Build it: cd ../malkuth && cargo build --release --features cli" >&2
+      exit 1
+    fi
+    echo "[dev] supervising: cargo run --release dev --src docs --out dist --port 3000"
+    echo "[dev] watching: docs src"
+    exec "$malkuth" --watch docs --watch src --drain-secs 2 -- \
+      cargo run --release -- dev --src docs --out dist --port 3000
 
 ci: fmt-check clippy test
