@@ -4,18 +4,16 @@
 //! markdown AST node maps to one or more hikari components, producing
 //! consistent styled output across the entire documentation site.
 
-use hikari_components::basic::typography::TextVariant;
 use hikari_components::basic::{
     Arrow, ArrowProps, Avatar, AvatarProps, Badge, BadgeProps, Button, ButtonProps, Card,
     CardContent, CardContentProps, CardHeader, CardHeaderProps, CardProps, Checkbox, CheckboxProps,
     IconButton, IconButtonProps, Image, ImageProps, Input, InputProps, Link, LinkProps, Switch,
-    SwitchProps, Typography, TypographyProps,
+    SwitchProps,
 };
 use hikari_components::data::{
-    Cell, Collapse, CollapseProps, Filter, FilterProps, Pagination, PaginationProps, Sort,
-    SortProps, Table, TableProps, Tree, TreeProps,
+    Collapse, CollapseProps, Filter, FilterProps, Pagination, PaginationProps, Sort, SortProps,
+    Table, TableProps, Tree, TreeProps,
 };
-use hikari_components::display::timeline::TimelinePosition;
 use hikari_components::display::{
     Calendar, CalendarProps, Carousel, CarouselProps, Comment, CommentProps, DragLayer,
     DragLayerProps, Empty, EmptyProps, QRCode, QRCodeProps, Skeleton, SkeletonCard,
@@ -23,20 +21,18 @@ use hikari_components::display::{
     TimelineItemProps, TimelineProps, UserGuide, UserGuideProps, ZoomControls, ZoomControlsProps,
 };
 use hikari_components::feedback::{
-    Alert, AlertProps, Drawer, DrawerProps, Glow, GlowProps, Popover, PopoverProps, Progress,
-    ProgressProps, Spin, SpinProps, Toast, ToastProps,
+    Drawer, DrawerProps, Glow, GlowProps, Popover, PopoverProps, Progress, ProgressProps, Spin,
+    SpinProps, Toast, ToastProps,
 };
 use hikari_components::layout::divider::{DividerOrientation, DividerType};
 use hikari_components::layout::{
-    Aside, AsideProps, Col, ColProps, Container, ContainerProps, Content, ContentProps, Divider,
-    DividerProps, FlexBox, FlexBoxProps, Footer, FooterProps, Grid, GridProps, Header, HeaderProps,
-    Row, RowProps, Section, SectionProps, Space, SpaceProps,
+    Aside, AsideProps, Col, ColProps, Content, ContentProps, Divider, DividerProps, Footer,
+    FooterProps, Grid, GridProps, Header, HeaderProps, Row, RowProps, Section, SectionProps,
 };
 use hikari_components::navigation::{
     Anchor, AnchorProps, Breadcrumb, BreadcrumbProps, Menu, MenuItem, MenuItemProps, MenuProps,
     Sidebar, SidebarProps, Stepper, StepperProps, TabPane, TabPaneProps, Tabs, TabsProps,
 };
-use hikari_components::production::{CodeHighlight, CodeHighlightProps};
 use tairitsu_vdom::{el, txt, VNode};
 
 use crate::markdown::{Block, Inline};
@@ -368,7 +364,7 @@ fn syntax_highlight(code: &str, lang: &str) -> String {
                 ClassStyle::Spaced,
             );
             for line in LinesWithEndings::from(code) {
-                generator.parse_html_for_line_which_includes_newline(line);
+                let _ = generator.parse_html_for_line_which_includes_newline(line);
             }
             generator.finalize()
         }
