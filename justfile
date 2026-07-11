@@ -54,24 +54,29 @@ docs:
     cargo run --release -- build --src docs --out dist
 
 # Build + watch: rebuilds the docs tree automatically on change.
-# Self-contained [script] (not a linewise `just dev-watch` call) so it runs under
-# the interop-pinned Git Bash even when WSL shadows PATH — malkuth + cargo are
-# found because the whole body executes in one Git Bash process.
+# Self-contained [script]: malkuth path is resolved by just at parse time
+# ({{malkuth_bin}}), so the body needs no uname/python/command-v — only bash
+# builtins ([ -f ], exec, echo), which work even with a stripped-down PATH.
 [script]
 dev:
     #!/usr/bin/env bash
-    set -euo pipefail
+    set -eu
+    # Ensure MSYS /usr/bin + Git's usr/bin are on PATH (just spawns bash.exe
+    # without loading /etc/profile, so /usr/bin may be absent — breaks uname,
+    # cargo, etc.). Bash builtin only; prepend if missing.
+    case ":$PATH:" in
+      *":/usr/bin:"*) ;;
+      *) PATH="/usr/bin:$PATH" ;;
+    esac
+    # Resolve malkuth: prefer {{malkuth_bin}} (just-resolved), verify with bash
+    # builtins, fall back to the sibling-repo release path.
     malkuth="{{malkuth_bin}}"
     if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
-      malkuth_path=$( {{python_cmd}} -m celestia_devtools locate --crate malkuth 2>/dev/null || true )
-      if [ -n "$malkuth_path" ]; then
-        suffix="target/release/malkuth"
-        case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) suffix="target/release/malkuth.exe" ;; esac
-        malkuth="$malkuth_path/$suffix"
-      fi
+      malkuth="../malkuth/target/release/malkuth.exe"
     fi
-    if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
+    if [ ! -f "$malkuth" ]; then
       echo "[dev] malkuth not found. Build it: cd ../malkuth && cargo build --release --features cli" >&2
+      echo "[dev] Or set: export MALKUTH_BIN=/path/to/malkuth" >&2
       exit 1
     fi
     echo "[dev] supervising: cargo run --release dev --src docs --out dist --port 3000"
@@ -80,3 +85,4 @@ dev:
       cargo run --release -- dev --src docs --out dist --port 3000
 
 ci: fmt-check clippy test
+
