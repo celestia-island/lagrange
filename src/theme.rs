@@ -38,9 +38,9 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans"
 a{{color:var(--accent);text-decoration:none;transition:color var(--ts)}}
 a:hover{{text-decoration:underline}}
 /* ── layout ── */
-.layout{{display:flex;min-height:100vh}}
+.layout{{display:flex;height:100vh;overflow:hidden}}
 /* ── sidebar ── */
-.sidebar{{width:var(--sidebar-w);border-right:1px solid var(--border);position:sticky;top:0;height:100vh;display:flex;flex-direction:column;background:var(--bg-subtle)}}
+.sidebar{{width:var(--sidebar-w);border-right:1px solid var(--border);height:100vh;display:flex;flex-direction:column;background:var(--bg-subtle);flex-shrink:0}}
 .lg-search-box{{padding:.85rem .85rem .5rem;position:relative;display:flex;align-items:center;gap:.4rem}}
 .lg-search-icon{{color:var(--fg-sec);flex-shrink:0;display:flex;align-items:center}}
 .lg-search-icon svg{{display:block}}
@@ -75,7 +75,7 @@ a:hover{{text-decoration:underline}}
 #lg-search-results .lg-hit span{{display:block;font-size:.78rem;color:var(--fg-sec);margin-top:.1rem}}
 #lg-search-results .lg-no{{padding:.75rem;color:var(--fg-sec);text-align:center;font-size:.85rem}}
 /* ── content ── */
-.content{{flex:1;max-width:820px;margin:0 auto;padding:2rem 1.5rem 5rem;min-width:0}}
+.content{{flex:1;height:100vh;overflow-y:auto;padding:2rem max(1.5rem,calc((100% - 820px) / 2)) 5rem;min-width:0}}
 .content h1{{font-size:1.85rem;font-weight:700;margin:0 0 1rem;line-height:1.3}}
 .content h2{{font-size:1.35rem;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:.3rem;margin:2rem 0 1rem}}
 .content h3{{font-size:1.1rem;font-weight:600;margin:1.5rem 0 .75rem}}
@@ -92,8 +92,9 @@ a:hover{{text-decoration:underline}}
 .content ul,.content ol{{padding-left:1.5rem}}
 /* ── responsive ── */
 @media(max-width:880px){{
-.layout{{flex-direction:column}}
-.sidebar{{position:static;height:auto;width:auto;max-height:50vh}}
+.layout{{flex-direction:column;height:auto;overflow:visible}}
+.sidebar{{height:auto;width:auto;max-height:50vh;flex-shrink:0}}
+.content{{height:auto;overflow-y:visible;padding:1.5rem 1rem 3rem}}
 }}"#
     );
     // Prepend hikari component CSS, then append lagrange layout CSS.

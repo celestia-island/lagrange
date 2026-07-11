@@ -328,7 +328,7 @@ fn write_multi_page(
         "\n</nav>\n\
          <div class=\"lg-lang-footer\"><div id=\"lg-sw\"></div></div>\n\
          </aside>\n\
-         <main class=\"content\" id=\"lg-body\">\n",
+         <main class=\"content hi-scroll-container\" id=\"lg-body\">\n",
     );
     html.push_str(&default.body);
     html.push_str("\n</main>\n");
