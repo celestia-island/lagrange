@@ -66,9 +66,10 @@ dev:
       *":/usr/bin:"*) ;;
       *) PATH="/usr/bin:$PATH" ;;
     esac
-    # tracing-style log helper: <RFC3339 UTC>  INFO lagrange-dev: <msg>
-    log() { printf '%s  INFO lagrange-dev: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
-    err() { printf '%s ERROR lagrange-dev: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
+    # tracing-style log helper — matches lagrange_library's own format:
+    # local time, "%Y-%m-%d %H:%M:%S", no T/Z (see src/main.rs Timer impl).
+    log() { printf '%s  INFO lagrange-dev: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
+    err() { printf '%s ERROR lagrange-dev: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2; }
     # Resolve malkuth: prefer {{malkuth_bin}}, fall back to sibling-repo release.
     malkuth="{{malkuth_bin}}"
     if ! command -v "$malkuth" >/dev/null 2>&1 && [ ! -f "$malkuth" ]; then
