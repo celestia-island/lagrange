@@ -311,24 +311,31 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
 
     // Header: language label + copy button.
     let display_lang = if lang.is_empty() { "text" } else { lang };
-    let header = el("div").attr("class", "hi-code-highlight-header").children(vec![
-        VNode::Element(Box::new(
-            el("span").attr("class", "hi-code-highlight-language").child(txt(display_lang)),
-        )),
-        VNode::Element(Box::new(
-            el("button")
-                .attr("class", "hi-code-highlight-copy")
-                .attr("type", "button")
-                .attr("data-copy", code)
-                .attr("data-copied", &hikari_i18n::t("hikari.code.copied", "Copied"))
-                .child(txt(&hikari_i18n::t("hikari.code.copy", "Copy")))
-                .child(VNode::Element(Box::new(
-                    el("span")
-                        .attr("class", "hi-code-highlight-check")
-                        .dangerous_inner_html(&crate::icons::icon_svg("check", 12)),
-                ))),
-        )),
-    ]);
+    let header = el("div")
+        .attr("class", "hi-code-highlight-header")
+        .children(vec![
+            VNode::Element(Box::new(
+                el("span")
+                    .attr("class", "hi-code-highlight-language")
+                    .child(txt(display_lang)),
+            )),
+            VNode::Element(Box::new(
+                el("button")
+                    .attr("class", "hi-code-highlight-copy")
+                    .attr("type", "button")
+                    .attr("data-copy", code)
+                    .attr(
+                        "data-copied",
+                        &hikari_i18n::t("hikari.code.copied", "Copied"),
+                    )
+                    .child(txt(&hikari_i18n::t("hikari.code.copy", "Copy")))
+                    .child(VNode::Element(Box::new(
+                        el("span")
+                            .attr("class", "hi-code-highlight-check")
+                            .dangerous_inner_html(&crate::icons::icon_svg("check", 12)),
+                    ))),
+            )),
+        ]);
 
     VNode::Element(Box::new(
         el("div")
@@ -354,21 +361,19 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
 /// Highlight code using syntect. Returns HTML string with inline `<span style="...">`.
 /// Falls back to HTML-escaped plain text if the language is unknown.
 fn syntax_highlight(code: &str, lang: &str) -> String {
-    use syntect::parsing::SyntaxSet;
     use syntect::html::{ClassStyle, ClassedHTMLGenerator};
+    use syntect::parsing::SyntaxSet;
     use syntect::util::LinesWithEndings;
 
     let ps = SyntaxSet::load_defaults_newlines();
-    let syntax = ps.find_syntax_by_token(lang)
+    let syntax = ps
+        .find_syntax_by_token(lang)
         .or_else(|| ps.find_syntax_by_extension(lang));
 
     match syntax {
         Some(syntax) => {
-            let mut generator = ClassedHTMLGenerator::new_with_class_style(
-                syntax,
-                &ps,
-                ClassStyle::Spaced,
-            );
+            let mut generator =
+                ClassedHTMLGenerator::new_with_class_style(syntax, &ps, ClassStyle::Spaced);
             for line in LinesWithEndings::from(code) {
                 let _ = generator.parse_html_for_line_which_includes_newline(line);
             }

@@ -98,7 +98,9 @@ a:hover{{text-decoration:underline}}
 }}"#
     );
     // Prepend hikari component CSS, then append lagrange layout CSS.
-    hikari_css + &base + r#"
+    hikari_css
+        + &base
+        + r#"
 .lg-live-block{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:1.5rem 0}
 .lg-live-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-subtle)}
 .lg-live-tab{padding:.4rem .8rem;border:none;background:none;cursor:pointer;font-size:.82rem;color:var(--fg-sec);border-bottom:2px solid transparent;transition:all var(--ts)}

@@ -79,11 +79,7 @@ pub fn compile_all(sources: &[String], work_dir: &Path) -> HashMap<String, Strin
     }
 
     // Generate Cargo.toml with all [[bin]] entries.
-    std::fs::write(
-        crate_dir.join("Cargo.toml"),
-        render_cargo_toml(&entries),
-    )
-    .ok();
+    std::fs::write(crate_dir.join("Cargo.toml"), render_cargo_toml(&entries)).ok();
 
     // Compile all binaries in one invocation.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -128,7 +124,10 @@ pub fn compile_all(sources: &[String], work_dir: &Path) -> HashMap<String, Strin
                     }
                     Ok(r) => {
                         let stderr = String::from_utf8_lossy(&r.stderr);
-                        warn!("live block execution failed for {hash}: {}", stderr_tail(&stderr, 300));
+                        warn!(
+                            "live block execution failed for {hash}: {}",
+                            stderr_tail(&stderr, 300)
+                        );
                     }
                     Err(e) => {
                         warn!("live block execution error for {hash}: {e}");

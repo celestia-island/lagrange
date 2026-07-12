@@ -128,8 +128,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         let t_lang = Instant::now();
         // Set the i18n context for this language so hikari components
         // render with the correct UI strings (copy/cancel/etc.).
-        let hi_lang = hikari_i18n::Language::from_code(lang)
-            .unwrap_or(hikari_i18n::Language::English);
+        let hi_lang =
+            hikari_i18n::Language::from_code(lang).unwrap_or(hikari_i18n::Language::English);
         hikari_i18n::provide_i18n(hi_lang, Default::default());
         let lang_dir = opts.src.join(lang);
         // Parse the per-language SUMMARY.md. When it is missing (common for
@@ -730,7 +730,11 @@ fn read_md_or_follow(path: &Path) -> Result<String> {
         let dir = path.parent().unwrap_or(Path::new("."));
         let target = dir.join(trimmed);
         if target.is_file() {
-            tracing::debug!("following path-symlink: {} → {}", path.display(), target.display());
+            tracing::debug!(
+                "following path-symlink: {} → {}",
+                path.display(),
+                target.display()
+            );
             return fs::read_to_string(&target)
                 .with_context(|| format!("read symlink target {}", target.display()));
         }
