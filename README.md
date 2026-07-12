@@ -133,4 +133,4 @@ build in a prior CI step and deploy the static output.)
 
 ## License
 
-SySL-1.0 (Synthetic Source License). See [LICENSE](https://sysl.celestia.world).
+SySL-1.0 (Synthetic Source License). See [LICENSE](./LICENSE) or the [SySL website](https://sysl.celestia.world).

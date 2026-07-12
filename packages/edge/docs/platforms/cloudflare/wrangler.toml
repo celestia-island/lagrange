@@ -1,0 +1,14 @@
+name = "lagrange-comments"
+main = "build/worker/shim.mjs"
+compatibility_date = "2025-01-01"
+
+# D1 database — the SQL schema mirrors lagrange-adapter/src/storage/sqlite.rs
+# (threads / comments / votes). Apply it with:
+#   wrangler d1 execute lagrange-comments --file=schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "lagrange-comments"
+database_id = "YOUR-D1-DATABASE-ID"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"

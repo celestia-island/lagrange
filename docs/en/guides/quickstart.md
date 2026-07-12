@@ -10,6 +10,22 @@ cargo run --release -- build --src docs --out target/site
 
 Open `target/site/index.html` — it redirects to the English book.
 
+## Live hikari components
+
+Code blocks tagged `hikari` are compiled and rendered at build time. The
+resulting HTML is shown in a preview pane with a toggle to view the source.
+
+```hikari
+rsx! {
+    div {
+        class: "demo-greeting",
+        style: "padding:1rem;border:1px solid #ccc;border-radius:8px;text-align:center;",
+        h2 { "Hello from hikari!" }
+        p { "This component was compiled at build time and rendered to static HTML." }
+    }
+}
+```
+
 ## Directory layout
 
 ```

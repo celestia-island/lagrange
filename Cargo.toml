@@ -1,6 +1,6 @@
 [package]
 name = "lagrange-library"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.80"
 authors = ["langyo <langyo.china@gmail.com>"]
@@ -16,6 +16,14 @@ exclude = ["docs/", "justfile", ".github/"]
 [package.metadata.docs.rs]
 all-features = true
 
+# cargo-binstall: fetch the prebuilt binary from GitHub Releases instead of
+# compiling from source. The URL pattern matches the archives produced by
+# .github/workflows/release.yml.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/lagrange-v{ version }-{ target }.tar.{ archive-format }"
+bin-dir = "lagrange{ binary-ext }"
+pkg-fmt = "tgz"
+
 [lib]
 name = "lagrange_library"
 path = "src/lib.rs"
@@ -29,6 +37,8 @@ anyhow = "^1"
 clap = { version = "^4", features = ["derive"] }
 pest = "^2"
 pest_derive = "^2"
+# Build-time syntax highlighting for code blocks (syntect = pure Rust, no tree-sitter).
+syntect = { version = "^5", default-features = false, features = ["default-fancy"] }
 # Unified logging (matching the tairitsu/shirebe/kou ecosystem convention).
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
@@ -37,6 +47,8 @@ chrono = "^0.4"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 toml = "^0.8"
+# Frontmatter parsing (YAML `---` blocks). TOML frontmatter reuses `toml`.
+serde_yaml = "^0.9"
 
 # Dev server: axum + tower-http ServeDir for static file serving.
 axum = "^0.8"
@@ -45,6 +57,42 @@ tower-http = { version = "^0.6", features = ["fs"] }
 
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
 tairitsu-vdom = "^0.5"
+# tairitsu hooks runtime (needed by hikari components).
+tairitsu-hooks = "^0.5"
+# tairitsu macros (rsx!, component!, define_props — needed by hikari components).
+tairitsu-macros = "^0.5"
 # Theming: hikari color palette + icon system.
 hikari-palette = "^0.3"
 hikari-icons = { version = "^0.3", default-features = false }
+# Hikari UI components (Card, CodeHighlight, Typography, etc.) — rendered via
+# tairitsu-vdom SSR at build time, same VNode→HTML path lagrange already uses.
+# Uses local path for dev; crates.io consumers get the published version.
+hikari-components = { version = "^0.3", path = "../hikari/packages/components" }
+# Hikari i18n — component UI string translations (copy/cancel/etc.)
+hikari-i18n = { version = "^0.3", path = "../hikari/packages/i18n" }
+
+[dev-dependencies]
+tempfile = "^3"
+
+# ── workspace ──────────────────────────────────────────────────────────────
+# The root package (this crate, `lagrange-library`) is a workspace member by
+# default. Sibling crates under `crates/` implement the comment backend and
+# migration facilities; they depend on `lagrange-protocol` for the wire format
+# and are published independently.
+[workspace]
+members = [
+    "packages/protocol",
+    "packages/adapter",
+    "packages/exchange",
+    "packages/migrate",
+    "packages/server",
+    "packages/edge",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.80"
+authors = ["langyo <langyo.china@gmail.com>"]
+license = "SySL-1.0"
+repository = "https://github.com/celestia-island/lagrange"

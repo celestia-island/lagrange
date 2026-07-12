@@ -1,0 +1,43 @@
+[package]
+name = "lagrange-server"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Self-hostable lagrange comment backend (axum + sqlite)"
+keywords = ["comments", "bbs", "server", "lagrange", "axum"]
+categories = ["web-programming", "command-line-utilities"]
+
+[[bin]]
+name = "lagrange-server"
+path = "src/main.rs"
+
+[dependencies]
+lagrange-protocol = { path = "../protocol", version = "^0.1" }
+lagrange-adapter = { path = "../adapter", version = "^0.1" }
+rusqlite = { version = "^0.32", features = ["bundled"] }
+axum = "^0.8"
+tokio = { version = "^1", features = ["full"] }
+tower = "^0.5"
+tower-http = { version = "^0.6", features = ["cors"] }
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
+clap = { version = "^4", features = ["derive"] }
+anyhow = "^1"
+tracing = "^0.1"
+tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
+# Lightweight local auth: argon2 hashing + JWT.
+argon2 = "^0.5"
+rand_core = { version = "^0.6", features = ["std"] }
+jsonwebtoken = "^9"
+chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
+ulid = { version = "^1", features = ["std"] }
+# Interactive password entry for create-admin (optional but standard).
+rpassword = "^7"
+
+[dev-dependencies]
+tempfile = "^3"
+http-body-util = "^0.1"
+tower = { version = "^0.5", features = ["util"] }

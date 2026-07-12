@@ -1,0 +1,26 @@
+{
+  "name": "create-lagrange",
+  "version": "0.1.0",
+  "description": "Scaffold a lagrange documentation site — fetches the prebuilt binary from GitHub Releases and runs `lagrange init`.",
+  "license": "SySL-1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/celestia-island/lagrange",
+    "directory": "create-lagrange"
+  },
+  "keywords": ["lagrange", "ssg", "documentation", "markdown", "create-", "scaffold"],
+  "bin": {
+    "create-lagrange": "./index.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "index.js",
+    "install.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}

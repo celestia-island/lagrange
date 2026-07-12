@@ -1,0 +1,4 @@
+[script]
+_chk:
+    echo "PATH=$PATH"
+    command -v malkuth || echo "malkuth NOT in PATH"
