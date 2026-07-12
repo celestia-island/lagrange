@@ -255,7 +255,7 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
             .attr("data-lg-source", "")
             .child(VNode::Element(Box::new(
                 el("div")
-                    .attr("class", "hi-code-highlight-content hi-scroll-container")
+                    .attr("class", "hi-code-highlight-content")
                     .child(VNode::Element(Box::new(
                         el("div")
                             .attr("class", "hi-code-highlight-line-numbers")
@@ -263,7 +263,7 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
                     )))
                     .child(VNode::Element(Box::new(
                         el("pre")
-                            .attr("class", "hi-code-highlight-code")
+                            .attr("class", "hi-code-highlight-code hi-scroll-container")
                             .child(VNode::Element(Box::new(
                                 el("code")
                                     .attr("class", "language-rust")
@@ -336,7 +336,7 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
             .child(VNode::Element(Box::new(header)))
             .child(VNode::Element(Box::new(
                 el("div")
-                    .attr("class", "hi-code-highlight-content hi-scroll-container")
+                    .attr("class", "hi-code-highlight-content")
                     .child(VNode::Element(Box::new(
                         el("div")
                             .attr("class", "hi-code-highlight-line-numbers")
@@ -344,7 +344,7 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
                     )))
                     .child(VNode::Element(Box::new(
                         el("pre")
-                            .attr("class", "hi-code-highlight-code")
+                            .attr("class", "hi-code-highlight-code hi-scroll-container")
                             .child(VNode::Element(Box::new(code_el))),
                     ))),
             ))),

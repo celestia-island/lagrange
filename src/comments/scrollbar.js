@@ -1,10 +1,7 @@
 /* lagrange overlay scrollbar — vanilla JS port of shittim-chest's SScrollContainer.
- * Creates draggable .hi-obs-track + .hi-obs-thumb elements OUTSIDE the scroll
- * container's scrollable content, so the track stays fixed while content scrolls.
- *
- * Strategy: wrap the scroll container in a .hi-scroll-wrapper (position:relative),
- * move the container inside, and append the track to the wrapper (not the container).
- * The wrapper inherits the container's flex/grid sizing via inline styles.
+ * Creates draggable .hi-obs-track + .hi-obs-thumb elements appended to
+ * document.body with position:fixed, recalculated on every scroll/resize.
+ * Supports both vertical (right edge) and horizontal (bottom edge) scrollbars.
  */
 (function () {
   "use strict";
@@ -13,112 +10,169 @@
     if (container._lgScrollbar) return;
     container._lgScrollbar = true;
 
-    // Ensure the container hides its native scrollbar.
     container.classList.add("hi-scroll-container");
 
-    // The track is appended to the container itself, but uses position:fixed
-    // positioning that is recalculated on every scroll/resize. This avoids
-    // the "track scrolls with content" problem without needing a wrapper.
-    var track = document.createElement("div");
-    track.className = "hi-obs-track";
-    // Fixed positioning so the track stays in the viewport regardless of
-    // the container's scroll position.
-    track.style.position = "fixed";
-    var thumb = document.createElement("div");
-    thumb.className = "hi-obs-thumb";
-    track.appendChild(thumb);
-    // Append to body so it's never clipped by overflow:hidden ancestors.
-    document.body.appendChild(track);
+    // ── Vertical track (right edge) ──
+    var vTrack = document.createElement("div");
+    vTrack.className = "hi-obs-track";
+    vTrack.style.position = "fixed";
+    var vThumb = document.createElement("div");
+    vThumb.className = "hi-obs-thumb";
+    vTrack.appendChild(vThumb);
+    document.body.appendChild(vTrack);
 
-    var isDragging = false;
-    var dragStartY = 0;
-    var dragStartScroll = 0;
+    // ── Horizontal track (bottom edge) ──
+    var hTrack = document.createElement("div");
+    hTrack.className = "hi-obs-track hi-obs-track-horizontal";
+    hTrack.style.position = "fixed";
+    var hThumb = document.createElement("div");
+    hThumb.className = "hi-obs-thumb hi-obs-thumb-horizontal";
+    hTrack.appendChild(hThumb);
+    document.body.appendChild(hTrack);
+
+    var isDraggingV = false;
+    var isDraggingH = false;
+    var dragStartV = 0;
+    var dragStartScrollV = 0;
+    var dragStartH = 0;
+    var dragStartScrollH = 0;
 
     function updateThumb() {
-      var maxScroll = container.scrollHeight - container.clientHeight;
       var rect = container.getBoundingClientRect();
+      var maxScrollV = container.scrollHeight - container.clientHeight;
+      var maxScrollH = container.scrollWidth - container.clientWidth;
 
-      // Position the track at the right edge of the container.
-      track.style.top = (rect.top + 4) + "px";
-      track.style.height = Math.max(0, rect.height - 8) + "px";
-      track.style.left = (rect.right - 12) + "px";
+      // ── Vertical scrollbar ──
+      if (maxScrollV > 0 && rect.height > 0) {
+        vTrack.style.display = "";
+        vTrack.style.top = (rect.top + 4) + "px";
+        vTrack.style.height = Math.max(0, rect.height - 8) + "px";
+        vTrack.style.left = (rect.right - 12) + "px";
 
-      if (maxScroll <= 0 || rect.height <= 0) {
-        track.style.opacity = "0";
-        track.style.pointerEvents = "none";
-        return;
+        var ratioV = container.clientHeight / container.scrollHeight;
+        var thumbH = Math.max(20, container.clientHeight * ratioV);
+        vThumb.style.height = thumbH + "px";
+        var scrollRatioV = container.scrollTop / maxScrollV;
+        var trackH = rect.height - 16;
+        vThumb.style.top = (scrollRatioV * (trackH - thumbH) + 4) + "px";
+        vTrack.style.opacity = "1";
+      } else {
+        vTrack.style.opacity = "0";
       }
 
-      var ratio = container.clientHeight / container.scrollHeight;
-      var thumbH = Math.max(
-        parseInt(getComputedStyle(document.documentElement).getPropertyValue("--hi-scroll-thumb-min")) || 20,
-        container.clientHeight * ratio
-      );
-      thumb.style.height = thumbH + "px";
-      var scrollRatio = container.scrollTop / maxScroll;
-      var trackH = rect.height - 16; // insets
-      thumb.style.top = (scrollRatio * (trackH - thumbH) + 4) + "px";
+      // ── Horizontal scrollbar ──
+      if (maxScrollH > 0 && rect.width > 0) {
+        hTrack.style.display = "";
+        hTrack.style.left = (rect.left + 4) + "px";
+        hTrack.style.width = Math.max(0, rect.width - 8) + "px";
+        hTrack.style.top = (rect.bottom - 12) + "px";
 
-      // Show on scroll, fade after idle.
-      track.style.opacity = "1";
-      track.style.pointerEvents = "none"; // track itself doesn't capture
+        var ratioH = container.clientWidth / container.scrollWidth;
+        var thumbW = Math.max(20, container.clientWidth * ratioH);
+        hThumb.style.width = thumbW + "px";
+        var scrollRatioH = container.scrollLeft / maxScrollH;
+        var trackW = rect.width - 16;
+        hThumb.style.left = (scrollRatioH * (trackW - thumbW) + 4) + "px";
+        hTrack.style.opacity = "1";
+      } else {
+        hTrack.style.opacity = "0";
+      }
+
+      // Fade after idle — only hide tracks that aren't being dragged.
       clearTimeout(container._lgScrollFade);
       container._lgScrollFade = setTimeout(function () {
-        if (!isDragging) track.style.opacity = "0";
+        if (!isDraggingV && maxScrollV <= 0) vTrack.style.opacity = "0";
+        if (!isDraggingH && maxScrollH <= 0) hTrack.style.opacity = "0";
       }, 800);
     }
 
     container.addEventListener("scroll", updateThumb);
     container.addEventListener("mouseenter", function () {
-      track.classList.add("hi-obs-active");
+      vTrack.classList.add("hi-obs-active");
+      hTrack.classList.add("hi-obs-active");
       updateThumb();
     });
     container.addEventListener("mouseleave", function () {
-      track.classList.remove("hi-obs-active");
+      vTrack.classList.remove("hi-obs-active");
+      hTrack.classList.remove("hi-obs-active");
       clearTimeout(container._lgScrollFade);
       container._lgScrollFade = setTimeout(function () {
-        if (!isDragging) track.style.opacity = "0";
+        if (!isDraggingV && !isDraggingH) {
+          vTrack.style.opacity = "0";
+          hTrack.style.opacity = "0";
+        }
       }, 400);
     });
 
-    // Drag the thumb to scroll.
-    thumb.addEventListener("mousedown", function (e) {
+    // ── Vertical drag ──
+    vThumb.addEventListener("mousedown", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      isDragging = true;
-      dragStartY = e.clientY;
-      dragStartScroll = container.scrollTop;
-      thumb.style.background = "rgb(255 255 255 / 55%)";
+      isDraggingV = true;
+      dragStartV = e.clientY;
+      dragStartScrollV = container.scrollTop;
+      vThumb.style.background = "rgb(255 255 255 / 55%)";
       document.body.style.userSelect = "none";
     });
 
     document.addEventListener("mousemove", function (e) {
-      if (!isDragging) return;
-      var maxScroll = container.scrollHeight - container.clientHeight;
-      var rect = container.getBoundingClientRect();
-      var trackH = rect.height - 16;
-      var thumbH = parseFloat(thumb.style.height) || 20;
-      var delta = e.clientY - dragStartY;
-      var scrollDelta = (delta / (trackH - thumbH)) * maxScroll;
-      container.scrollTop = dragStartScroll + scrollDelta;
+      if (isDraggingV) {
+        var maxScroll = container.scrollHeight - container.clientHeight;
+        var rect = container.getBoundingClientRect();
+        var trackH = rect.height - 16;
+        var thumbH = parseFloat(vThumb.style.height) || 20;
+        var delta = e.clientY - dragStartV;
+        container.scrollTop = dragStartScrollV + (delta / (trackH - thumbH)) * maxScroll;
+      }
+      if (isDraggingH) {
+        var maxScrollH = container.scrollWidth - container.clientWidth;
+        var rectH = container.getBoundingClientRect();
+        var trackW = rectH.width - 16;
+        var thumbW = parseFloat(hThumb.style.width) || 20;
+        var deltaH = e.clientX - dragStartH;
+        container.scrollLeft = dragStartScrollH + (deltaH / (trackW - thumbW)) * maxScrollH;
+      }
     });
 
     document.addEventListener("mouseup", function () {
-      if (!isDragging) return;
-      isDragging = false;
-      thumb.style.background = "";
-      document.body.style.userSelect = "";
+      if (isDraggingV) {
+        isDraggingV = false;
+        vThumb.style.background = "";
+      }
+      if (isDraggingH) {
+        isDraggingH = false;
+        hThumb.style.background = "";
+      }
+      if (!isDraggingV && !isDraggingH) {
+        document.body.style.userSelect = "";
+      }
     });
 
-    // Click on track to jump.
-    track.addEventListener("click", function (e) {
-      if (e.target === thumb) return;
+    // ── Horizontal drag ──
+    hThumb.addEventListener("mousedown", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      isDraggingH = true;
+      dragStartH = e.clientX;
+      dragStartScrollH = container.scrollLeft;
+      hThumb.style.background = "rgb(255 255 255 / 55%)";
+      document.body.style.userSelect = "none";
+    });
+
+    // ── Click on track to jump ──
+    vTrack.addEventListener("click", function (e) {
+      if (e.target === vThumb) return;
       var maxScroll = container.scrollHeight - container.clientHeight;
       var rect = container.getBoundingClientRect();
-      var trackH = rect.height - 16;
       var clickY = e.clientY - rect.top - 4;
-      var ratio = clickY / trackH;
-      container.scrollTop = ratio * maxScroll;
+      container.scrollTop = (clickY / (rect.height - 16)) * maxScroll;
+    });
+    hTrack.addEventListener("click", function (e) {
+      if (e.target === hThumb) return;
+      var maxScroll = container.scrollWidth - container.clientWidth;
+      var rect = container.getBoundingClientRect();
+      var clickX = e.clientX - rect.left - 4;
+      container.scrollLeft = (clickX / (rect.width - 16)) * maxScroll;
     });
 
     // ResizeObserver to update thumb on content changes.
@@ -127,23 +181,18 @@
       ro.observe(container);
     }
 
-    // Also update on window resize (layout shifts).
     window.addEventListener("resize", updateThumb);
 
     updateThumb();
-    // Defer updates until layout has fully settled — the container's
-    // getBoundingClientRect() may return zeros during initial paint.
     requestAnimationFrame(function () {
       updateThumb();
-      // One more after a longer delay for slow layouts (fonts, images).
       setTimeout(function () {
-        container.scrollTop = container.scrollTop; // trigger scroll event
+        container.scrollTop = container.scrollTop;
         updateThumb();
       }, 200);
     });
   }
 
-  // Auto-init on all .hi-scroll-container elements.
   function initAll() {
     document.querySelectorAll(".hi-scroll-container").forEach(createScrollbar);
   }
@@ -154,7 +203,6 @@
     setTimeout(initAll, 50);
   }
 
-  // Re-init on DOM mutations (for SPA-like content swaps).
   if (window.MutationObserver) {
     var mo = new MutationObserver(function (mutations) {
       mutations.forEach(function (m) {
@@ -173,5 +221,3 @@
     mo.observe(document.body, { childList: true, subtree: true });
   }
 })();
-
-

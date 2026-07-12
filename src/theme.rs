@@ -137,6 +137,10 @@ fn hikari_component_css() -> String {
 .hi-obs-track:hover{width:14px;opacity:1;pointer-events:auto}
 .hi-obs-thumb{position:absolute;right:2px;width:4px;min-height:20px;border-radius:9999px;background:var(--fg-sec);opacity:.4;cursor:pointer;transition:width .15s,opacity .15s}
 .hi-obs-thumb:hover{width:6px;opacity:.6}
+.hi-obs-track-horizontal{position:fixed;height:8px;pointer-events:none;z-index:9000;opacity:0;transition:height .15s,opacity .15s}
+.hi-obs-track-horizontal:hover{height:14px;opacity:1;pointer-events:auto}
+.hi-obs-thumb-horizontal{position:absolute;bottom:2px;height:4px;min-width:20px;border-radius:9999px;background:var(--fg-sec);opacity:.4;cursor:pointer;transition:height .15s,opacity .15s}
+.hi-obs-thumb-horizontal:hover{height:6px;opacity:.6}
 .hi-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;box-shadow:var(--hi-shadow-panel);transition:box-shadow .3s}
 .hi-card:hover{box-shadow:var(--hi-shadow-elevated)}
 .hi-card-body{padding:1.5rem}
@@ -150,10 +154,10 @@ fn hikari_component_css() -> String {
 .hi-code-highlight-language{font-size:.7rem;color:var(--fg-sec);text-transform:uppercase}
 .hi-code-highlight-copy{font-size:.7rem;line-height:1.4;white-space:nowrap;color:var(--fg-sec);background:none;border:none;cursor:pointer;padding:.2rem .4rem;border-radius:4px;transition:color .15s}
 .hi-code-highlight-copy:hover{background:var(--accent-bg)}
-.hi-code-highlight-content{display:flex;overflow-x:auto;scrollbar-width:none;align-items:stretch}
-.hi-code-highlight-content::-webkit-scrollbar{display:none}
+.hi-code-highlight-content{display:flex;overflow:hidden;align-items:stretch}
 .hi-code-highlight-line-numbers{display:flex;flex-direction:column;padding:1rem .5rem 1rem 0;text-align:right;color:var(--fg-sec);user-select:none;min-width:2.5rem;opacity:.4;flex-shrink:0;gap:0}
-.hi-code-highlight-code{flex:1;padding:1rem;margin:0;overflow-x:auto}
+.hi-code-highlight-code{flex:1;padding:1rem;margin:0;overflow-x:auto;scrollbar-width:none}
+.hi-code-highlight-code::-webkit-scrollbar{display:none}
 .hi-code-highlight-code code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;line-height:1.5;display:block}
 .hi-code-highlight-line-number{line-height:1.5;font-family:"SFMono-Regular",Consolas,monospace;font-size:.85rem;white-space:nowrap;height:1.5em;flex-shrink:0}
 .hi-code-highlight-copy.copied{color:var(--syn-string)}
