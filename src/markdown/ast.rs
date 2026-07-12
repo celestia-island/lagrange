@@ -12,6 +12,10 @@ pub enum Block {
     Paragraph(Vec<Inline>),
     /// A fenced (` ``` `) code block.
     CodeBlock { lang: Option<String>, code: String },
+    /// A ```` ```hikari ```` code block — a live hikari component snippet.
+    /// At build time lagrange compiles and executes this `rsx!{...}` expression
+    /// to produce rendered HTML, displayed in a preview/source-toggle card.
+    LiveComponent { source: String },
     /// A list. `ordered` distinguishes `-`/`*`/`+` from `1.`.
     List {
         ordered: bool,

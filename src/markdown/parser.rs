@@ -74,6 +74,17 @@ fn parse_fenced_code(lines: &[&str], i: usize) -> Option<(Block, usize)> {
         let t = lines[j].trim_start();
         if let Some((c, m)) = leading_fence(t) {
             if c == fence_char && m >= n {
+                // A ```hikari block is a live component snippet, not a plain
+                // code block. Route it to LiveComponent so the builder can
+                // compile-execute it at build time.
+                if info == "hikari" {
+                    return Some((
+                        Block::LiveComponent {
+                            source: code.trim_end().to_string(),
+                        },
+                        j + 1,
+                    ));
+                }
                 let lang = if info.is_empty() {
                     None
                 } else {
@@ -87,6 +98,14 @@ fn parse_fenced_code(lines: &[&str], i: usize) -> Option<(Block, usize)> {
         j += 1;
     }
     // Unterminated fence — take everything to EOF.
+    if info == "hikari" {
+        return Some((
+            Block::LiveComponent {
+                source: code.trim_end().to_string(),
+            },
+            j,
+        ));
+    }
     let lang = if info.is_empty() {
         None
     } else {

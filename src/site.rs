@@ -20,7 +20,12 @@ use std::{
 
 use tracing::info;
 
-use crate::{markdown, render, theme};
+use crate::{
+    comments::{self, MountInput},
+    config::CommentsConfig,
+    frontmatter::{self, FrontMatter},
+    markdown, render, theme,
+};
 
 /// Options for [`build`].
 pub struct BuildOptions {
@@ -35,6 +40,13 @@ pub struct LangPage {
     pub title: String,
     pub body: String,
     pub sidebar_html: String,
+    /// Parsed frontmatter (empty when the document had none). The title above
+    /// is already resolved from `frontmatter.title` if present, falling back to
+    /// the first heading — so callers do not need to re-derive it.
+    pub frontmatter: FrontMatter,
+    /// Pre-rendered comment mount-point HTML for this page (empty when comments
+    /// are inactive or opted out). Appended verbatim after the article body.
+    pub comments_mount: String,
 }
 
 /// All language variants of one logical page.
@@ -81,25 +93,78 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 
     let css = theme::stylesheet();
 
+    // Live component blocks: scan all markdown for ```hikari blocks, compile
+    // them at build time, and collect the pre-rendered HTML. The render layer
+    // gracefully falls back to source-only for any blocks that fail to compile.
+    let mut all_live_sources: Vec<String> = Vec::new();
+    for lang in &langs {
+        let lang_dir = opts.src.join(lang);
+        for md_path in walk_md(&lang_dir).unwrap_or_default() {
+            let source = std::fs::read_to_string(&md_path).unwrap_or_default();
+            let (_, _, body_src) = frontmatter::strip(&source);
+            let blocks = markdown::parse(body_src);
+            all_live_sources.extend(crate::live::collect_sources(&blocks));
+        }
+    }
+    // Deduplicate across all languages — the same snippet appears in every
+    // language variant of the same page, but only needs to be compiled once.
+    all_live_sources.sort();
+    all_live_sources.dedup();
+    let live_html = if all_live_sources.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        info!(
+            "compiling {} live component block(s)…",
+            all_live_sources.len()
+        );
+        crate::live::compile_all(&all_live_sources, &opts.out)
+    };
+
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
 
     for lang in &langs {
         let t_lang = Instant::now();
+        // Set the i18n context for this language so hikari components
+        // render with the correct UI strings (copy/cancel/etc.).
+        let hi_lang =
+            hikari_i18n::Language::from_code(lang).unwrap_or(hikari_i18n::Language::English);
+        hikari_i18n::provide_i18n(hi_lang, Default::default());
         let lang_dir = opts.src.join(lang);
-        let nav = parse_summary(&lang_dir.join("SUMMARY.md")).unwrap_or_default();
+        // Parse the per-language SUMMARY.md. When it is missing (common for
+        // non-English languages that haven't been fully translated yet),
+        // fall back to the default language's SUMMARY so the sidebar is
+        // still populated — the page URLs are language-agnostic (flat site),
+        // so links work regardless of which language's nav we use.
+        let summary_path = lang_dir.join("SUMMARY.md");
+        let nav = parse_summary(&summary_path).unwrap_or_default();
+        let nav = if nav.is_empty() && lang != &default_lang {
+            let fallback = opts.src.join(&default_lang).join("SUMMARY.md");
+            parse_summary(&fallback).unwrap_or_default()
+        } else {
+            nav
+        };
 
         for md_path in walk_md(&lang_dir)? {
             if md_path.file_name().is_some_and(|f| f == "SUMMARY.md") {
                 continue;
             }
             let rel = md_path.strip_prefix(&lang_dir).unwrap_or(&md_path);
-            let source = fs::read_to_string(&md_path)
+            let source = read_md_or_follow(&md_path)
                 .with_context(|| format!("read {}", md_path.display()))?;
-            let blocks = markdown::parse(&source);
-            let body_raw = render::render_to_html(&blocks);
-            let title = first_heading(&blocks).unwrap_or_else(|| "Lagrange".to_string());
+
+            // Peel frontmatter off before parsing — the grammar never sees it.
+            let (_fm_kind, fm, body_src) = frontmatter::strip(&source);
+            let blocks = markdown::parse(body_src);
+            // Render with live component HTML if any were pre-compiled.
+            let body_raw = render::render_to_html_with_live(&blocks, &live_html);
+            // Title: explicit frontmatter wins, else first heading, else default.
+            let title = fm
+                .title
+                .clone()
+                .or_else(|| first_heading(&blocks))
+                .unwrap_or_else(|| "Lagrange".to_string());
 
             // Compute output page path (README/index → index.html).
             let mut out_rel = rel.with_extension("html");
@@ -129,6 +194,12 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             // Rewrite asset paths (logo from README `docs/logo.webp`).
             let body = rewrite_asset_paths(&body_raw, &page_path);
 
+            // Compute the comment mount point for this page. `canonical` is the
+            // frontmatter value, falling back to nothing (the component will
+            // use `window.location.href`).
+            let comments_mount =
+                build_comments_mount(&config.comments, &fm, &page_path, fm.canonical.as_deref());
+
             let entry = multi.entry(page_path.clone()).or_insert_with(|| MultiPage {
                 pages: BTreeMap::new(),
                 page_path: page_path.clone(),
@@ -139,6 +210,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                     title,
                     body,
                     sidebar_html,
+                    frontmatter: fm,
+                    comments_mount,
                 },
             );
         }
@@ -170,8 +243,23 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 3. Copy assets.
     copy_root_assets(&opts.src, &opts.out)?;
 
+    // 3b. Copy the crate-shipped comment runtime (`assets/`) into
+    //     `_site/assets/` whenever the build references a custom-element mount
+    //     point. Skipped for the pure-static / public-embed modes so nothing
+    //     extra is shipped.
+    if needs_comment_runtime(&config.comments) {
+        copy_crate_assets(&opts.out)?;
+    }
+
     // ── 4. Build the search index.
     crate::search::write_index(&opts.out, &multi)?;
+
+    // 4b. BBS projection: when enabled, emit a boards index per language that
+    //     groups pages by their frontmatter `category`. Pure static — the board
+    //     listing is just another generated HTML page linking to the articles.
+    if config.bbs.enabled {
+        write_boards_index(&opts.out, &multi, &langs, &css, &config.bbs.boards_path)?;
+    }
 
     // ── 5. Emit a CNAME file when a custom domain is configured, so static
     //      hosts (GitHub Pages / Cloudflare Pages / Vercel) pick it up without
@@ -236,27 +324,34 @@ fn write_multi_page(
     html.push_str(
         "</span>\
          <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
-         <div id=\"lg-search-results\"></div>\
+         <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
          </div>\n\
-         <nav id=\"lg-sidebar\">\n",
+         <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
     );
     html.push_str(&default.sidebar_html);
     html.push_str(
         "\n</nav>\n\
          <div class=\"lg-lang-footer\"><div id=\"lg-sw\"></div></div>\n\
          </aside>\n\
-         <main class=\"content\" id=\"lg-body\">\n",
+         <main class=\"content hi-scroll-container\" id=\"lg-body\">\n",
     );
     html.push_str(&default.body);
-    html.push_str("\n</main>\n</div>\n");
+    html.push_str("\n</main>\n");
+
+    // Comment mount point (empty when comments are inactive — pure static).
+    // Appended as a sibling after </main>, never inside the article body.
+    html.push_str(&default.comments_mount);
+
+    html.push_str("</div>\n");
 
     // Embedded language data.
     html.push_str("<script type=\"application/json\" id=\"lg-data\">");
     html.push_str(&json_data);
     html.push_str("</script>\n");
 
-    // Client-side language logic.
+    // Client-side language logic + live block tab toggling.
     html.push_str(&lagrange_js());
+    html.push_str(&live_block_js());
     html.push_str("</body>\n</html>\n");
 
     fs::write(&out_path, html).with_context(|| format!("write {}", out_path.display()))?;
@@ -264,6 +359,68 @@ fn write_multi_page(
 }
 
 // ── inline JavaScript ─────────────────────────────────────────────────────
+
+/// Minimal JS for live block tab toggling + code copy buttons.
+fn live_block_js() -> String {
+    // Embed shared JS modules (vanilla, no framework):
+    // - scrollbar.js: hikari overlay scrollbar port
+    // - modal.js: stack-based popup manager
+    // - clipboard.js: tairitsu ClipboardOps::copy_to_clipboard binding
+    let scrollbar_js = include_str!("comments/scrollbar.js");
+    let modal_js = include_str!("comments/modal.js");
+    let clipboard_js = include_str!("comments/clipboard.js");
+
+    // Pre-render hikari-icon SVGs for use in JS-generated DOM (modal close,
+    // comment upvote, etc.). These come from hikari-icons, same as the
+    // build-time rendered icons.
+    let icon_close = crate::icons::icon_svg("close", 14);
+    let icon_arrow_up = crate::icons::icon_svg("arrow-up", 12);
+    let icons_js = format!(
+        r#"<script>window.LAGRANGE_ICONS={{close:{icon_close:?},\x22arrow-up\x22:{icon_arrow_up:?}}};</script>"#,
+    );
+
+    let prefix = format!(
+        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n{icons_js}\n"
+    );
+    let suffix = r##"<script>
+(function(){
+ /* ── live block tab toggling (preview ↔ source) ── */
+ document.querySelectorAll('.lg-live-block').forEach(function(block){
+  var tabs=block.querySelectorAll('.lg-live-tab');
+  var preview=block.querySelector('.lg-live-preview');
+  var source=block.querySelector('[data-lg-source]');
+  if(!tabs.length) return;
+  tabs.forEach(function(tab){
+   tab.onclick=function(){
+    tabs.forEach(function(t){t.classList.remove('active')});
+    tab.classList.add('active');
+    var isSource=tab.dataset.tab==='source';
+    if(preview) preview.style.display=isSource?'none':'';
+    if(source) source.style.display=isSource?'block':'none';
+   };
+  });
+ });
+
+ /* ── code block copy buttons ──
+  * Calls window.lagrangeCopy() which is the tairitsu ClipboardOps
+  * binding (navigator.clipboard.writeText + execCommand fallback).
+  * No hand-written clipboard logic here — see clipboard.js.
+  */
+ document.querySelectorAll('.hi-code-highlight-copy[data-copy]').forEach(function(btn){
+  btn.onclick=function(){
+   var text=btn.getAttribute('data-copy')||'';
+   if(window.lagrangeCopy){window.lagrangeCopy(text)}
+   btn.classList.add('copied');
+   var orig=btn.getAttribute('data-orig-text')||btn.textContent;
+   btn.setAttribute('data-orig-text',orig);
+   btn.textContent=btn.getAttribute('data-copied')||'Copied';
+   setTimeout(function(){btn.classList.remove('copied');btn.textContent=orig},1500);
+  };
+ });
+})();
+</script>"##;
+    prefix + &suffix
+}
 
 fn lagrange_js() -> String {
     let translate = crate::icons::icon_svg("translate", 16);
@@ -291,7 +448,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
  }
  /* ── language dropdown ── */
  var sw=document.getElementById('lg-sw');sw.className='lg-lang-select';
- sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel"></div>';
+ sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel hi-scroll-container"></div>';
  var trigger=sw.querySelector('.lg-lang-trigger');
  var panel=sw.querySelector('.lg-lang-panel');
  var ls=document.documentElement.dataset.langs?document.documentElement.dataset.langs.split(','):Object.keys(D).sort();
@@ -356,11 +513,42 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
 impl serde::Serialize for LangPage {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("LangPage", 3)?;
+        // Three "live" fields (consumed by the client language switcher) plus a
+        // `meta` bag carrying frontmatter-derived fields the front-end may want
+        // (title is duplicated here intentionally so a language switch does not
+        // lose the explicit frontmatter title). The comment mount is NOT
+        // serialised — it is static HTML, identical across languages.
+        let mut st = s.serialize_struct("LangPage", 4)?;
         st.serialize_field("title", &self.title)?;
         st.serialize_field("body", &self.body)?;
         st.serialize_field("sidebar_html", &self.sidebar_html)?;
+        st.serialize_field("meta", &PageMeta::from(&self.frontmatter))?;
         st.end()
+    }
+}
+
+/// The subset of frontmatter surfaced to the client (for the language switcher
+/// and any future progressive enhancement). Kept small and optional.
+#[derive(serde::Serialize)]
+struct PageMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+impl From<&FrontMatter> for PageMeta {
+    fn from(fm: &FrontMatter) -> Self {
+        Self {
+            date: fm.date.clone(),
+            category: fm.category.clone(),
+            tags: fm.tags.clone(),
+            description: fm.description.clone(),
+        }
     }
 }
 
@@ -402,6 +590,24 @@ fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
 }
 
 // ── markdown helpers ──────────────────────────────────────────────────────
+
+/// Build the per-page comment mount-point HTML. Thin wrapper around
+/// [`comments::mount_html`] that assembles the [`MountInput`] from the site
+/// config and the page's frontmatter.
+fn build_comments_mount(
+    config: &CommentsConfig,
+    fm: &FrontMatter,
+    page_path: &str,
+    canonical: Option<&str>,
+) -> String {
+    let input = MountInput {
+        config,
+        frontmatter: fm,
+        page_path,
+        canonical,
+    };
+    comments::mount_html(&input)
+}
 
 fn first_heading(blocks: &[markdown::Block]) -> Option<String> {
     for b in blocks {
@@ -499,6 +705,44 @@ fn walk_md(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// Read a markdown file, following relative-path symlinks.
+///
+/// On Windows with `core.symlinks = false`, git stores a symlink as a
+/// regular file whose content is the symlink target path (e.g.
+/// `../../README.md`). This function detects that pattern — a file whose
+/// entire content looks like a relative path pointing to another `.md`
+/// file — and transparently follows it, reading the real target instead.
+///
+/// Real symlink targets (on Unix or Windows with symlinks enabled) are
+/// resolved by the OS and work without this logic; this is a fallback
+/// for the broken-symlink-as-text-file case.
+fn read_md_or_follow(path: &Path) -> Result<String> {
+    let raw = fs::read_to_string(path)?;
+
+    // Heuristic: the file is a broken symlink if its trimmed content is a
+    // single line that looks like a relative path to a .md file.
+    let trimmed = raw.trim();
+    if trimmed.lines().count() <= 1
+        && (trimmed.starts_with("../") || trimmed.starts_with("./"))
+        && trimmed.ends_with(".md")
+    {
+        // Resolve relative to the symlink file's directory.
+        let dir = path.parent().unwrap_or(Path::new("."));
+        let target = dir.join(trimmed);
+        if target.is_file() {
+            tracing::debug!(
+                "following path-symlink: {} → {}",
+                path.display(),
+                target.display()
+            );
+            return fs::read_to_string(&target)
+                .with_context(|| format!("read symlink target {}", target.display()));
+        }
+    }
+
+    Ok(raw)
+}
+
 fn walk_md_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -527,6 +771,117 @@ fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
         if license.is_file() && !out.join("LICENSE").exists() {
             fs::copy(license, out.join("LICENSE"))?;
         }
+    }
+    Ok(())
+}
+
+/// True when the configured comment mode needs the lagrange comment runtime
+/// (the `<lagrange-comments>` custom element + its JS/CSS). The third-party
+/// embeds (`disqus`/`giscus`/`github-issue`) ship their own scripts, so they
+/// do not need our runtime; `none` obviously needs nothing.
+fn needs_comment_runtime(config: &CommentsConfig) -> bool {
+    use crate::config::CommentMode;
+    // Every mode except None renders the <lagrange-comments> component and
+    // thus needs the embedded runtime JS/CSS.
+    config.is_active() && matches!(config.mode, CommentMode::Proxied | CommentMode::StaticJson)
+}
+
+/// Write the browser-side comment runtime (`lagrange-comments.js` + CSS) into
+/// `<out>/assets/`.
+///
+/// The runtime lives in `src/comments/runtime.{js,css}` and is embedded into
+/// the binary at compile time via `include_str!`, so this works for a prebuilt
+/// binary installed from crates.io — no source tree or exe-sibling filesystem
+/// lookup needed.
+fn copy_crate_assets(out: &Path) -> Result<()> {
+    let dest = out.join("assets");
+    fs::create_dir_all(&dest)?;
+    for (name, bytes) in EMBEDDED_ASSETS {
+        fs::write(dest.join(name), bytes)?;
+    }
+    info!(
+        "embedded {} browser runtime asset(s) → {}",
+        EMBEDDED_ASSETS.len(),
+        dest.display()
+    );
+    Ok(())
+}
+
+/// The browser-side assets embedded at compile time straight from
+/// `src/comments/`. Listing them here keeps the set explicit; adding a new
+/// asset means dropping the file in `src/comments/` and adding one entry.
+const EMBEDDED_ASSETS: &[(&str, &str)] = &[
+    ("lagrange-comments.js", include_str!("comments/runtime.js")),
+    (
+        "lagrange-comments.css",
+        include_str!("comments/runtime.css"),
+    ),
+];
+
+/// Emit a per-language boards index page when `[bbs] enabled = true`.
+///
+/// For each language, group every page that carries a `category` frontmatter
+/// by that category, and write `<out>/<boards_path>/index.html` listing the
+/// boards with their post counts and links. Pages without a category are
+/// omitted (they don't belong to a board). This is a pure-static projection —
+/// no new data model, just a generated listing over the same pages.
+fn write_boards_index(
+    out: &Path,
+    multi: &BTreeMap<String, MultiPage>,
+    langs: &[String],
+    css: &str,
+    boards_path: &str,
+) -> Result<()> {
+    for lang in langs {
+        // Collect (category, title, url) for every page in this language that
+        // has a category.
+        let mut boards: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+        for mp in multi.values() {
+            let Some(page) = mp.pages.get(lang) else {
+                continue;
+            };
+            let Some(cat) = &page.frontmatter.category else {
+                continue;
+            };
+            let title = page.title.clone();
+            let url = format!("/{}", mp.page_path);
+            boards.entry(cat.clone()).or_default().push((title, url));
+        }
+        if boards.is_empty() {
+            continue;
+        }
+
+        let dir = out.join(lang).join(boards_path);
+        fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+
+        let mut body = String::new();
+        body.push_str("<h1>Boards</h1>\n");
+        // Sort each board's posts, then render alphabetically by board name.
+        for posts in boards.values_mut() {
+            posts.sort();
+        }
+        for (cat, posts) in boards.iter() {
+            body.push_str(&format!("<h2>{}</h2>\n<ul>\n", html_escape_text(cat)));
+            for (title, url) in posts {
+                body.push_str(&format!(
+                    "  <li><a href=\"{}\">{}</a></li>\n",
+                    url,
+                    html_escape_text(title)
+                ));
+            }
+            body.push_str("</ul>\n");
+        }
+
+        let html = format!(
+            "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n\
+             <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n\
+             <title>Boards</title>\n<style>\n{css}\n</style>\n</head>\n<body>\n\
+             <div class=\"layout\"><main class=\"content\">\n{body}\n</main></div>\n\
+             </body>\n</html>\n"
+        );
+        let path = dir.join("index.html");
+        fs::write(&path, html).with_context(|| format!("write {}", path.display()))?;
+        info!("wrote boards index for {lang} ({} board(s))", boards.len());
     }
     Ok(())
 }
