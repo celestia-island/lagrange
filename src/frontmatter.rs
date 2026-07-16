@@ -33,6 +33,8 @@ pub struct FrontMatter {
     /// `None` means "not specified" (use the site default); `Some(false)` is a
     /// hard opt-out.
     pub comments: Option<bool>,
+    /// `hero: true` renders the page full-width without the sidebar.
+    pub hero: Option<bool>,
     /// The full, unparsed mapping as a JSON object, for fields this struct does
     /// not surface (migration round-trips, ad-hoc tooling). Empty when absent.
     pub raw: serde_json::Value,
@@ -151,6 +153,8 @@ struct YamlFront {
     tags: Option<Vec<String>>,
     #[serde(default)]
     comments: Option<bool>,
+    #[serde(default)]
+    hero: Option<bool>,
 }
 
 fn parse_yaml(text: &str) -> Option<FrontMatter> {
@@ -172,6 +176,7 @@ fn parse_yaml(text: &str) -> Option<FrontMatter> {
         node_id: typed.node_id,
         tags: typed.tags.unwrap_or_default(),
         comments: typed.comments,
+        hero: typed.hero,
         raw,
     })
 }
@@ -196,6 +201,8 @@ struct TomlFront {
     tags: Option<Vec<String>>,
     #[serde(default)]
     comments: Option<bool>,
+    #[serde(default)]
+    hero: Option<bool>,
 }
 
 fn parse_toml(text: &str) -> Option<FrontMatter> {
@@ -213,6 +220,7 @@ fn parse_toml(text: &str) -> Option<FrontMatter> {
         node_id: typed.node_id,
         tags: typed.tags.unwrap_or_default(),
         comments: typed.comments,
+        hero: typed.hero,
         raw: raw_json,
     })
 }
@@ -334,10 +342,16 @@ mod tests {
 
     #[test]
     fn effective_node_id_prefers_explicit() {
-        let mut fm = FrontMatter::default();
-        fm.slug = Some("slug-value".into());
+        let fm = FrontMatter {
+            slug: Some("slug-value".into()),
+            ..Default::default()
+        };
         assert_eq!(fm.effective_node_id(), Some("slug-value"));
-        fm.node_id = Some("node-value".into());
+        let fm = FrontMatter {
+            slug: Some("slug-value".into()),
+            node_id: Some("node-value".into()),
+            ..Default::default()
+        };
         assert_eq!(fm.effective_node_id(), Some("node-value"));
     }
 

@@ -40,6 +40,9 @@ pub enum Block {
     /// them in a `<div style="text-align:center">` so badges and language
     /// switchers stay centered both on GitHub and in the built site.
     Center(Vec<Block>),
+    /// A generic `<div attrs>` container. The inner blocks are parsed
+    /// recursively and rendered inside the div with the given attributes.
+    Div { attrs: String, children: Vec<Block> },
 }
 
 /// An inline span.
@@ -57,4 +60,6 @@ pub enum Inline {
     Link { text: Vec<Inline>, url: String },
     /// `![alt](url)`.
     Image { alt: String, url: String },
+    /// Raw inline HTML, passed through verbatim.
+    InlineHtml(String),
 }
