@@ -152,10 +152,6 @@ pub fn compile_all(sources: &[String], work_dir: &Path) -> HashMap<String, Strin
 
 /// Generate the Cargo.toml for the workspace crate with all [[bin]] entries.
 fn render_cargo_toml(entries: &[(String, String)]) -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR").replace('\\', "/");
-    let tairitsu_root = format!("{manifest}/../tairitsu/packages");
-    let hikari_root = format!("{manifest}/../hikari/packages");
-
     let mut bins = String::new();
     for (_, hash) in entries {
         bins.push_str(&format!(
@@ -175,10 +171,10 @@ publish = false
 [workspace]
 
 {bins}[dependencies]
-tairitsu-vdom = {{ path = "{tairitsu_root}/vdom" }}
-tairitsu-hooks = {{ path = "{tairitsu_root}/hooks" }}
-tairitsu-macros = {{ path = "{tairitsu_root}/macros" }}
-hikari-components = {{ path = "{hikari_root}/components" }}
+tairitsu-vdom = "0.5"
+tairitsu-hooks = "0.5"
+tairitsu-macros = "0.5"
+hikari-components = "0.3"
 "#
     )
 }
