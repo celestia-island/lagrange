@@ -47,13 +47,13 @@ code_span = { "`" ~ (!"`" ~ ANY)+ ~ "`" }
 // modelled).
 strong      = { "**" ~ strong_atom* ~ "**" }
 emphasis    = { "*" ~ em_atom* ~ "*" }
-strong_atom = { code_span | image | link | badge_link | escape | raw_double_atom }
-em_atom     = { code_span | image | link | badge_link | strong | escape | raw_single_atom }
+strong_atom = { code_span | image | link | badge_link | inline_html | escape | raw_double_atom }
+em_atom     = { code_span | image | link | badge_link | strong | inline_html | escape | raw_single_atom }
 
 // Atomic runs of non-special chars (relative to the delimiter set) so the
 // surrounding repetition is non-backtracking and produces few nodes.
-raw_double_atom = @{ ( !( "**" | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
-raw_single_atom = @{ ( !( "**" | "*" | "`" | "[" | "\\" | "!" ) ~ ANY )+ }
+raw_double_atom = @{ ( !( "**" | "`" | "[" | "\\" | "!" | "<" ) ~ ANY )+ }
+raw_single_atom = @{ ( !( "**" | "*" | "`" | "[" | "\\" | "!" | "<" ) ~ ANY )+ }
 
 escape    = { "\\" ~ ANY }
 
