@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo run --release -- build --src docs --out _site
+      - run: LAGRANGE_SKIP_LIVE=1 cargo run --release -- build --src docs --out _site
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site

@@ -110,7 +110,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // language variant of the same page, but only needs to be compiled once.
     all_live_sources.sort();
     all_live_sources.dedup();
-    let live_html = if all_live_sources.is_empty() {
+    let live_html = if all_live_sources.is_empty() || std::env::var("LAGRANGE_SKIP_LIVE").is_ok() {
         std::collections::HashMap::new()
     } else {
         info!(
