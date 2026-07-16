@@ -263,28 +263,40 @@ fn html_line_is_self_contained(s: &str) -> bool {
 /// block detection).
 fn parse_center_container(lines: &[&str], i: usize) -> Option<(Block, usize)> {
     let trimmed = lines[i].trim_start();
-    // Must begin with `<div align="center"` (modulo extra attributes).
-    if !trimmed.starts_with("<div align=\"center\"") && !trimmed.starts_with("<div align=center") {
+    if !trimmed.starts_with("<div") {
         return None;
     }
-    // The line must end with `>` (either the close of `<div ...>` or a bare `>`).
-    if !trimmed.ends_with('>') {
-        return None;
-    }
-    // Find the matching `</div>`.
+    let Some(gt) = trimmed.find('>') else { return None };
+
+    let attrs = trimmed[4..gt].trim().to_string();
+
+    // Count nesting depth to handle nested <div> containers.
+    let mut depth: i32 = 1;
     let mut j = i + 1;
     while j < lines.len() {
-        if lines[j].trim() == "</div>" {
-            break;
+        let lt = lines[j].trim();
+        if lt.starts_with("<div") {
+            depth += 1;
+        } else if lt == "</div>" {
+            depth -= 1;
+            if depth == 0 {
+                break;
+            }
         }
         j += 1;
     }
     if j >= lines.len() {
-        return None; // unterminated — fall through to a raw HTML block
+        return None;
     }
+
     let inner_lines = &lines[i + 1..j];
-    let inner = parse(&inner_lines.join("\n"));
-    Some((Block::Center(inner), j + 1))
+    let children = parse(&inner_lines.join("\n"));
+
+    if attrs.contains("align=\"center\"") || attrs.contains("align=center") {
+        Some((Block::Center(children), j + 1))
+    } else {
+        Some((Block::Div { attrs, children }, j + 1))
+    }
 }
 
 fn parse_blockquote(lines: &[&str], i: usize) -> Option<(Block, usize)> {

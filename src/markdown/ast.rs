@@ -40,6 +40,9 @@ pub enum Block {
     /// them in a `<div style="text-align:center">` so badges and language
     /// switchers stay centered both on GitHub and in the built site.
     Center(Vec<Block>),
+    /// A generic `<div attrs>` container. The inner blocks are parsed
+    /// recursively and rendered inside the div with the given attributes.
+    Div { attrs: String, children: Vec<Block> },
 }
 
 /// An inline span.

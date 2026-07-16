@@ -34,6 +34,7 @@ fn collect_sources_inner(blocks: &[Block], out: &mut Vec<String>) {
             Block::LiveComponent { source } => out.push(source.clone()),
             Block::Blockquote(inner) => collect_sources_inner(inner, out),
             Block::Center(inner) => collect_sources_inner(inner, out),
+            Block::Div { children, .. } => collect_sources_inner(children, out),
             _ => {}
         }
     }

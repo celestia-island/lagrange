@@ -155,8 +155,25 @@ fn render_block_with_live(
                 .attr("style", "text-align:center")
                 .children(vec![render_blocks(inner)]),
         )),
+        Block::Div { attrs, children } => {
+            let style = extract_style_attr(&attrs);
+            let mut d = el("div");
+            if let Some(s) = style {
+                d = d.attr("style", &s);
+            }
+            VNode::Element(Box::new(d.children(vec![render_blocks(children)])))
+        }
         Block::Html(raw) => VNode::Element(Box::new(el("div").dangerous_inner_html(raw))),
     }
+}
+
+/// Extract `style="..."` from a div attribute string like `style="display:grid;..." class="foo"`.
+fn extract_style_attr(attrs: &str) -> Option<String> {
+    let needle = "style=\"";
+    let start = attrs.find(needle)?;
+    let rest = &attrs[start + needle.len()..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
 // ── inline rendering ──────────────────────────────────────────────────────
