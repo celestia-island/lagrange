@@ -6,7 +6,8 @@ use crate::config::ThemeConfig;
 pub fn build_css(theme: &ThemeConfig) -> String {
     fn compile_scss() -> (&'static str, std::collections::HashMap<&'static str, &'static str>) {
         tairitsu_macros::scss! {
-            file: "styles/layout.scss"
+            file: "styles/layout.scss",
+            no_hash
         }
     }
     let core = compile_scss().0;
