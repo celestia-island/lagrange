@@ -59,6 +59,9 @@ pub enum Command {
         /// interfaces and prints the chosen address.
         #[arg(long, default_value = "0")]
         port: u16,
+        /// Host to bind the dev server to. Defaults to 127.0.0.1.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
         /// Also start a local comment backend (in-memory, port --comments-port).
         /// Pages built with `mode = proxied` will find it automatically.
         #[arg(long)]
@@ -119,6 +122,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             site_url,
             interval,
             port,
+            host,
             default_lang,
             comments,
             comments_port,
@@ -140,9 +144,9 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 .build()?;
 
             let bind = if port > 0 {
-                format!("0.0.0.0:{port}")
+                format!("{host}:{port}")
             } else {
-                "0.0.0.0:0".to_string()
+                format!("{host}:0")
             };
 
             let bind_addr = rt.block_on(async {

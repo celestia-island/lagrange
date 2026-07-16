@@ -25,8 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo run --release -- build --src docs --out _site
-      - uses: actions/upload-pages-artifact@v3
+      - run: LAGRANGE_SKIP_LIVE=1 cargo run --release -- build --src docs --out _site
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
   deploy:
@@ -37,4 +37,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

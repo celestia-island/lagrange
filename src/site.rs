@@ -91,7 +91,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     }
     fs::create_dir_all(&opts.out).context("create output dir")?;
 
-    let css = theme::stylesheet();
+    let css = theme::build_css(&config.theme);
 
     // Live component blocks: scan all markdown for ```hikari blocks, compile
     // them at build time, and collect the pre-rendered HTML. The render layer
@@ -110,7 +110,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // language variant of the same page, but only needs to be compiled once.
     all_live_sources.sort();
     all_live_sources.dedup();
-    let live_html = if all_live_sources.is_empty() {
+    let live_html = if all_live_sources.is_empty() || std::env::var("LAGRANGE_SKIP_LIVE").is_ok() {
         std::collections::HashMap::new()
     } else {
         info!(
@@ -236,6 +236,9 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             &lang_order,
             &css,
             &opts.site_url,
+            &config.site.title,
+            &config.site.favicon,
+            &config.site.title_template,
         )?;
         page_count += 1;
     }
@@ -288,6 +291,9 @@ fn write_multi_page(
     lang_order: &[&str],
     css: &str,
     _site_url: &Option<String>,
+    site_title: &Option<String>,
+    favicon: &Option<String>,
+    title_template: &str,
 ) -> Result<()> {
     // Pick the default language's content for the visible HTML (SEO + no-JS).
     let default = mp
@@ -304,45 +310,69 @@ fn write_multi_page(
         fs::create_dir_all(parent)?;
     }
 
+    let has_hero = default.frontmatter.hero.unwrap_or(false);
+
+    let page_title = default.title.clone();
+    let display_title = title_template.replace("{title}", &page_title);
+
     let mut html = String::new();
     html.push_str("<!doctype html>\n<html lang=\"");
     html.push_str(default_lang);
     html.push_str("\" data-langs=\"");
     html.push_str(&lang_order.join(","));
     html.push_str("\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>");
-    html.push_str(&html_escape_text(&default.title));
-    html.push_str("</title>\n<style>\n");
+    html.push_str(&html_escape_text(&display_title));
+    html.push_str("</title>\n");
+    if let Some(f) = favicon {
+        html.push_str(&format!("<link rel=\"icon\" href=\"{f}\">\n"));
+    }
+    html.push_str("<style>\n");
     html.push_str(css);
     let magnify = crate::icons::icon_svg("magnify", 16);
-    html.push_str(
-        "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\
-         <aside class=\"sidebar\">\n\
-         <div class=\"lg-search-box\">\
-         <span class=\"lg-search-icon\">",
-    );
-    html.push_str(&magnify);
-    html.push_str(
-        "</span>\
-         <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
-         <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
-         </div>\n\
-         <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
-    );
-    html.push_str(&default.sidebar_html);
-    html.push_str(
-        "\n</nav>\n\
-         <div class=\"lg-lang-footer\"><div id=\"lg-sw\"></div></div>\n\
-         </aside>\n\
-         <main class=\"content hi-scroll-container\" id=\"lg-body\">\n",
-    );
+    if has_hero {
+        html.push_str(
+            "\n</style>\n</head>\n<body class=\"lg-hero\">\n\
+             <header class=\"lg-header\"><div class=\"lg-header-inner\">\
+             <a href=\"/\" class=\"lg-site-title\">",
+        );
+        html.push_str(&html_escape_text(
+            site_title.as_deref().unwrap_or(&page_title),
+        ));
+        html.push_str(
+            "</a><div id=\"lg-sw\"></div></div></header>\n\
+             <main class=\"content\" id=\"lg-body\">\n",
+        );
+    } else {
+        html.push_str(
+            "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\
+             <aside class=\"sidebar\">\n\
+             <div class=\"lg-search-box\">\
+             <span class=\"lg-search-icon\">",
+        );
+        html.push_str(&magnify);
+        html.push_str(
+            "</span>\
+             <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
+             <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
+             </div>\n\
+             <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
+        );
+        html.push_str(&default.sidebar_html);
+        html.push_str(
+            "\n</nav>\n\
+             <div class=\"lg-lang-footer\"><div id=\"lg-sw\"></div></div>\n\
+             </aside>\n\
+             <main class=\"content hi-scroll-container\" id=\"lg-body\">\n",
+        );
+    }
     html.push_str(&default.body);
     html.push_str("\n</main>\n");
 
-    // Comment mount point (empty when comments are inactive — pure static).
-    // Appended as a sibling after </main>, never inside the article body.
     html.push_str(&default.comments_mount);
 
-    html.push_str("</div>\n");
+    if !has_hero {
+        html.push_str("</div>\n");
+    }
 
     // Embedded language data.
     html.push_str("<script type=\"application/json\" id=\"lg-data\">");
@@ -419,7 +449,7 @@ fn live_block_js() -> String {
  });
 })();
 </script>"##;
-    prefix + &suffix
+    prefix + suffix
 }
 
 fn lagrange_js() -> String {
@@ -539,6 +569,8 @@ struct PageMeta {
     tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hero: Option<bool>,
 }
 
 impl From<&FrontMatter> for PageMeta {
@@ -548,6 +580,7 @@ impl From<&FrontMatter> for PageMeta {
             category: fm.category.clone(),
             tags: fm.tags.clone(),
             description: fm.description.clone(),
+            hero: fm.hero,
         }
     }
 }
@@ -628,6 +661,7 @@ fn collect_text(inlines: &[markdown::Inline]) -> String {
             Inline::Strong(inner) | Inline::Emphasis(inner) => collect_text(inner),
             Inline::Link { text, .. } => collect_text(text),
             Inline::Image { alt, .. } => alt.clone(),
+            Inline::InlineHtml(_) => String::new(),
         })
         .collect()
 }

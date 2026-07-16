@@ -155,8 +155,25 @@ fn render_block_with_live(
                 .attr("style", "text-align:center")
                 .children(vec![render_blocks(inner)]),
         )),
+        Block::Div { attrs, children } => {
+            let style = extract_style_attr(&attrs);
+            let mut d = el("div");
+            if let Some(s) = style {
+                d = d.attr("style", &s);
+            }
+            VNode::Element(Box::new(d.children(vec![render_blocks(children)])))
+        }
         Block::Html(raw) => VNode::Element(Box::new(el("div").dangerous_inner_html(raw))),
     }
+}
+
+/// Extract `style="..."` from a div attribute string like `style="display:grid;..." class="foo"`.
+fn extract_style_attr(attrs: &str) -> Option<String> {
+    let needle = "style=\"";
+    let start = attrs.find(needle)?;
+    let rest = &attrs[start + needle.len()..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
 // ── inline rendering ──────────────────────────────────────────────────────
@@ -188,6 +205,7 @@ fn render_inline(i: &Inline) -> VNode {
             alt: alt.clone(),
             ..Default::default()
         }),
+        Inline::InlineHtml(raw) => VNode::Element(Box::new(el("span").dangerous_inner_html(raw))),
     }
 }
 
@@ -326,13 +344,13 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
                     .attr("data-copy", code)
                     .attr(
                         "data-copied",
-                        &hikari_i18n::t("hikari.code.copied", "Copied"),
+                        hikari_i18n::t("hikari.code.copied", "Copied"),
                     )
                     .child(txt(&hikari_i18n::t("hikari.code.copy", "Copy")))
                     .child(VNode::Element(Box::new(
                         el("span")
                             .attr("class", "hi-code-highlight-check")
-                            .dangerous_inner_html(&crate::icons::icon_svg("check", 12)),
+                            .dangerous_inner_html(crate::icons::icon_svg("check", 12)),
                     ))),
             )),
         ]);
