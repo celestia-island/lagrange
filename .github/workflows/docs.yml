@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: LAGRANGE_SKIP_LIVE=1 cargo run --release -- build --src docs --out _site
       - uses: actions/upload-pages-artifact@v5
