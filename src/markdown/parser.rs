@@ -266,7 +266,9 @@ fn parse_center_container(lines: &[&str], i: usize) -> Option<(Block, usize)> {
     if !trimmed.starts_with("<div") {
         return None;
     }
-    let Some(gt) = trimmed.find('>') else { return None };
+    let Some(gt) = trimmed.find('>') else {
+        return None;
+    };
 
     let attrs = trimmed[4..gt].trim().to_string();
 

@@ -330,12 +330,18 @@ fn write_multi_page(
     html.push_str(css);
     let magnify = crate::icons::icon_svg("magnify", 16);
     if has_hero {
-        html.push_str("\n</style>\n</head>\n<body class=\"lg-hero\">\n\
+        html.push_str(
+            "\n</style>\n</head>\n<body class=\"lg-hero\">\n\
              <header class=\"lg-header\"><div class=\"lg-header-inner\">\
-             <a href=\"/\" class=\"lg-site-title\">");
-        html.push_str(&html_escape_text(site_title.as_deref().unwrap_or(&page_title)));
-        html.push_str("</a><div id=\"lg-sw\"></div></div></header>\n\
-             <main class=\"content\" id=\"lg-body\">\n");
+             <a href=\"/\" class=\"lg-site-title\">",
+        );
+        html.push_str(&html_escape_text(
+            site_title.as_deref().unwrap_or(&page_title),
+        ));
+        html.push_str(
+            "</a><div id=\"lg-sw\"></div></div></header>\n\
+             <main class=\"content\" id=\"lg-body\">\n",
+        );
     } else {
         html.push_str(
             "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\

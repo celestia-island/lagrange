@@ -4,7 +4,10 @@
 use crate::config::ThemeConfig;
 
 pub fn build_css(theme: &ThemeConfig) -> String {
-    fn compile_scss() -> (&'static str, std::collections::HashMap<&'static str, &'static str>) {
+    fn compile_scss() -> (
+        &'static str,
+        std::collections::HashMap<&'static str, &'static str>,
+    ) {
         tairitsu_macros::scss! {
             file: "styles/layout.scss",
             no_hash
@@ -32,12 +35,26 @@ const HIKARI_VARS: &str = r#":root {
 
 fn theme_overrides(theme: &ThemeConfig) -> String {
     let mut s = String::new();
-    if let Some(v) = &theme.accent { s.push_str(&format!(":root{{--accent:{v}}}\n")); }
-    if let Some(v) = &theme.bg { s.push_str(&format!(":root{{--bg:{v}}}\n")); }
-    if let Some(v) = &theme.bg_subtle { s.push_str(&format!(":root{{--bg-subtle:{v}}}\n")); }
-    if let Some(v) = &theme.fg { s.push_str(&format!(":root{{--fg:{v}}}\n")); }
-    if let Some(v) = &theme.fg_sec { s.push_str(&format!(":root{{--fg-sec:{v}}}\n")); }
-    if let Some(v) = &theme.code_bg { s.push_str(&format!(":root{{--code-bg:{v}}}\n")); }
-    if let Some(v) = &theme.border { s.push_str(&format!(":root{{--border:{v}}}\n")); }
+    if let Some(v) = &theme.accent {
+        s.push_str(&format!(":root{{--accent:{v}}}\n"));
+    }
+    if let Some(v) = &theme.bg {
+        s.push_str(&format!(":root{{--bg:{v}}}\n"));
+    }
+    if let Some(v) = &theme.bg_subtle {
+        s.push_str(&format!(":root{{--bg-subtle:{v}}}\n"));
+    }
+    if let Some(v) = &theme.fg {
+        s.push_str(&format!(":root{{--fg:{v}}}\n"));
+    }
+    if let Some(v) = &theme.fg_sec {
+        s.push_str(&format!(":root{{--fg-sec:{v}}}\n"));
+    }
+    if let Some(v) = &theme.code_bg {
+        s.push_str(&format!(":root{{--code-bg:{v}}}\n"));
+    }
+    if let Some(v) = &theme.border {
+        s.push_str(&format!(":root{{--border:{v}}}\n"));
+    }
     s
 }
