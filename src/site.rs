@@ -91,7 +91,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     }
     fs::create_dir_all(&opts.out).context("create output dir")?;
 
-    let css = theme::stylesheet();
+    let css = theme::build_css(&config.theme);
 
     // Live component blocks: scan all markdown for ```hikari blocks, compile
     // them at build time, and collect the pre-rendered HTML. The render layer

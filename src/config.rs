@@ -18,6 +18,43 @@ pub struct Config {
     /// drives a board-style listing page. Off by default.
     #[serde(default)]
     pub bbs: BbsConfig,
+    /// Layout configuration (sidebar, header, hero page defaults).
+    #[serde(default)]
+    pub layout: LayoutConfig,
+    /// Theme customisation (colour overrides for code blocks, etc.).
+    #[serde(default)]
+    pub theme: ThemeConfig,
+}
+
+/// Layout behaviour configuration (`[layout]` in `lagrange.toml`).
+#[derive(Deserialize, Default)]
+pub struct LayoutConfig {
+    /// Default layout mode: `sidebar`, `topnav`, or `hero`.
+    #[serde(default = "default_layout_mode")]
+    pub mode: String,
+}
+
+fn default_layout_mode() -> String {
+    "sidebar".to_string()
+}
+
+/// Theme colour overrides (`[theme]` in `lagrange.toml`).
+#[derive(Deserialize, Default)]
+pub struct ThemeConfig {
+    /// Primary accent colour (links, active nav, etc.). CSS colour value.
+    pub accent: Option<String>,
+    /// Page background colour.
+    pub bg: Option<String>,
+    /// Subtle background (sidebar, code blocks).
+    pub bg_subtle: Option<String>,
+    /// Foreground / text colour.
+    pub fg: Option<String>,
+    /// Secondary foreground (muted text).
+    pub fg_sec: Option<String>,
+    /// Code block background.
+    pub code_bg: Option<String>,
+    /// Border colour.
+    pub border: Option<String>,
 }
 
 /// Site-wide settings (title, description, custom domain).
