@@ -334,10 +334,16 @@ mod tests {
 
     #[test]
     fn effective_node_id_prefers_explicit() {
-        let mut fm = FrontMatter::default();
-        fm.slug = Some("slug-value".into());
+        let fm = FrontMatter {
+            slug: Some("slug-value".into()),
+            ..Default::default()
+        };
         assert_eq!(fm.effective_node_id(), Some("slug-value"));
-        fm.node_id = Some("node-value".into());
+        let fm = FrontMatter {
+            slug: Some("slug-value".into()),
+            node_id: Some("node-value".into()),
+            ..Default::default()
+        };
         assert_eq!(fm.effective_node_id(), Some("node-value"));
     }
 

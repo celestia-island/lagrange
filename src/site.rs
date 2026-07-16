@@ -419,7 +419,7 @@ fn live_block_js() -> String {
  });
 })();
 </script>"##;
-    prefix + &suffix
+    prefix + suffix
 }
 
 fn lagrange_js() -> String {
