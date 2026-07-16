@@ -20,6 +20,7 @@ span = {
   | code_span
   | strong
   | emphasis
+  | inline_html
   | escape
   | raw
 }
@@ -61,4 +62,9 @@ escape    = { "\\" ~ ANY }
 // not contribute to backtracking at the span level.
 raw       = @{ (!special_start ~ ANY)+ | ANY }
 
-special_start = { "**" | "*" | "`" | "[" | "\\" | "!" }
+special_start = { "**" | "*" | "`" | "[" | "\\" | "!" | "<" }
+
+// Inline HTML: <tag attrs>body</tag> or <self-closing/>
+inline_html = { "<" ~ tag_name ~ attrs* ~ ( "/>" | ">" ~ inline_seq ~ "</" ~ tag_name ~ ">" ) }
+tag_name    = @{ ASCII_ALPHA+ }
+attrs       = { " " ~ (!( ">" | "/>" ) ~ ANY)+ }

@@ -304,6 +304,8 @@ fn write_multi_page(
         fs::create_dir_all(parent)?;
     }
 
+    let has_hero = default.frontmatter.hero.unwrap_or(false);
+
     let mut html = String::new();
     html.push_str("<!doctype html>\n<html lang=\"");
     html.push_str(default_lang);
@@ -314,35 +316,40 @@ fn write_multi_page(
     html.push_str("</title>\n<style>\n");
     html.push_str(css);
     let magnify = crate::icons::icon_svg("magnify", 16);
-    html.push_str(
-        "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\
-         <aside class=\"sidebar\">\n\
-         <div class=\"lg-search-box\">\
-         <span class=\"lg-search-icon\">",
-    );
-    html.push_str(&magnify);
-    html.push_str(
-        "</span>\
-         <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
-         <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
-         </div>\n\
-         <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
-    );
-    html.push_str(&default.sidebar_html);
-    html.push_str(
-        "\n</nav>\n\
-         <div class=\"lg-lang-footer\"><div id=\"lg-sw\"></div></div>\n\
-         </aside>\n\
-         <main class=\"content hi-scroll-container\" id=\"lg-body\">\n",
-    );
+    if has_hero {
+        html.push_str("\n</style>\n</head>\n<body class=\"lg-hero\">\n\
+             <main class=\"content\" id=\"lg-body\">\n");
+    } else {
+        html.push_str(
+            "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\
+             <aside class=\"sidebar\">\n\
+             <div class=\"lg-search-box\">\
+             <span class=\"lg-search-icon\">",
+        );
+        html.push_str(&magnify);
+        html.push_str(
+            "</span>\
+             <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
+             <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
+             </div>\n\
+             <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
+        );
+        html.push_str(&default.sidebar_html);
+        html.push_str(
+            "\n</nav>\n\
+             <div class=\"lg-lang-footer\"><div id=\"lg-sw\"></div></div>\n\
+             </aside>\n\
+             <main class=\"content hi-scroll-container\" id=\"lg-body\">\n",
+        );
+    }
     html.push_str(&default.body);
     html.push_str("\n</main>\n");
 
-    // Comment mount point (empty when comments are inactive — pure static).
-    // Appended as a sibling after </main>, never inside the article body.
     html.push_str(&default.comments_mount);
 
-    html.push_str("</div>\n");
+    if !has_hero {
+        html.push_str("</div>\n");
+    }
 
     // Embedded language data.
     html.push_str("<script type=\"application/json\" id=\"lg-data\">");
@@ -539,6 +546,8 @@ struct PageMeta {
     tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hero: Option<bool>,
 }
 
 impl From<&FrontMatter> for PageMeta {
@@ -548,6 +557,7 @@ impl From<&FrontMatter> for PageMeta {
             category: fm.category.clone(),
             tags: fm.tags.clone(),
             description: fm.description.clone(),
+            hero: fm.hero,
         }
     }
 }
@@ -628,6 +638,7 @@ fn collect_text(inlines: &[markdown::Inline]) -> String {
             Inline::Strong(inner) | Inline::Emphasis(inner) => collect_text(inner),
             Inline::Link { text, .. } => collect_text(text),
             Inline::Image { alt, .. } => alt.clone(),
+            Inline::InlineHtml(_) => String::new(),
         })
         .collect()
 }

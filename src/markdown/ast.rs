@@ -57,4 +57,6 @@ pub enum Inline {
     Link { text: Vec<Inline>, url: String },
     /// `![alt](url)`.
     Image { alt: String, url: String },
+    /// Raw inline HTML, passed through verbatim.
+    InlineHtml(String),
 }

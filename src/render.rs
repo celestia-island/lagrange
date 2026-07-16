@@ -188,6 +188,7 @@ fn render_inline(i: &Inline) -> VNode {
             alt: alt.clone(),
             ..Default::default()
         }),
+        Inline::InlineHtml(raw) => VNode::Element(Box::new(el("span").dangerous_inner_html(raw))),
     }
 }
 

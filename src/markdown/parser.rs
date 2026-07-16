@@ -490,6 +490,7 @@ fn build_inline(pair: Pair<Rule>) -> Inline {
         Rule::code_span => Inline::Code(strip_delim(inner.as_str(), '`', '`')),
         Rule::strong => Inline::Strong(inner.into_inner().map(build_inline).collect()),
         Rule::emphasis => Inline::Emphasis(inner.into_inner().map(build_inline).collect()),
+        Rule::inline_html => Inline::InlineHtml(inner.as_str().to_string()),
         Rule::raw_double_atom | Rule::raw_single_atom => Inline::Text(inner.as_str().to_string()),
         Rule::escape => {
             let ch = inner
