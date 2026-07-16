@@ -30,6 +30,17 @@ pub struct SiteConfig {
     /// Cloudflare Pages, Vercel, …) bind the configured hostname without any
     /// per-pipeline `echo` step.
     pub cname: Option<String>,
+    /// Path to a favicon file (relative to src root, e.g. `logo.webp`).
+    /// When set, a `<link rel="icon">` is emitted in every page's `<head>`.
+    pub favicon: Option<String>,
+    /// Title template. `{title}` is replaced with the current page title.
+    /// Default: `{title}` (page title only). Example: `{title} — My Site`.
+    #[serde(default = "default_title_template")]
+    pub title_template: String,
+}
+
+fn default_title_template() -> String {
+    "{title}".to_string()
 }
 
 /// Language ordering and default selection.

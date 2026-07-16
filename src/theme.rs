@@ -101,7 +101,12 @@ a:hover{{text-decoration:underline}}
     hikari_css
         + &base
         + r#"
-.lg-hero .content{max-width:720px;margin:0 auto;padding:3rem 1.5rem 5rem}
+.lg-header{background:var(--bg-subtle);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.lg-header-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:.6rem 1.5rem}
+.lg-site-title{font-weight:600;color:var(--fg);text-decoration:none}
+.lg-site-title:hover{color:var(--accent)}
+.lg-hero{overflow-y:auto}
+.lg-hero .content{max-width:1200px;margin:0 auto;padding:2rem 1.5rem 5rem;height:auto;overflow:visible}
 .lg-live-block{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:1.5rem 0}
 .lg-live-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-subtle)}
 .lg-live-tab{padding:.4rem .8rem;border:none;background:none;cursor:pointer;font-size:.82rem;color:var(--fg-sec);border-bottom:2px solid transparent;transition:all var(--ts)}

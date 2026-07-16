@@ -236,6 +236,9 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             &lang_order,
             &css,
             &opts.site_url,
+            &config.site.title,
+            &config.site.favicon,
+            &config.site.title_template,
         )?;
         page_count += 1;
     }
@@ -288,6 +291,9 @@ fn write_multi_page(
     lang_order: &[&str],
     css: &str,
     _site_url: &Option<String>,
+    site_title: &Option<String>,
+    favicon: &Option<String>,
+    title_template: &str,
 ) -> Result<()> {
     // Pick the default language's content for the visible HTML (SEO + no-JS).
     let default = mp
@@ -306,18 +312,29 @@ fn write_multi_page(
 
     let has_hero = default.frontmatter.hero.unwrap_or(false);
 
+    let page_title = default.title.clone();
+    let display_title = title_template.replace("{title}", &page_title);
+
     let mut html = String::new();
     html.push_str("<!doctype html>\n<html lang=\"");
     html.push_str(default_lang);
     html.push_str("\" data-langs=\"");
     html.push_str(&lang_order.join(","));
     html.push_str("\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>");
-    html.push_str(&html_escape_text(&default.title));
-    html.push_str("</title>\n<style>\n");
+    html.push_str(&html_escape_text(&display_title));
+    html.push_str("</title>\n");
+    if let Some(f) = favicon {
+        html.push_str(&format!("<link rel=\"icon\" href=\"{f}\">\n"));
+    }
+    html.push_str("<style>\n");
     html.push_str(css);
     let magnify = crate::icons::icon_svg("magnify", 16);
     if has_hero {
         html.push_str("\n</style>\n</head>\n<body class=\"lg-hero\">\n\
+             <header class=\"lg-header\"><div class=\"lg-header-inner\">\
+             <a href=\"/\" class=\"lg-site-title\">");
+        html.push_str(&html_escape_text(site_title.as_deref().unwrap_or(&page_title)));
+        html.push_str("</a><div id=\"lg-sw\"></div></div></header>\n\
              <main class=\"content\" id=\"lg-body\">\n");
     } else {
         html.push_str(
