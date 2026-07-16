@@ -65,6 +65,8 @@ a:hover{{text-decoration:underline}}
 .lg-lang-arrow{{margin-left:auto;transition:transform var(--ts)}}
 .lg-lang-panel{{display:none;position:absolute;bottom:calc(100% + 4px);left:0;right:0;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 -4px 16px rgba(0,0,0,.12);max-height:240px;overflow:auto;z-index:200}}
 .lg-lang-panel.open{{display:block}}
+.lg-header .lg-lang-panel{{bottom:auto;top:calc(100% + 4px);box-shadow:0 4px 16px rgba(0,0,0,.12)}}
+.lg-header .lg-lang-select .lg-lang-arrow{{transform:rotate(180deg)}}
 .lg-lang-opt{{display:flex;align-items:center;padding:.4rem .6rem;color:var(--fg);font-size:.85rem;transition:background var(--ts)}}
 .lg-lang-opt:hover{{background:var(--accent-bg);text-decoration:none}}
 .lg-lang-opt.selected{{color:var(--accent);font-weight:600}}
