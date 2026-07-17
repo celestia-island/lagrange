@@ -123,7 +123,9 @@ a {
 
     input {
         width: 100%;
-        padding: 0.35rem 2.75rem;
+        /* Icon zones are 2rem squares; keep text ~4px past the zone edge
+         * (~12px from the glyph) instead of drifting far from the icon. */
+        padding: 0.35rem 2.25rem;
         border: 1px solid var(--border);
         border-radius: var(--radius);
         background: var(--bg);
@@ -293,7 +295,10 @@ a {
 .lg-lang-opt {
     display: flex;
     align-items: center;
-    padding: 0.4rem 0.6rem;
+    /* Same selection language as the sidebar nav: a 2px accent bar on the
+     * left (transparent on idle rows so text never shifts) + accent tint. */
+    padding: 0.4rem 0.85rem;
+    border-left: 2px solid transparent;
     color: var(--fg);
     font-size: 0.85rem;
     transition: background var(--ts);
@@ -306,6 +311,8 @@ a {
     &.selected {
         color: var(--accent);
         font-weight: 600;
+        border-left-color: var(--accent);
+        background: var(--accent-bg);
     }
 }
 
