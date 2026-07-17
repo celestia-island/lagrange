@@ -14,8 +14,35 @@ pub fn build_css(theme: &ThemeConfig) -> String {
         }
     }
     let core = compile_scss().0;
+    let components = hikari_component_css();
     let overrides = theme_overrides(theme);
-    format!("{HIKARI_VARS}\n{core}\n{overrides}")
+    format!("{HIKARI_VARS}\n{core}\n{components}\n{overrides}")
+}
+
+/// CSS for the hikari component markup lagrange emits (Tag, Link, Badge,
+/// Divider, the hi-code-highlight scaffolding, ...). tairitsu SSR does not
+/// auto-inject component styles, so without this every `hi-*` class rendered
+/// unstyled — most visibly code blocks collapsing into a header plus bare
+/// line numbers. `register_available` covers the built-in groups; link and
+/// code-highlight are not in those groups and are registered explicitly.
+/// Output is sorted by component name so builds are reproducible.
+fn hikari_component_css() -> String {
+    use hikari_components::styled::StyleRegistry;
+    use hikari_components::StyledComponent as _;
+
+    let mut registry = StyleRegistry::default();
+    registry.register_available();
+    hikari_components::basic::link::LinkComponent::register(&mut registry);
+    hikari_components::production::code_highlight::CodeHighlightComponent::register(&mut registry);
+
+    let all = registry.get_all();
+    let mut names: Vec<&'static str> = all.keys().copied().collect();
+    names.sort_unstable();
+    names
+        .iter()
+        .map(|n| all[n])
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 const HIKARI_VARS: &str = r#":root {
