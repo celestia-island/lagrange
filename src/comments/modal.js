@@ -71,10 +71,9 @@
     var closeBtn = document.createElement("button");
     closeBtn.className = "hi-modal-close";
     closeBtn.setAttribute("aria-label", "Close");
-    // Close icon SVG injected via LAGRANGE_ICONS (populated by site.rs).
-    closeBtn.innerHTML = window.LAGRANGE_ICONS && window.LAGRANGE_ICONS.close
-      ? window.LAGRANGE_ICONS.close
-      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>';
+    // Close icon comes from the shared lgUI icon registry (fed by Rust's
+    // mdi_path table at page bootstrap) — no per-widget hard-coded paths.
+    closeBtn.innerHTML = window.lgUI && window.lgUI.icon ? window.lgUI.icon("close", 14) : "";
     closeBtn.onclick = function () { closeModal(entry.id); };
     header.appendChild(titleEl);
     header.appendChild(closeBtn);

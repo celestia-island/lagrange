@@ -352,7 +352,12 @@ fn write_multi_page(
         html.push_str(&magnify);
         html.push_str(
             "</span>\
-             <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
+             <input type=\"text\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\" spellcheck=\"false\">\
+             <button type=\"button\" id=\"lg-search-clear\" aria-label=\"Clear search\" title=\"Clear search\">",
+        );
+        html.push_str(&crate::icons::icon_svg("close", 12));
+        html.push_str(
+            "</button>\
              <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
              </div>\n\
              <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
@@ -400,17 +405,11 @@ fn live_block_js() -> String {
     let modal_js = include_str!("comments/modal.js");
     let clipboard_js = include_str!("comments/clipboard.js");
 
-    // Pre-render hikari-icon SVGs for use in JS-generated DOM (modal close,
-    // comment upvote, etc.). These come from hikari-icons, same as the
-    // build-time rendered icons.
-    let icon_close = crate::icons::icon_svg("close", 14);
-    let icon_arrow_up = crate::icons::icon_svg("arrow-up", 12);
-    let icons_js = format!(
-        r#"<script>window.LAGRANGE_ICONS={{close:{icon_close:?},\x22arrow-up\x22:{icon_arrow_up:?}}};</script>"#,
-    );
-
+    // Icons for JS-generated DOM come from the lgUI icon registry injected
+    // by lagrange_js() — fed from the same mdi_path table as the build-time
+    // rendered icons, so nothing here hard-codes SVG path data.
     let prefix = format!(
-        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n{icons_js}\n"
+        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n"
     );
     let suffix = r##"<script>
 (function(){
@@ -430,34 +429,23 @@ fn live_block_js() -> String {
    };
   });
  });
-
- /* ── code block copy buttons ──
-  * Calls window.lagrangeCopy() which is the tairitsu ClipboardOps
-  * binding (navigator.clipboard.writeText + execCommand fallback).
-  * No hand-written clipboard logic here — see clipboard.js.
-  */
- document.querySelectorAll('.hi-code-highlight-copy[data-copy]').forEach(function(btn){
-  btn.onclick=function(){
-   var text=btn.getAttribute('data-copy')||'';
-   if(window.lagrangeCopy){window.lagrangeCopy(text)}
-   btn.classList.add('copied');
-   var orig=btn.getAttribute('data-orig-text')||btn.textContent;
-   btn.setAttribute('data-orig-text',orig);
-   btn.textContent=btn.getAttribute('data-copied')||'Copied';
-   setTimeout(function(){btn.classList.remove('copied');btn.textContent=orig},1500);
-  };
- });
 })();
 </script>"##;
     prefix + suffix
 }
 
 fn lagrange_js() -> String {
+    let ui_js = include_str!("comments/ui.js");
+    // Feed the lgUI icon registry from the same mdi_path table that
+    // build-time icon_svg() renders from — one source of truth for icons
+    // on both the Rust and the JS side.
+    let icons = crate::icons::icons_js_object(crate::icons::ALL_ICONS);
     let translate = crate::icons::icon_svg("translate", 16);
     let chevron = format!("<path d=\"{}\"/>", crate::icons::mdi_path("chevron-down"));
-    LAGRANGE_JS_TEMPLATE
+    let boot = LAGRANGE_JS_TEMPLATE
         .replace("@TRANSLATE_ICON@", &translate)
-        .replace("@CHEVRON_ICON_PATH@", &chevron)
+        .replace("@CHEVRON_ICON_PATH@", &chevron);
+    format!("<script>window.lgUI=window.lgUI||{{}};lgUI.icons={icons};</script>\n<script>{ui_js}</script>\n{boot}")
 }
 
 const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
@@ -475,40 +463,35 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
   var sb=document.getElementById('lg-sidebar');if(sb){sb.innerHTML=p.sidebar_html;var cp=location.pathname.replace(/\/+$/,'')||'/index.html';var links=sb.querySelectorAll('a');for(var i=0;i<links.length;i++){var h=links[i].getAttribute('href');if(h===cp||h+'/index.html'===cp||cp+'/index.html'===h)links[i].classList.add('active')}}
   var cl=document.getElementById('lg-lang-cur');if(cl)cl.textContent=N[l]||l;
   var os=document.querySelectorAll('.lg-lang-opt');for(var i=0;i<os.length;i++)os[i].classList.toggle('selected',os[i].dataset.lang===l);
+  /* chrome i18n — re-apply UI strings after every render (body is swapped) */
+  var si=document.getElementById('lg-search-input');if(si)si.placeholder=lgUI.t('search');
+  var sc=document.getElementById('lg-search-clear');if(sc){sc.title=lgUI.t('clearSearch');sc.setAttribute('aria-label',lgUI.t('clearSearch'))}
+  var cp=document.querySelectorAll('.hi-code-highlight-copy');for(var i=0;i<cp.length;i++){cp[i].title=lgUI.t('copyCode');cp[i].setAttribute('aria-label',lgUI.t('copyCode'))}
  }
+ lgUI.i18n={cur:function(){return CUR},set:sL,detect:gL};
  /* ── language dropdown ── */
  var sw=document.getElementById('lg-sw');sw.className='lg-lang-select';
  sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel hi-scroll-container"></div>';
  var trigger=sw.querySelector('.lg-lang-trigger');
  var panel=sw.querySelector('.lg-lang-panel');
  var ls=document.documentElement.dataset.langs?document.documentElement.dataset.langs.split(','):Object.keys(D).sort();
- for(var i=0;i<ls.length;i++){var l=ls[i];var o=document.createElement('a');o.href='?lang='+l;o.className='lg-lang-opt';o.dataset.lang=l;o.textContent=N[l]||l;o.onclick=function(e){e.preventDefault();sL(this.dataset.lang);panel.classList.remove('open')};panel.appendChild(o)}
- trigger.onclick=function(e){e.stopPropagation();panel.classList.toggle('open')};
- document.addEventListener('click',function(e){if(!e.target.closest('#lg-sw'))panel.classList.remove('open')});
+ for(var i=0;i<ls.length;i++){var l=ls[i];var o=document.createElement('a');o.href='?lang='+l;o.className='lg-lang-opt';o.dataset.lang=l;o.textContent=N[l]||l;o.onclick=function(e){e.preventDefault();sL(this.dataset.lang);pv.close()};panel.appendChild(o)}
+ var pv=lgUI.popover(sw,panel,{title:'language'});
+ trigger.onclick=function(){pv.toggle()};
 
- /* ── search (sharded inverted index) ── */
- var si=document.getElementById('lg-search-input'),sr=document.getElementById('lg-search-results');
- var META=null,SHARDS={},LOADING={};
+ /* ── search (sharded inverted index) — on lgUI timers/network/popover ── */
+ var si=document.getElementById('lg-search-input'),sr=document.getElementById('lg-search-results'),sc=document.getElementById('lg-search-clear');
+ var sp=si?lgUI.popover(si.closest('.lg-search-box'),sr,{title:'search'}):null;
  function he(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
  function isCJK(c){return(c>='\u4e00'&&c<='\u9fff')||(c>='\u3400'&&c<='\u4dbf')||(c>='\u3040'&&c<='\u30ff')||(c>='\uac00'&&c<='\ud7af')||(c>='\uf900'&&c<='\ufaff')}
  function tokenize(q){var t=[];var cs=q.split('');var i=0;while(i<cs.length){var c=cs[i];if(c.charCodeAt(0)<128&&c.match(/[a-z0-9]/i)){var w='';while(i<cs.length&&cs[i].match(/[a-z0-9]/i))w+=cs[i++].toLowerCase();if(w.length>=2)t.push(w)}else if(isCJK(c)){if(i+1<cs.length&&isCJK(cs[i+1]))t.push(c+cs[i+1]);i++}else{i++}}return t}
- function loadShard(name,cb){
-  if(SHARDS[name]){cb(SHARDS[name]);return}
-  if(LOADING[name]){var iv=setInterval(function(){if(SHARDS[name]||!LOADING[name]){clearInterval(iv);SHARDS[name]&&cb(SHARDS[name])}},50);return}
-  LOADING[name]=true;
-  var x=new XMLHttpRequest();x.open('GET',name,true);x.onload=function(){try{SHARDS[name]=JSON.parse(x.responseText)}catch(e){SHARDS[name]={}}delete LOADING[name];cb(SHARDS[name])};x.onerror=function(){SHARDS[name]={};delete LOADING[name];cb({})};x.send()
- }
- function loadMeta(cb){
-  if(META){cb();return}
-  var x=new XMLHttpRequest();x.open('GET','search_meta.json',true);
-  x.onload=function(){try{META=JSON.parse(x.responseText)}catch(e){META={docs:[],shards:[]}};cb()};x.onerror=function(){META={docs:[],shards:[]};cb()};x.send()
- }
  function doSearch(q){
-  if(!q||q.length<2){sr.innerHTML='';sr.style.display='none';return}
-  loadMeta(function(){
-   var tokens=tokenize(q);if(!tokens.length){sr.innerHTML='';sr.style.display='none';return}
-   var L=CUR;var needed={};for(var i=0;i<tokens.length;i++){var c=tokens[i].charCodeAt(0)%16;needed[META.shards[c]]=true}
-   var names=Object.keys(needed);if(!names.length){sr.innerHTML='';sr.style.display='none';return}
+  if(!q||q.length<2){sr.innerHTML='';sp.close();return}
+  lgUI.loadJSON('search_meta.json',function(meta){
+   if(!meta||!meta.shards)meta={docs:[],shards:[]};
+   var tokens=tokenize(q);if(!tokens.length){sr.innerHTML='';sp.close();return}
+   var L=CUR;var needed={};for(var i=0;i<tokens.length;i++){var c=tokens[i].charCodeAt(0)%16;needed[meta.shards[c]]=true}
+   var names=Object.keys(needed);if(!names.length){sr.innerHTML='';sp.close();return}
    var loaded=0;var all={};
    function check(){
     loaded++;if(loaded<names.length)return;
@@ -519,19 +502,29 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
     }
     var ids=sets[0];for(var i=1;i<sets.length;i++){var n={};for(var k in ids)if(sets[i][k])n[k]=true;ids=n}
     var result=[];
-    for(var k in ids){var d=META.docs[k];if(d&&d.lang===L)result.push(d)}
+    for(var k in ids){var d=meta.docs[k];if(d&&d.lang===L)result.push(d)}
     result=result.slice(0,10);
-    if(!result.length){sr.innerHTML='<div class="lg-no">No results</div>';sr.style.display='block';return}
+    if(!result.length){sr.innerHTML='<div class="lg-no">'+he(lgUI.t('noResults'))+'</div>';sp.open();return}
     var h='';
     for(var i=0;i<result.length;i++){var r=result[i];h+='<a href="'+he(r.url)+'?lang='+L+'" class="lg-hit"><b>'+he(r.title)+'</b>';if(r.snippet)h+='<span>'+r.snippet.replace(/</g,'&lt;')+'</span>';h+='</a>'}
-    sr.innerHTML=h;sr.style.display='block'
+    sr.innerHTML=h;sp.open()
    }
-   for(var i=0;i<names.length;i++){(function(n){loadShard(n,function(idx){all[n]=idx;check()})})(names[i])}
+   for(var i=0;i<names.length;i++){(function(n){lgUI.loadJSON(n,function(idx){all[n]=idx;check()})})(names[i])}
   })
  }
- var dt;
- if(si)si.oninput=function(){clearTimeout(dt);dt=setTimeout(function(){doSearch(si.value)},200)};
- document.addEventListener('click',function(e){if(e.target.closest('.lg-search-box'))return;sr.style.display='none'});
+ if(si){
+  si.oninput=lgUI.debounce(function(){if(sc)sc.classList.toggle('show',!!si.value);doSearch(si.value)},200);
+  if(sc)sc.onclick=function(){si.value='';sc.classList.remove('show');sp.close();si.focus()};
+ }
+
+ /* ── code copy — delegated so buttons keep working after rL body swaps ── */
+ document.addEventListener('click',function(e){
+  var btn=e.target&&e.target.closest?e.target.closest('.hi-code-highlight-copy[data-copy]'):null;
+  if(!btn)return;
+  if(window.lagrangeCopy)window.lagrangeCopy(btn.getAttribute('data-copy')||'');
+  btn.classList.add('copied');
+  setTimeout(function(){btn.classList.remove('copied')},1500);
+ });
 
  /* ── init ── */
  sL(gL());

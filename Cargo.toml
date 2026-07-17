@@ -1,6 +1,6 @@
 [package]
 name = "lagrange-library"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 rust-version = "1.80"
 authors = ["langyo <langyo.china@gmail.com>"]
@@ -56,18 +56,22 @@ tokio = { version = "^1", features = ["net", "rt-multi-thread", "macros"] }
 tower-http = { version = "^0.6", features = ["fs"] }
 
 # Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
-tairitsu-vdom = "^0.5"
+# NOTE: floors require tairitsu 0.5.18 — the first release whose scss! macro
+# honours `no_hash`; older macros silently hashed (and corrupted) the global
+# layout stylesheet, stripping pages of nearly all styling.
+tairitsu-vdom = "^0.5.18"
 # tairitsu hooks runtime (needed by hikari components).
-tairitsu-hooks = "^0.5"
+tairitsu-hooks = "^0.5.18"
 # tairitsu macros (rsx!, component!, define_props — needed by hikari components).
-tairitsu-macros = "^0.5"
+tairitsu-macros = "^0.5.18"
 # Theming: hikari color palette + icon system.
 hikari-palette = "^0.3"
 hikari-icons = { version = "^0.3", default-features = false }
 # Hikari UI components (Card, CodeHighlight, Typography, etc.) — rendered via
 # tairitsu-vdom SSR at build time, same VNode→HTML path lagrange already uses.
 # Uses local path for dev; crates.io consumers get the published version.
-hikari-components = "^0.3"
+# Floor 0.3.13: first hikari release rebuilt against the fixed scss! macro.
+hikari-components = "^0.3.13"
 # Hikari i18n — component UI string translations (copy/cancel/etc.)
 hikari-i18n = "^0.3"
 

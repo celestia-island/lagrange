@@ -123,12 +123,15 @@ a {
 
     input {
         width: 100%;
-        padding: 0.35rem 0.5rem 0.35rem 1.8rem;
+        /* Icon zones are 2rem squares; keep text ~4px past the zone edge
+         * (~12px from the glyph) instead of drifting far from the icon. */
+        padding: 0.35rem 2.25rem;
         border: 1px solid var(--border);
         border-radius: var(--radius);
         background: var(--bg);
         color: var(--fg);
         font-size: 0.85rem;
+        line-height: 1.4;
 
         &:focus {
             outline: none;
@@ -139,10 +142,98 @@ a {
 
 .lg-search-icon {
     position: absolute;
-    left: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
+    left: 0.75rem;
+    top: 0;
+    bottom: 0;
+    width: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: var(--fg-sec);
+    pointer-events: none;
+
+    svg { display: block; }
+}
+
+#lg-search-clear {
+    position: absolute;
+    right: 0.75rem;
+    top: 0;
+    bottom: 0;
+    width: 2rem;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--fg-sec);
+    cursor: pointer;
+
+    &.show { display: flex; }
+    &:hover { color: var(--fg); }
+    svg { display: block; }
+}
+
+#lg-search-results {
+    position: absolute;
+    top: calc(100% - 0.4rem);
+    left: 0.75rem;
+    right: 0.75rem;
+    z-index: 200;
+    display: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    max-height: 320px;
+    overflow-y: auto;
+
+    &.open {
+        display: block;
+        animation: lg-pop-down 0.15s ease;
+    }
+
+    .lg-hit {
+        display: block;
+        padding: 0.5rem 0.75rem;
+        color: var(--fg);
+        text-decoration: none;
+        border-bottom: 1px solid var(--border);
+
+        &:last-child { border-bottom: none; }
+        &:hover, &:focus-visible { background: var(--accent-bg); }
+
+        b { display: block; font-size: 0.88rem; font-weight: 600; }
+        span {
+            display: block;
+            margin-top: 0.15rem;
+            font-size: 0.78rem;
+            color: var(--fg-sec);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    }
+
+    .lg-no {
+        padding: 0.75rem;
+        color: var(--fg-sec);
+        font-size: 0.85rem;
+        text-align: center;
+    }
+}
+
+/* Shared popover motion — every dropdown/panel animates through the same
+   keyframes; direction depends on which way the panel opens. */
+@keyframes lg-pop-down {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes lg-pop-up {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
 }
 
 #lg-sidebar {
@@ -195,13 +286,19 @@ a {
     overflow: auto;
     z-index: 200;
 
-    &.open { display: block; }
+    &.open {
+        display: block;
+        animation: lg-pop-up 0.15s ease;
+    }
 }
 
 .lg-lang-opt {
     display: flex;
     align-items: center;
-    padding: 0.4rem 0.6rem;
+    /* Same selection language as the sidebar nav: a 2px accent bar on the
+     * left (transparent on idle rows so text never shifts) + accent tint. */
+    padding: 0.4rem 0.85rem;
+    border-left: 2px solid transparent;
     color: var(--fg);
     font-size: 0.85rem;
     transition: background var(--ts);
@@ -214,6 +311,8 @@ a {
     &.selected {
         color: var(--accent);
         font-weight: 600;
+        border-left-color: var(--accent);
+        background: var(--accent-bg);
     }
 }
 
@@ -229,8 +328,12 @@ a {
     h3 { font-size: 1.1rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
     p { margin: 0.75rem 0; }
     img { max-width: 100%; border-radius: var(--radius); }
-    pre { background: var(--code-bg); padding: 1rem; border-radius: var(--radius); overflow: auto; font-size: 0.85rem; line-height: 1.5; }
-    code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.88em; }
+    /* hikari markup carries its own styles (injected via build_css);
+     * keep lagrange's generic pre/code rules off it — the specificity
+     * tie (.content pre / .hi-code-highlight-code) would otherwise
+     * clobber padding, background and font metrics. */
+    pre:not(.hi-code-highlight-code) { background: var(--code-bg); padding: 1rem; border-radius: var(--radius); overflow: auto; font-size: 0.85rem; line-height: 1.5; }
+    :not(pre) > code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.88em; }
     p > code, li > code { background: var(--code-bg); padding: 0.12em 0.35em; border-radius: 3px; }
     table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: 0.9rem; }
     th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
@@ -291,6 +394,11 @@ a {
 
 @media (max-width: 768px) {
     .layout { flex-direction: column; height: auto; overflow: visible; }
-    .sidebar { height: auto; width: auto; max-height: 50vh; flex-shrink: 0; overflow-y: auto; }
+    /* Scroll the nav (#lg-sidebar, already overflow-y:auto) internally
+     * instead of the whole strip: an overflow here would crop the absolute
+     * search-results and language panels that open outside the sidebar's
+     * box. The nav is a scroll container, so its flex minimum is 0 and the
+     * 50vh cap still holds. */
+    .sidebar { height: auto; width: auto; max-height: 50vh; flex-shrink: 0; }
     .content { height: auto; overflow-y: visible; padding: 1.5rem 1rem 3rem; }
 }

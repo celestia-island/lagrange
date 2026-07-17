@@ -22,6 +22,7 @@ span = {
   | emphasis
   | inline_html
   | escape
+  | entity
   | raw
 }
 
@@ -47,13 +48,19 @@ code_span = { "`" ~ (!"`" ~ ANY)+ ~ "`" }
 // modelled).
 strong      = { "**" ~ strong_atom* ~ "**" }
 emphasis    = { "*" ~ em_atom* ~ "*" }
-strong_atom = { code_span | image | link | badge_link | inline_html | escape | raw_double_atom }
-em_atom     = { code_span | image | link | badge_link | strong | inline_html | escape | raw_single_atom }
+strong_atom = { code_span | image | link | badge_link | inline_html | escape | entity | raw_double_atom }
+em_atom     = { code_span | image | link | badge_link | strong | inline_html | escape | entity | raw_single_atom }
+
+// HTML character reference: `&nbsp;`, `&#160;`, `&#xA0;`. Named references
+// start with a letter (per HTML5); decoding happens in `build_inline`.
+entity = @{ "&" ~ ("#" ~ ("x" | "X") ~ ASCII_HEX_DIGIT+ | "#" ~ ASCII_DIGIT+ | ASCII_ALPHA ~ ASCII_ALPHANUMERIC*) ~ ";" }
 
 // Atomic runs of non-special chars (relative to the delimiter set) so the
-// surrounding repetition is non-backtracking and produces few nodes.
-raw_double_atom = @{ ( !( "**" | "`" | "[" | "\\" | "!" | "<" ) ~ ANY )+ }
-raw_single_atom = @{ ( !( "**" | "*" | "`" | "[" | "\\" | "!" | "<" ) ~ ANY )+ }
+// surrounding repetition is non-backtracking and produces few nodes. `&` is
+// excluded so entity references get their own span; a bare `&` that does not
+// form an entity still matches through `raw`'s single-char fallback.
+raw_double_atom = @{ ( !( "**" | "`" | "[" | "\\" | "!" | "<" | "&" ) ~ ANY )+ }
+raw_single_atom = @{ ( !( "**" | "*" | "`" | "[" | "\\" | "!" | "<" | "&" ) ~ ANY )+ }
 
 escape    = { "\\" ~ ANY }
 
@@ -62,7 +69,7 @@ escape    = { "\\" ~ ANY }
 // not contribute to backtracking at the span level.
 raw       = @{ (!special_start ~ ANY)+ | ANY }
 
-special_start = { "**" | "*" | "`" | "[" | "\\" | "!" | "<" }
+special_start = { "**" | "*" | "`" | "[" | "\\" | "!" | "<" | "&" }
 
 // Inline HTML: <tag attrs>body</tag> or <self-closing/>
 inline_html = { "<" ~ tag_name ~ attrs* ~ ( "/>" | ">" ~ inline_seq ~ "</" ~ tag_name ~ ">" ) }
