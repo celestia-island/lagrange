@@ -387,6 +387,11 @@ a {
 
 @media (max-width: 768px) {
     .layout { flex-direction: column; height: auto; overflow: visible; }
-    .sidebar { height: auto; width: auto; max-height: 50vh; flex-shrink: 0; overflow-y: auto; }
+    /* Scroll the nav (#lg-sidebar, already overflow-y:auto) internally
+     * instead of the whole strip: an overflow here would crop the absolute
+     * search-results and language panels that open outside the sidebar's
+     * box. The nav is a scroll container, so its flex minimum is 0 and the
+     * 50vh cap still holds. */
+    .sidebar { height: auto; width: auto; max-height: 50vh; flex-shrink: 0; }
     .content { height: auto; overflow-y: visible; padding: 1.5rem 1rem 3rem; }
 }
