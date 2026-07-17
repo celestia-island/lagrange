@@ -352,7 +352,12 @@ fn write_multi_page(
         html.push_str(&magnify);
         html.push_str(
             "</span>\
-             <input type=\"search\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\">\
+             <input type=\"text\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\" spellcheck=\"false\">\
+             <button type=\"button\" id=\"lg-search-clear\" aria-label=\"Clear search\" title=\"Clear search\">",
+        );
+        html.push_str(&crate::icons::icon_svg("close", 12));
+        html.push_str(
+            "</button>\
              <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
              </div>\n\
              <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
@@ -501,11 +506,11 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
   x.onload=function(){try{META=JSON.parse(x.responseText)}catch(e){META={docs:[],shards:[]}};cb()};x.onerror=function(){META={docs:[],shards:[]};cb()};x.send()
  }
  function doSearch(q){
-  if(!q||q.length<2){sr.innerHTML='';sr.style.display='none';return}
+  if(!q||q.length<2){sr.innerHTML='';sr.classList.remove('open');return}
   loadMeta(function(){
-   var tokens=tokenize(q);if(!tokens.length){sr.innerHTML='';sr.style.display='none';return}
+   var tokens=tokenize(q);if(!tokens.length){sr.innerHTML='';sr.classList.remove('open');return}
    var L=CUR;var needed={};for(var i=0;i<tokens.length;i++){var c=tokens[i].charCodeAt(0)%16;needed[META.shards[c]]=true}
-   var names=Object.keys(needed);if(!names.length){sr.innerHTML='';sr.style.display='none';return}
+   var names=Object.keys(needed);if(!names.length){sr.innerHTML='';sr.classList.remove('open');return}
    var loaded=0;var all={};
    function check(){
     loaded++;if(loaded<names.length)return;
@@ -518,17 +523,19 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
     var result=[];
     for(var k in ids){var d=META.docs[k];if(d&&d.lang===L)result.push(d)}
     result=result.slice(0,10);
-    if(!result.length){sr.innerHTML='<div class="lg-no">No results</div>';sr.style.display='block';return}
+    if(!result.length){sr.innerHTML='<div class="lg-no">No results</div>';sr.classList.add('open');return}
     var h='';
     for(var i=0;i<result.length;i++){var r=result[i];h+='<a href="'+he(r.url)+'?lang='+L+'" class="lg-hit"><b>'+he(r.title)+'</b>';if(r.snippet)h+='<span>'+r.snippet.replace(/</g,'&lt;')+'</span>';h+='</a>'}
-    sr.innerHTML=h;sr.style.display='block'
+    sr.innerHTML=h;sr.classList.add('open')
    }
    for(var i=0;i<names.length;i++){(function(n){loadShard(n,function(idx){all[n]=idx;check()})})(names[i])}
   })
  }
- var dt;
- if(si)si.oninput=function(){clearTimeout(dt);dt=setTimeout(function(){doSearch(si.value)},200)};
- document.addEventListener('click',function(e){if(e.target.closest('.lg-search-box'))return;sr.style.display='none'});
+ var dt,sc=document.getElementById('lg-search-clear');
+ if(si)si.oninput=function(){if(sc)sc.classList.toggle('show',!!si.value);clearTimeout(dt);dt=setTimeout(function(){doSearch(si.value)},200)};
+ if(sc)sc.onclick=function(){si.value='';sc.classList.remove('show');sr.classList.remove('open');si.focus()};
+ if(si)si.onkeydown=function(e){if(e.key==='Escape')sr.classList.remove('open')};
+ document.addEventListener('click',function(e){if(e.target.closest('.lg-search-box'))return;sr.classList.remove('open')});
 
  /* ── init ── */
  sL(gL());

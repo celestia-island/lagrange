@@ -123,12 +123,13 @@ a {
 
     input {
         width: 100%;
-        padding: 0.35rem 0.5rem 0.35rem 1.8rem;
+        padding: 0.35rem 1.7rem 0.35rem 1.8rem;
         border: 1px solid var(--border);
         border-radius: var(--radius);
         background: var(--bg);
         color: var(--fg);
         font-size: 0.85rem;
+        line-height: 1.4;
 
         &:focus {
             outline: none;
@@ -139,10 +140,87 @@ a {
 
 .lg-search-icon {
     position: absolute;
-    left: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
+    left: 1.05rem;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
     color: var(--fg-sec);
+    pointer-events: none;
+
+    svg { display: block; }
+}
+
+#lg-search-clear {
+    position: absolute;
+    right: 1rem;
+    top: 0;
+    bottom: 0;
+    display: none;
+    align-items: center;
+    padding: 0 0.15rem;
+    border: none;
+    background: transparent;
+    color: var(--fg-sec);
+    cursor: pointer;
+
+    &.show { display: flex; }
+    &:hover { color: var(--fg); }
+    svg { display: block; }
+}
+
+#lg-search-results {
+    position: absolute;
+    top: calc(100% - 0.4rem);
+    left: 0.75rem;
+    right: 0.75rem;
+    z-index: 200;
+    display: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    max-height: 320px;
+    overflow-y: auto;
+
+    &.open {
+        display: block;
+        animation: lg-search-in 0.15s ease;
+    }
+
+    .lg-hit {
+        display: block;
+        padding: 0.5rem 0.75rem;
+        color: var(--fg);
+        text-decoration: none;
+        border-bottom: 1px solid var(--border);
+
+        &:last-child { border-bottom: none; }
+        &:hover, &:focus-visible { background: var(--accent-bg); }
+
+        b { display: block; font-size: 0.88rem; font-weight: 600; }
+        span {
+            display: block;
+            margin-top: 0.15rem;
+            font-size: 0.78rem;
+            color: var(--fg-sec);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    }
+
+    .lg-no {
+        padding: 0.75rem;
+        color: var(--fg-sec);
+        font-size: 0.85rem;
+        text-align: center;
+    }
+}
+
+@keyframes lg-search-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
 }
 
 #lg-sidebar {
