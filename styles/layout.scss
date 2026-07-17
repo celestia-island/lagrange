@@ -123,7 +123,7 @@ a {
 
     input {
         width: 100%;
-        padding: 0.35rem 1.7rem 0.35rem 1.8rem;
+        padding: 0.35rem 2.75rem;
         border: 1px solid var(--border);
         border-radius: var(--radius);
         background: var(--bg);
@@ -140,11 +140,13 @@ a {
 
 .lg-search-icon {
     position: absolute;
-    left: 1.05rem;
+    left: 0.75rem;
     top: 0;
     bottom: 0;
+    width: 2rem;
     display: flex;
     align-items: center;
+    justify-content: center;
     color: var(--fg-sec);
     pointer-events: none;
 
@@ -153,12 +155,14 @@ a {
 
 #lg-search-clear {
     position: absolute;
-    right: 1rem;
+    right: 0.75rem;
     top: 0;
     bottom: 0;
+    width: 2rem;
     display: none;
     align-items: center;
-    padding: 0 0.15rem;
+    justify-content: center;
+    padding: 0;
     border: none;
     background: transparent;
     color: var(--fg-sec);
@@ -185,7 +189,7 @@ a {
 
     &.open {
         display: block;
-        animation: lg-search-in 0.15s ease;
+        animation: lg-pop-down 0.15s ease;
     }
 
     .lg-hit {
@@ -218,8 +222,15 @@ a {
     }
 }
 
-@keyframes lg-search-in {
+/* Shared popover motion — every dropdown/panel animates through the same
+   keyframes; direction depends on which way the panel opens. */
+@keyframes lg-pop-down {
     from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes lg-pop-up {
+    from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: none; }
 }
 
@@ -273,7 +284,10 @@ a {
     overflow: auto;
     z-index: 200;
 
-    &.open { display: block; }
+    &.open {
+        display: block;
+        animation: lg-pop-up 0.15s ease;
+    }
 }
 
 .lg-lang-opt {
