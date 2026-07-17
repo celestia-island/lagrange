@@ -405,17 +405,11 @@ fn live_block_js() -> String {
     let modal_js = include_str!("comments/modal.js");
     let clipboard_js = include_str!("comments/clipboard.js");
 
-    // Pre-render hikari-icon SVGs for use in JS-generated DOM (modal close,
-    // comment upvote, etc.). These come from hikari-icons, same as the
-    // build-time rendered icons.
-    let icon_close = crate::icons::icon_svg("close", 14);
-    let icon_arrow_up = crate::icons::icon_svg("arrow-up", 12);
-    let icons_js = format!(
-        r#"<script>window.LAGRANGE_ICONS={{close:{icon_close:?},\x22arrow-up\x22:{icon_arrow_up:?}}};</script>"#,
-    );
-
+    // Icons for JS-generated DOM come from the lgUI icon registry injected
+    // by lagrange_js() — fed from the same mdi_path table as the build-time
+    // rendered icons, so nothing here hard-codes SVG path data.
     let prefix = format!(
-        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n{icons_js}\n"
+        "<script>{scrollbar_js}</script>\n<script>{modal_js}</script>\n<script>{clipboard_js}</script>\n"
     );
     let suffix = r##"<script>
 (function(){
@@ -442,12 +436,16 @@ fn live_block_js() -> String {
 
 fn lagrange_js() -> String {
     let ui_js = include_str!("comments/ui.js");
+    // Feed the lgUI icon registry from the same mdi_path table that
+    // build-time icon_svg() renders from — one source of truth for icons
+    // on both the Rust and the JS side.
+    let icons = crate::icons::icons_js_object(crate::icons::ALL_ICONS);
     let translate = crate::icons::icon_svg("translate", 16);
     let chevron = format!("<path d=\"{}\"/>", crate::icons::mdi_path("chevron-down"));
     let boot = LAGRANGE_JS_TEMPLATE
         .replace("@TRANSLATE_ICON@", &translate)
         .replace("@CHEVRON_ICON_PATH@", &chevron);
-    format!("<script>{ui_js}</script>\n{boot}")
+    format!("<script>window.lgUI=window.lgUI||{{}};lgUI.icons={icons};</script>\n<script>{ui_js}</script>\n{boot}")
 }
 
 const LAGRANGE_JS_TEMPLATE: &str = r##"<script>

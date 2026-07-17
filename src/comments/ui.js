@@ -1,5 +1,5 @@
 /* lagrange UI context — one shared home for the concerns every widget needs:
- * i18n chrome strings, timers, memoized network, and popover plumbing.
+ * i18n chrome strings, icons, timers, memoized network, and popover plumbing.
  *
  * Widgets (language switcher, search, code-copy, comments, ...) consume
  * window.lgUI instead of re-implementing each concern inline — the same
@@ -31,6 +31,18 @@
     var lang = lgUI.i18n && lgUI.i18n.cur ? lgUI.i18n.cur() : "en";
     var pack = CHROME[lang] || CHROME.en;
     return pack[key] || CHROME.en[key] || key;
+  };
+
+  /* ── icons: one registry, fed by the page bootstrap from Rust's mdi_path
+   * table — the exact same data build-time icon_svg() renders from.
+   * lgUI.icon() stamps the identical <svg> template at runtime so
+   * JS-generated DOM never hard-codes path data of its own. ── */
+  lgUI.icons = lgUI.icons || {};
+  lgUI.icon = function (name, size) {
+    var d = lgUI.icons[name];
+    if (!d) return "";
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="' +
+      size + '" height="' + size + '" fill="currentColor"><path d="' + d + '"/></svg>';
   };
 
   /* ── timers ── */

@@ -426,7 +426,7 @@
       actions = '<div class="lg-c-actions">';
       if (self._me || self._auth.indexOf("anonymous") >= 0)
         actions += '<button data-act="reply" data-id="' + esc(c.id) + '">reply</button>';
-      var upIcon = (window.LAGRANGE_ICONS && window.LAGRANGE_ICONS["arrow-up"]) || '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12,7L17,12H14V16H10V12H7L12,7Z"/></svg>';
+      var upIcon = (window.lgUI && window.lgUI.icon) ? window.lgUI.icon("arrow-up", 12) : "";
       actions += '<span class="lg-c-vote"><button data-act="up" data-id="' + esc(c.id) + '">' + upIcon + '</button>' +
         ((c.votes && (c.votes.up - c.votes.down)) || 0) + "</span>";
       var isOwner = self._me && a.id && self._me.author.id === a.id;

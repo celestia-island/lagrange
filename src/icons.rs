@@ -32,6 +32,31 @@ pub fn mdi_path(name: &str) -> &'static str {
     embedded_path(name).unwrap_or("")
 }
 
+/// Every icon lagrange renders — the single list both the build-time
+/// renderer and the page-side icon registry are fed from.
+pub const ALL_ICONS: &[&str] = &[
+    "content-copy",
+    "check",
+    "magnify",
+    "close",
+    "arrow-up",
+    "translate",
+    "chevron-down",
+];
+
+/// Render MDI path data as a JS object literal (`{"name":"M…Z",…}`).
+///
+/// Injected into pages so JS-generated DOM resolves icons through the very
+/// same `mdi_path` data as build-time `icon_svg` — no third hard-coded copy
+/// of path data anywhere in the JS modules.
+pub fn icons_js_object(names: &[&str]) -> String {
+    let entries: Vec<String> = names
+        .iter()
+        .map(|n| format!("{n:?}:{:?}", mdi_path(n)))
+        .collect();
+    format!("{{{}}}", entries.join(","))
+}
+
 /// Embedded MDI path data for every icon lagrange renders.
 fn embedded_path(name: &str) -> Option<&'static str> {
     Some(match name {
@@ -52,19 +77,23 @@ mod tests {
 
     #[test]
     fn every_icon_lagrange_uses_is_embedded() {
-        // Keep in sync with the icon_svg!/mdi_path! call sites in render.rs
-        // and site.rs — a missing entry renders as an empty button.
-        for name in [
-            "content-copy",
-            "check",
-            "magnify",
-            "close",
-            "arrow-up",
-            "translate",
-            "chevron-down",
-        ] {
+        // Keep ALL_ICONS in sync with the icon_svg!/mdi_path! call sites in
+        // render.rs and site.rs — a missing entry renders as an empty button.
+        for name in ALL_ICONS {
             assert!(!mdi_path(name).is_empty(), "icon '{name}' has no path data");
         }
+    }
+
+    #[test]
+    fn js_object_carries_quoted_names_and_paths() {
+        let obj = icons_js_object(ALL_ICONS);
+        assert!(obj.starts_with('{') && obj.ends_with('}'));
+        // Hyphenated names must be quoted to stay valid JS.
+        assert!(obj.contains(r#""arrow-up":"M"#));
+        for name in ALL_ICONS {
+            assert!(obj.contains(&format!("{name:?}")), "missing key {name}");
+        }
+        assert!(icons_js_object(&["no-such-icon"]).contains(r#""no-such-icon":"""#));
     }
 
     #[test]
