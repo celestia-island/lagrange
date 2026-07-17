@@ -38,11 +38,7 @@ fn hikari_component_css() -> String {
     let all = registry.get_all();
     let mut names: Vec<&'static str> = all.keys().copied().collect();
     names.sort_unstable();
-    names
-        .iter()
-        .map(|n| all[n])
-        .collect::<Vec<_>>()
-        .join("\n")
+    names.iter().map(|n| all[n]).collect::<Vec<_>>().join("\n")
 }
 
 const HIKARI_VARS: &str = r#":root {
