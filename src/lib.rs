@@ -10,6 +10,7 @@
 pub mod cli;
 pub mod comments;
 pub mod config;
+pub mod diagram;
 pub mod frontmatter;
 pub mod icons;
 pub mod live;

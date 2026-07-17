@@ -16,6 +16,11 @@ pub enum Block {
     /// At build time lagrange compiles and executes this `rsx!{...}` expression
     /// to produce rendered HTML, displayed in a preview/source-toggle card.
     LiveComponent { source: String },
+    /// A ```` ```mermaid ```` / ```` ```math ```` (alias `latex`/`katex`)
+    /// fenced block — rendered client-side by the vendored mermaid.js /
+    /// KaTeX runtime into the preview pane of a demo block, with the source
+    /// one toggle away. Never syntax-highlighted as plain code.
+    Diagram { kind: DiagramKind, source: String },
     /// A list. `ordered` distinguishes `-`/`*`/`+` from `1.`.
     List {
         ordered: bool,
@@ -43,6 +48,33 @@ pub enum Block {
     /// A generic `<div attrs>` container. The inner blocks are parsed
     /// recursively and rendered inside the div with the given attributes.
     Div { attrs: String, children: Vec<Block> },
+}
+
+/// Which client-side renderer a [`Block::Diagram`] preview is fed to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagramKind {
+    /// ```` ```mermaid ```` — mermaid.js.
+    Mermaid,
+    /// ```` ```math ```` (aliases `latex`, `katex`) — KaTeX, display mode.
+    Math,
+}
+
+impl DiagramKind {
+    /// Value of the `data-diagram-kind` attribute the runtime switches on.
+    pub fn attr(self) -> &'static str {
+        match self {
+            DiagramKind::Mermaid => "mermaid",
+            DiagramKind::Math => "math",
+        }
+    }
+
+    /// Header badge + syntect token for the source pane.
+    pub fn source_lang(self) -> &'static str {
+        match self {
+            DiagramKind::Mermaid => "mermaid",
+            DiagramKind::Math => "latex",
+        }
+    }
 }
 
 /// An inline span.

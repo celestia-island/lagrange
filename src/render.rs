@@ -98,6 +98,7 @@ fn render_block_with_live(
             el_pre_code(&lang_class, code)
         }
         Block::LiveComponent { source } => render_live_block(source, live_html.get(source)),
+        Block::Diagram { kind, source } => render_diagram_block(*kind, source),
         Block::List { ordered, items } => {
             let tag = if *ordered { "ol" } else { "ul" };
             let lis: Vec<VNode> = items
@@ -293,6 +294,138 @@ fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
 
     VNode::Element(Box::new(
         el("div").attr("class", "lg-live-block").children(children),
+    ))
+}
+
+// ── diagram block rendering (mermaid / math) ──────────────────────────────
+
+/// Render a mermaid/math fence as a demo card: header with badge, segmented
+/// preview/source toggle and copy button; a preview pane the client-side
+/// runtime (diagram.js + vendored mermaid/KaTeX) renders into; and the
+/// syntax-highlighted source one toggle away. The raw source travels in a
+/// hidden <pre> — text nodes are escaped at serialization, so JS reads the
+/// exact source back via textContent.
+fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNode {
+    let lang = kind.source_lang();
+    let highlighted = syntax_highlight(source, lang);
+    let line_count = source.lines().count().max(1);
+    let line_num_nodes: Vec<VNode> = (1..=line_count)
+        .map(|i| {
+            VNode::Element(Box::new(
+                el("div")
+                    .attr("class", "hi-code-highlight-line-number")
+                    .child(txt(&i.to_string())),
+            ))
+        })
+        .collect();
+
+    let copy_btn = VNode::Element(Box::new(
+        el("button")
+            .attr("class", "hi-code-highlight-copy")
+            .attr("type", "button")
+            .attr("data-copy", source)
+            .attr("aria-label", "Copy code")
+            .attr("title", "Copy code")
+            .child(VNode::Element(Box::new(
+                el("span")
+                    .attr("class", "hi-code-highlight-copy-icon")
+                    .attr("aria-hidden", "true")
+                    .dangerous_inner_html(crate::icons::icon_svg("content-copy", 14)),
+            )))
+            .child(VNode::Element(Box::new(
+                el("span")
+                    .attr("class", "hi-code-highlight-check")
+                    .attr("aria-hidden", "true")
+                    .dangerous_inner_html(crate::icons::icon_svg("check", 14)),
+            ))),
+    ));
+
+    let toggle = VNode::Element(Box::new(
+        el("div")
+            .attr("class", "lg-diagram-toggle")
+            .attr("role", "tablist")
+            .children(vec![
+                VNode::Element(Box::new(
+                    el("button")
+                        .attr("type", "button")
+                        .attr("class", "lg-diagram-toggle-btn active")
+                        .attr("data-pane", "preview")
+                        .child(txt("Preview")),
+                )),
+                VNode::Element(Box::new(
+                    el("button")
+                        .attr("type", "button")
+                        .attr("class", "lg-diagram-toggle-btn")
+                        .attr("data-pane", "source")
+                        .child(txt("Source")),
+                )),
+            ]),
+    ));
+
+    VNode::Element(Box::new(
+        el("div")
+            .attr("class", "lg-diagram")
+            .attr("data-diagram-kind", kind.attr())
+            .children(vec![
+                VNode::Element(Box::new(
+                    el("div")
+                        .attr("class", "hi-code-highlight-header lg-diagram-header")
+                        .children(vec![
+                            VNode::Element(Box::new(
+                                el("span")
+                                    .attr("class", "hi-code-highlight-language")
+                                    .child(txt(lang)),
+                            )),
+                            VNode::Element(Box::new(
+                                el("div")
+                                    .attr("class", "lg-diagram-actions")
+                                    .children(vec![toggle, copy_btn]),
+                            )),
+                        ]),
+                )),
+                VNode::Element(Box::new(
+                    el("div")
+                        .attr("class", "lg-diagram-preview")
+                        .attr("data-pane", "preview")
+                        .children(vec![
+                            VNode::Element(Box::new(
+                                el("div").attr("class", "lg-diagram-canvas"),
+                            )),
+                            VNode::Element(Box::new(
+                                el("pre")
+                                    .attr("class", "lg-diagram-raw")
+                                    .attr("style", "display:none")
+                                    .child(txt(source)),
+                            )),
+                        ]),
+                )),
+                VNode::Element(Box::new(
+                    el("div")
+                        .attr("class", "lg-diagram-source")
+                        .attr("data-pane", "source")
+                        .attr("style", "display:none")
+                        .child(VNode::Element(Box::new(
+                            el("div")
+                                .attr("class", "hi-code-highlight-content")
+                                .children(vec![
+                                    VNode::Element(Box::new(
+                                        el("div")
+                                            .attr("class", "hi-code-highlight-line-numbers")
+                                            .children(line_num_nodes),
+                                    )),
+                                    VNode::Element(Box::new(
+                                        el("pre")
+                                            .attr("class", "hi-code-highlight-code hi-scroll-container")
+                                            .child(VNode::Element(Box::new(
+                                                el("code")
+                                                    .attr("class", format!("language-{lang}"))
+                                                    .dangerous_inner_html(&highlighted),
+                                            ))),
+                                    )),
+                                ]),
+                        ))),
+                )),
+            ]),
     ))
 }
 

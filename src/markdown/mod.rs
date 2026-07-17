@@ -3,5 +3,5 @@
 pub mod ast;
 mod parser;
 
-pub use ast::{Block, Inline};
+pub use ast::{Block, DiagramKind, Inline};
 pub use parser::parse;

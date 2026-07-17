@@ -74,16 +74,8 @@ fn parse_fenced_code(lines: &[&str], i: usize) -> Option<(Block, usize)> {
         let t = lines[j].trim_start();
         if let Some((c, m)) = leading_fence(t) {
             if c == fence_char && m >= n {
-                // A ```hikari block is a live component snippet, not a plain
-                // code block. Route it to LiveComponent so the builder can
-                // compile-execute it at build time.
-                if info == "hikari" {
-                    return Some((
-                        Block::LiveComponent {
-                            source: code.trim_end().to_string(),
-                        },
-                        j + 1,
-                    ));
+                if let Some(block) = route_special_fence(info, &code) {
+                    return Some((block, j + 1));
                 }
                 let lang = if info.is_empty() {
                     None
@@ -98,13 +90,8 @@ fn parse_fenced_code(lines: &[&str], i: usize) -> Option<(Block, usize)> {
         j += 1;
     }
     // Unterminated fence — take everything to EOF.
-    if info == "hikari" {
-        return Some((
-            Block::LiveComponent {
-                source: code.trim_end().to_string(),
-            },
-            j,
-        ));
+    if let Some(block) = route_special_fence(info, &code) {
+        return Some((block, j));
     }
     let lang = if info.is_empty() {
         None
@@ -112,6 +99,25 @@ fn parse_fenced_code(lines: &[&str], i: usize) -> Option<(Block, usize)> {
         Some(info.to_string())
     };
     Some((Block::CodeBlock { lang, code }, j))
+}
+
+/// Route fences whose info string marks them as something other than plain
+/// code: ```` ```hikari ```` (live component compiled at build time) and
+/// ```` ```mermaid ```` / ```` ```math ```` (client-side rendered diagrams).
+fn route_special_fence(info: &str, code: &str) -> Option<Block> {
+    let source = || code.trim_end().to_string();
+    match info {
+        "hikari" => Some(Block::LiveComponent { source: source() }),
+        "mermaid" => Some(Block::Diagram {
+            kind: crate::markdown::ast::DiagramKind::Mermaid,
+            source: source(),
+        }),
+        "math" | "latex" | "katex" => Some(Block::Diagram {
+            kind: crate::markdown::ast::DiagramKind::Math,
+            source: source(),
+        }),
+        _ => None,
+    }
 }
 
 fn leading_fence(s: &str) -> Option<(char, usize)> {

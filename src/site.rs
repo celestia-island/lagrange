@@ -47,6 +47,11 @@ pub struct LangPage {
     /// Pre-rendered comment mount-point HTML for this page (empty when comments
     /// are inactive or opted out). Appended verbatim after the article body.
     pub comments_mount: String,
+    /// Diagram runtimes this language variant needs (mermaid/KaTeX). All
+    /// language variants ship in one HTML file, so page assembly unions
+    /// these flags before deciding which vendor tags to inject. Build-time
+    /// only — never serialized into lg-data.
+    pub diagrams: crate::diagram::DiagramNeeds,
 }
 
 /// All language variants of one logical page.
@@ -123,6 +128,9 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
+    // Site-wide union of diagram-runtime needs — one vendor asset emission
+    // for the whole build when any page in any language has a diagram fence.
+    let mut site_diagram_needs = crate::diagram::DiagramNeeds::default();
 
     for lang in &langs {
         let t_lang = Instant::now();
@@ -204,6 +212,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                 pages: BTreeMap::new(),
                 page_path: page_path.clone(),
             });
+            let diagrams = crate::diagram::collect_needs(&blocks);
+            site_diagram_needs.merge(diagrams);
             entry.pages.insert(
                 lang.clone(),
                 LangPage {
@@ -212,6 +222,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                     sidebar_html,
                     frontmatter: fm,
                     comments_mount,
+                    diagrams,
                 },
             );
         }
@@ -241,6 +252,13 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             &config.site.title_template,
         )?;
         page_count += 1;
+    }
+
+    // 2b. Vendored diagram runtimes (mermaid.js / KaTeX + fonts) — one
+    //     emission for the whole build, only when some page in some
+    //     language actually uses a ```mermaid / ```math fence.
+    if site_diagram_needs.any() {
+        crate::diagram::write_vendor_assets(&opts.out)?;
     }
 
     // ── 3. Copy assets.
@@ -385,6 +403,15 @@ fn write_multi_page(
     html.push_str("</script>\n");
 
     // Client-side language logic + live block tab toggling.
+    // Diagram vendor tags go FIRST: the deferred mermaid/KaTeX scripts and
+    // the diagram.js bootstrap must exist before any init pass runs, and the
+    // flags are the union across every language variant of this page (all
+    // variants ship in this one HTML file).
+    let mut diagram_needs = crate::diagram::DiagramNeeds::default();
+    for p in mp.pages.values() {
+        diagram_needs.merge(p.diagrams);
+    }
+    html.push_str(&crate::diagram::vendor_tags(diagram_needs));
     html.push_str(&lagrange_js());
     html.push_str(&live_block_js());
     html.push_str("</body>\n</html>\n");
@@ -413,21 +440,20 @@ fn live_block_js() -> String {
     );
     let suffix = r##"<script>
 (function(){
- /* ── live block tab toggling (preview ↔ source) ── */
- document.querySelectorAll('.lg-live-block').forEach(function(block){
+ /* ── live block tab toggling (preview ↔ source) — delegated so tabs keep
+    working after the language switcher replaces #lg-body ── */
+ document.addEventListener('click',function(e){
+  var tab=e.target&&e.target.closest?e.target.closest('.lg-live-tab'):null;
+  if(!tab)return;
+  var block=tab.closest('.lg-live-block');if(!block)return;
   var tabs=block.querySelectorAll('.lg-live-tab');
+  for(var i=0;i<tabs.length;i++)tabs[i].classList.remove('active');
+  tab.classList.add('active');
+  var isSource=tab.getAttribute('data-tab')==='source';
   var preview=block.querySelector('.lg-live-preview');
   var source=block.querySelector('[data-lg-source]');
-  if(!tabs.length) return;
-  tabs.forEach(function(tab){
-   tab.onclick=function(){
-    tabs.forEach(function(t){t.classList.remove('active')});
-    tab.classList.add('active');
-    var isSource=tab.dataset.tab==='source';
-    if(preview) preview.style.display=isSource?'none':'';
-    if(source) source.style.display=isSource?'block':'none';
-   };
-  });
+  if(preview)preview.style.display=isSource?'none':'';
+  if(source)source.style.display=isSource?'block':'none';
  });
 })();
 </script>"##;
@@ -467,6 +493,8 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
   var si=document.getElementById('lg-search-input');if(si)si.placeholder=lgUI.t('search');
   var sc=document.getElementById('lg-search-clear');if(sc){sc.title=lgUI.t('clearSearch');sc.setAttribute('aria-label',lgUI.t('clearSearch'))}
   var cp=document.querySelectorAll('.hi-code-highlight-copy');for(var i=0;i<cp.length;i++){cp[i].title=lgUI.t('copyCode');cp[i].setAttribute('aria-label',lgUI.t('copyCode'))}
+  /* diagrams — render mermaid/KaTeX previews in the freshly swapped body */
+  if(window.lgDiagram)window.lgDiagram.init();
  }
  lgUI.i18n={cur:function(){return CUR},set:sL,detect:gL};
  /* ── language dropdown ── */
