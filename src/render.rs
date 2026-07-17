@@ -327,7 +327,9 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
     }
     code_el = code_el.dangerous_inner_html(&highlighted);
 
-    // Header: language label + copy button.
+    // Header: language label + copy button. The button is icon-only
+    // (clipboard → check while `.copied`), so no copy/copied i18n strings
+    // are needed; `aria-label`/`title` stay English on purpose.
     let display_lang = if lang.is_empty() { "text" } else { lang };
     let header = el("div")
         .attr("class", "hi-code-highlight-header")
@@ -342,15 +344,19 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
                     .attr("class", "hi-code-highlight-copy")
                     .attr("type", "button")
                     .attr("data-copy", code)
-                    .attr(
-                        "data-copied",
-                        hikari_i18n::t("hikari.code.copied", "Copied"),
-                    )
-                    .child(txt(&hikari_i18n::t("hikari.code.copy", "Copy")))
+                    .attr("aria-label", "Copy code")
+                    .attr("title", "Copy code")
+                    .child(VNode::Element(Box::new(
+                        el("span")
+                            .attr("class", "hi-code-highlight-copy-icon")
+                            .attr("aria-hidden", "true")
+                            .dangerous_inner_html(crate::icons::icon_svg("content-copy", 14)),
+                    )))
                     .child(VNode::Element(Box::new(
                         el("span")
                             .attr("class", "hi-code-highlight-check")
-                            .dangerous_inner_html(crate::icons::icon_svg("check", 12)),
+                            .attr("aria-hidden", "true")
+                            .dangerous_inner_html(crate::icons::icon_svg("check", 14)),
                     ))),
             )),
         ]);

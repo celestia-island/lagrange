@@ -54,6 +54,22 @@ const HIKARI_VARS: &str = r#":root {
 --hi-shadow-focus: 0 0 0 3px rgba(58, 110, 165, .12);
 --hi-z-modal: 1000; --hi-z-toast: 9999; --hi-z-tooltip: 10000;
 --hi-scroll-size: 8px; --hi-scroll-thumb: 4px;
+/* hikari component color tokens, mapped onto lagrange's palette so hi-*
+   markup (code blocks, alerts, tags, ...) renders on-palette even though
+   hikari-theme's own stylesheet is not shipped. The component CSS also
+   carries fallbacks, but they are light-scheme only. */
+--hi-color-primary: var(--accent);
+--hi-color-primary-glow: color-mix(in srgb, var(--accent) 35%, transparent);
+--hi-color-bg-container: var(--code-bg);
+--hi-color-bg-elevated: var(--bg-subtle);
+--hi-color-border: var(--border);
+--hi-color-text-primary: var(--fg);
+--hi-color-text-secondary: var(--fg-sec);
+--hi-color-text-tertiary: var(--fg-sec);
+--hi-color-info: var(--accent);
+--hi-color-success: #3fb950;
+--hi-color-warning: #d29922;
+--hi-color-danger: #f85149;
 }
 .hi-glass { background: var(--bg-subtle); backdrop-filter: blur(16px); }
 .hi-glass-panel { background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--hi-shadow-panel); }

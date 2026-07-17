@@ -441,10 +441,7 @@ fn live_block_js() -> String {
    var text=btn.getAttribute('data-copy')||'';
    if(window.lagrangeCopy){window.lagrangeCopy(text)}
    btn.classList.add('copied');
-   var orig=btn.getAttribute('data-orig-text')||btn.textContent;
-   btn.setAttribute('data-orig-text',orig);
-   btn.textContent=btn.getAttribute('data-copied')||'Copied';
-   setTimeout(function(){btn.classList.remove('copied');btn.textContent=orig},1500);
+   setTimeout(function(){btn.classList.remove('copied')},1500);
   };
  });
 })();
