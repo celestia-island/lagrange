@@ -505,6 +505,7 @@ fn build_inline(pair: Pair<Rule>) -> Inline {
         Rule::strong => Inline::Strong(inner.into_inner().map(build_inline).collect()),
         Rule::emphasis => Inline::Emphasis(inner.into_inner().map(build_inline).collect()),
         Rule::inline_html => Inline::InlineHtml(inner.as_str().to_string()),
+        Rule::entity => Inline::Text(decode_entity(inner.as_str())),
         Rule::raw_double_atom | Rule::raw_single_atom => Inline::Text(inner.as_str().to_string()),
         Rule::escape => {
             let ch = inner
@@ -525,6 +526,96 @@ fn strip_delim(s: &str, open: char, close: char) -> String {
     let s = s.strip_prefix(open).unwrap_or(s);
     let s = s.strip_suffix(close).unwrap_or(s);
     s.to_string()
+}
+
+/// Decode an HTML character reference (`&nbsp;`, `&#160;`, `&#xA0;`) to its
+/// Unicode character, mirroring CommonMark entity handling: the character
+/// lands in the text run, so the HTML layer's normal escaping keeps `&amp;`
+/// and friends correct. Numeric references are total; named references cover
+/// the common Latin-1 / punctuation set — anything unknown is passed through
+/// literally (which is also how browsers render unknown entities).
+fn decode_entity(s: &str) -> String {
+    let body = &s[1..s.len() - 1]; // strip leading `&` and trailing `;`
+    if let Some(num) = body.strip_prefix('#') {
+        let code = if let Some(hex) = num.strip_prefix(['x', 'X']) {
+            u32::from_str_radix(hex, 16).ok()
+        } else {
+            num.parse::<u32>().ok()
+        };
+        return code
+            .and_then(char::from_u32)
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| s.to_string());
+    }
+    let ch = match body {
+        // XML-predefined + quoting.
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        // Spaces.
+        "nbsp" => '\u{00A0}',
+        "ensp" => '\u{2002}',
+        "emsp" => '\u{2003}',
+        "thinsp" => '\u{2009}',
+        // Punctuation & symbols common in prose.
+        "middot" => '·',
+        "bull" => '•',
+        "hellip" => '…',
+        "mdash" => '—',
+        "ndash" => '–',
+        "lsquo" => '‘',
+        "rsquo" => '’',
+        "ldquo" => '“',
+        "rdquo" => '”',
+        "sbquo" => '‚',
+        "bdquo" => '„',
+        "dagger" => '†',
+        "Dagger" => '‡',
+        "permil" => '‰',
+        "prime" => '′',
+        "Prime" => '″',
+        "lsaquo" => '‹',
+        "rsaquo" => '›',
+        "laquo" => '«',
+        "raquo" => '»',
+        // Latin-1 symbols & currency.
+        "copy" => '©',
+        "reg" => '®',
+        "trade" => '™',
+        "deg" => '°',
+        "plusmn" => '±',
+        "times" => '×',
+        "divide" => '÷',
+        "micro" => 'µ',
+        "para" => '¶',
+        "sect" => '§',
+        "pound" => '£',
+        "yen" => '¥',
+        "euro" => '€',
+        "cent" => '¢',
+        "curren" => '¤',
+        "brvbar" => '¦',
+        "ordf" => 'ª',
+        "ordm" => 'º',
+        "not" => '¬',
+        "shy" => '\u{00AD}',
+        "macr" => '¯',
+        "acute" => '´',
+        "cedil" => '¸',
+        "uml" => '¨',
+        "sup1" => '¹',
+        "sup2" => '²',
+        "sup3" => '³',
+        "frac14" => '¼',
+        "frac12" => '½',
+        "frac34" => '¾',
+        "iexcl" => '¡',
+        "iquest" => '¿',
+        _ => return s.to_string(),
+    };
+    ch.to_string()
 }
 
 #[cfg(test)]
@@ -625,6 +716,60 @@ mod tests {
         };
         assert!(inlines.iter().any(|i| matches!(i, Inline::Emphasis(_))));
         assert!(inlines.iter().any(|i| matches!(i, Inline::Strong(_))));
+    }
+
+    fn joined_text(inlines: &[Inline]) -> String {
+        inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Text(s) => s.clone(),
+                Inline::Strong(inner) | Inline::Emphasis(inner) => joined_text(inner),
+                _ => String::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn named_entities_decode_to_text() {
+        let blocks = parse("GitHub &nbsp;·&nbsp; Docs &amp; more &mdash; done");
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks);
+        };
+        assert_eq!(
+            joined_text(inlines),
+            "GitHub \u{00A0}·\u{00A0} Docs & more — done"
+        );
+    }
+
+    #[test]
+    fn numeric_entities_decode_to_text() {
+        let blocks = parse("&#65;&#x42;&amp;#63;");
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks);
+        };
+        // &#65; → A, &#x42; → B, &amp; → & then a literal #63;
+        assert_eq!(joined_text(inlines), "AB&#63;");
+    }
+
+    #[test]
+    fn unknown_or_invalid_entities_pass_through_literally() {
+        let blocks = parse("a &nosuchentity; b &#xD800; c &dangling");
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks);
+        };
+        assert_eq!(
+            joined_text(inlines),
+            "a &nosuchentity; b &#xD800; c &dangling"
+        );
+    }
+
+    #[test]
+    fn entities_work_inside_emphasis() {
+        let blocks = parse("**a &nbsp; b**");
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks);
+        };
+        assert_eq!(joined_text(inlines), "a \u{00A0} b");
     }
 
     fn text_contains_image(inlines: &[Inline], alt: &str, url_part: &str) -> bool {
