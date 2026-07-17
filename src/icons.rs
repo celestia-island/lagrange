@@ -1,15 +1,13 @@
 //! Icon SVG rendering (MDI design).
 //!
-//! The icons lagrange actually emits are embedded below as static path data
-//! (Material Design Icons, © Templarian — Apache-2.0-licensed path data,
-//! matching `@mdi/svg` 7.4.47). They must not depend on `hikari_icons`:
-//! that crate builds its icon set from SVG files downloaded into the hikari
-//! workspace at development time, so consumers building from crates.io (or
-//! any fresh checkout without `icons/mdi/*.svg`) get an empty set — which is
-//! exactly how the copy/search/translate icons silently vanished.
-//!
-//! `hikari_icons::get()` remains a best-effort fallback for any name that is
-//! not in the embedded table.
+//! Path data comes from `hikari_icons::get()` first. Every icon lagrange
+//! emits is also embedded below as static path data (Material Design Icons,
+//! © Templarian — Apache-2.0-licensed path data, matching `@mdi/svg`
+//! 7.4.47) as a fallback: hikari-icons releases before celestia-island/
+//! hikari#18 built an empty set for fresh clones and crates.io consumers,
+//! which is exactly how the copy/search/translate icons silently vanished.
+//! Once lagrange depends on a hikari-icons release that ships the packed
+//! archive, the embedded table can be dropped.
 
 /// Return an inline `<svg>` element for the given MDI icon name.
 ///
@@ -26,16 +24,12 @@ pub fn icon_svg(name: &str, size: u32) -> String {
 
 /// Return just the `d` attribute for a named MDI icon.
 pub fn mdi_path(name: &str) -> &'static str {
-    if let Some(d) = embedded_path(name) {
-        return d;
+    if let Some(d) = hikari_icons::get(name) {
+        if let Some(d) = d.path.or_else(|| d.paths.first().and_then(|p| p.d)) {
+            return d;
+        }
     }
-    match hikari_icons::get(name) {
-        Some(d) => d
-            .path
-            .or_else(|| d.paths.first().and_then(|p| p.d))
-            .unwrap_or(""),
-        None => "",
-    }
+    embedded_path(name).unwrap_or("")
 }
 
 /// Embedded MDI path data for every icon lagrange renders.
