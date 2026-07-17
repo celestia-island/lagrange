@@ -1,3 +1,4 @@
 # Documentation site assets (not source code)
 docs/theme/** linguist-documentation
 *.rs linguist-language=Rust
+src/vendor/** -text
