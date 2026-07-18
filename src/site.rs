@@ -96,7 +96,19 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     }
     fs::create_dir_all(&opts.out).context("create output dir")?;
 
-    let css = theme::build_css(&config.theme);
+    let mut css = theme::build_css(&config.theme);
+    if let Some(ref w) = config.layout.content_width {
+        css.push_str(&format!(
+            ".lg-header-inner{{max-width:{w}}}.lg-hero .content{{max-width:{w}}}\
+             .content{{padding-left:max(1.5rem,calc((100% - {w}) / 2));\
+                     padding-right:max(1.5rem,calc((100% - {w}) / 2))}}"
+        ));
+    }
+    if let Some(ref p) = config.layout.content_padding {
+        css.push_str(&format!(
+            ".content,.lg-hero .content{{padding-left:{p};padding-right:{p}}}"
+        ));
+    }
 
     // Live component blocks: scan all markdown for ```hikari blocks, compile
     // them at build time, and collect the pre-rendered HTML. The render layer

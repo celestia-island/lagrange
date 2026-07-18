@@ -388,9 +388,7 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
                         .attr("class", "lg-diagram-preview")
                         .attr("data-pane", "preview")
                         .children(vec![
-                            VNode::Element(Box::new(
-                                el("div").attr("class", "lg-diagram-canvas"),
-                            )),
+                            VNode::Element(Box::new(el("div").attr("class", "lg-diagram-canvas"))),
                             VNode::Element(Box::new(
                                 el("pre")
                                     .attr("class", "lg-diagram-raw")
@@ -415,7 +413,10 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
                                     )),
                                     VNode::Element(Box::new(
                                         el("pre")
-                                            .attr("class", "hi-code-highlight-code hi-scroll-container")
+                                            .attr(
+                                                "class",
+                                                "hi-code-highlight-code hi-scroll-container",
+                                            )
                                             .child(VNode::Element(Box::new(
                                                 el("code")
                                                     .attr("class", format!("language-{lang}"))
