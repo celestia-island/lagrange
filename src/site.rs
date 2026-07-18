@@ -96,7 +96,10 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     }
     fs::create_dir_all(&opts.out).context("create output dir")?;
 
-    let css = theme::build_css(&config.theme);
+    let mut css = theme::build_css(&config.theme);
+    if let Some(ref w) = config.layout.content_width {
+        css.push_str(&format!(".lg-header-inner{{max-width:{w}}}.lg-hero .content{{max-width:{w}}}.content{{padding:2rem max(1.5rem,calc((100% - {w}) / 2)) 5rem}}"));
+    }
 
     // Live component blocks: scan all markdown for ```hikari blocks, compile
     // them at build time, and collect the pre-rendered HTML. The render layer

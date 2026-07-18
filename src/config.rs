@@ -32,6 +32,11 @@ pub struct LayoutConfig {
     /// Default layout mode: `sidebar`, `topnav`, or `hero`.
     #[serde(default = "default_layout_mode")]
     pub mode: String,
+    /// Override the built-in content width (CSS value, e.g. `"900px"`,
+    /// `"80%"`, `"60ch"`). Controls the header, hero content, and sidebar
+    /// content text measure. When absent, the built-in defaults of 1200 px
+    /// (hero) / 820 px (sidebar) are used.
+    pub content_width: Option<String>,
 }
 
 fn default_layout_mode() -> String {
