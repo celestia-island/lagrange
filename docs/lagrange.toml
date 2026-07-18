@@ -3,6 +3,11 @@ title = "Lagrange"
 description = "A pest-based markdown documentation renderer"
 cname = "lagrange.docs.celestia.world"
 
+# [layout]
+# mode = "sidebar"
+# content_width = "80ch"          # constrain outer box width
+# content_padding = "clamp(16px, 3vw, 32px)"  # responsive gutters (mobile → desktop)
+
 [languages]
 default = "en"
 order = ["en", "zhs", "zht", "ja", "ko", "fr", "es", "ru", "ar"]
