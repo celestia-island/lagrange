@@ -4,6 +4,9 @@ on:
     tags: [v*]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 # Builds the `lagrange` binary for three targets and uploads tar.gz archives
 # to the GitHub Release. The archives are fetched at install time by
 # `create-lagrange` (npm) and are cargo-binstall compatible (the
