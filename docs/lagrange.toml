@@ -5,7 +5,8 @@ cname = "lagrange.docs.celestia.world"
 
 # [layout]
 # mode = "sidebar"
-# content_width = "900px"  # override built-in 1200 px / 820 px
+# content_width = "80ch"          # constrain outer box width
+# content_padding = "clamp(16px, 3vw, 32px)"  # responsive gutters (mobile → desktop)
 
 [languages]
 default = "en"

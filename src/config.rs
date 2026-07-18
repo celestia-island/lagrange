@@ -33,10 +33,21 @@ pub struct LayoutConfig {
     #[serde(default = "default_layout_mode")]
     pub mode: String,
     /// Override the built-in content width (CSS value, e.g. `"900px"`,
-    /// `"80%"`, `"60ch"`). Controls the header, hero content, and sidebar
-    /// content text measure. When absent, the built-in defaults of 1200 px
-    /// (hero) / 820 px (sidebar) are used.
+    /// `"80ch"`). Controls the header, hero content, and sidebar content
+    /// text measure. When absent, the built-in defaults of 1200 px (hero)
+    /// / 820 px (sidebar) are used.
+    ///
+    /// Note: `content_width` constrains the *outer* box width; use
+    /// `content_padding` to directly control the inline gutters instead
+    /// of (or alongside) a max-width bound.
     pub content_width: Option<String>,
+    /// Override the horizontal (inline) padding of the main content area
+    /// and header. Accepts any CSS length expression — fixed (`"2rem"`),
+    /// viewport-relative (`"3vw"`), or responsive (`"clamp(16px,3vw,32px)"`).
+    /// Only affects `padding-left` / `padding-right`; top and bottom
+    /// padding keep their built-in defaults. Works in both sidebar and
+    /// hero layout modes.
+    pub content_padding: Option<String>,
 }
 
 fn default_layout_mode() -> String {
