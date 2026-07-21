@@ -33,40 +33,12 @@ name = "lagrange"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "^1"
-clap = { version = "^4", features = ["derive"] }
-pest = "^2"
-pest_derive = "^2"
-# Build-time syntax highlighting for code blocks (syntect = pure Rust, no tree-sitter).
-syntect = { version = "^5", default-features = false, features = ["default-fancy"] }
-# Unified logging (matching the tairitsu/shirebe/kou ecosystem convention).
-tracing = "^0.1"
-tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
-chrono = "^0.4"
-# JSON for the embedded multi-language page data.
-serde = { version = "^1", features = ["derive"] }
-serde_json = "^1"
-toml = "^0.8"
-# Frontmatter parsing (YAML `---` blocks). TOML frontmatter reuses `toml`.
-serde_yaml = "^0.9"
 
+anyhow = "^1"
 # Dev server: axum + tower-http ServeDir for static file serving.
 axum = "^0.8"
-tokio = { version = "^1", features = ["net", "rt-multi-thread", "macros"] }
-tower-http = { version = "^0.6", features = ["fs"] }
-
-# Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
-# NOTE: floors require tairitsu 0.5.18 — the first release whose scss! macro
-# honours `no_hash`; older macros silently hashed (and corrupted) the global
-# layout stylesheet, stripping pages of nearly all styling.
-tairitsu-vdom = "^0.5.18"
-# tairitsu hooks runtime (needed by hikari components).
-tairitsu-hooks = "^0.5.18"
-# tairitsu macros (rsx!, component!, define_props — needed by hikari components).
-tairitsu-macros = "^0.5.18"
-# Theming: hikari color palette + icon system.
-hikari-palette = "^0.3"
-hikari-icons = { version = "^0.3", default-features = false }
+chrono = "^0.4"
+clap = { version = "^4", features = ["derive"] }
 # Hikari UI components (Card, CodeHighlight, Typography, etc.) — rendered via
 # tairitsu-vdom SSR at build time, same VNode→HTML path lagrange already uses.
 # Uses local path for dev; crates.io consumers get the published version.
@@ -74,15 +46,36 @@ hikari-icons = { version = "^0.3", default-features = false }
 hikari-components = "^0.3.13"
 # Hikari i18n — component UI string translations (copy/cancel/etc.)
 hikari-i18n = "^0.3"
-
+hikari-icons = { version = "^0.3", default-features = false }
+# Theming: hikari color palette + icon system.
+hikari-palette = "^0.3"
+pest = "^2"
+pest_derive = "^2"
+# JSON for the embedded multi-language page data.
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
+# Frontmatter parsing (YAML `---` blocks). TOML frontmatter reuses `toml`.
+serde_yaml = "^0.9"
+# Build-time syntax highlighting for code blocks (syntect = pure Rust, no tree-sitter).
+syntect = { version = "^5", default-features = false, features = ["default-fancy"] }
+# tairitsu hooks runtime (needed by hikari components).
+tairitsu-hooks = "^0.5.18"
+# tairitsu macros (rsx!, component!, define_props — needed by hikari components).
+tairitsu-macros = "^0.5.18"
+# Rendering IR: tairitsu virtual DOM (lightweight, server-side render-to-HTML).
+# NOTE: floors require tairitsu 0.5.18 — the first release whose scss! macro
+# honours `no_hash`; older macros silently hashed (and corrupted) the global
+# layout stylesheet, stripping pages of nearly all styling.
+tairitsu-vdom = "^0.5.18"
+tokio = { version = "^1", features = ["net", "rt-multi-thread", "macros"] }
+toml = "^0.8"
+tower-http = { version = "^0.6", features = ["fs"] }
+# Unified logging (matching the tairitsu/shirebe/kou ecosystem convention).
+tracing = "^0.1"
+tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
 [dev-dependencies]
-tempfile = "^3"
 
-# ── workspace ──────────────────────────────────────────────────────────────
-# The root package (this crate, `lagrange-library`) is a workspace member by
-# default. Sibling crates under `crates/` implement the comment backend and
-# migration facilities; they depend on `lagrange-protocol` for the wire format
-# and are published independently.
+tempfile = "^3"
 [workspace]
 members = [
     "packages/protocol",

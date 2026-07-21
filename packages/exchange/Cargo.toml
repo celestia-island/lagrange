@@ -11,20 +11,21 @@ keywords = ["migration", "wordpress", "hexo", "zola", "lagrange"]
 categories = ["command-line-utilities", "text-processing"]
 
 [dependencies]
+
+anyhow = "^1"
+chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
+# HTML → markdown for CMS imports whose body is HTML.
+htmd = "^0.1"
+# XML for WordPress WXR imports.
+quick-xml = { version = "^0.36", features = ["serialize"] }
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 serde_yaml = "^0.9"
 toml = "^0.8"
-# XML for WordPress WXR imports.
-quick-xml = { version = "^0.36", features = ["serialize"] }
-# HTML → markdown for CMS imports whose body is HTML.
-htmd = "^0.1"
-# Ids + time.
-ulid = { version = "^1", features = ["std"] }
-chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
 # Logging.
 tracing = "^0.1"
-anyhow = "^1"
-
+# Ids + time.
+ulid = { version = "^1", features = ["std"] }
 [dev-dependencies]
+
 tempfile = "^3"

@@ -11,33 +11,32 @@ keywords = ["comments", "storage", "sqlite", "lagrange", "adapter"]
 categories = ["web-programming", "database"]
 
 [dependencies]
+
 lagrange-protocol = { path = "../protocol", version = "^0.1" }
-serde = { version = "^1", features = ["derive"] }
-serde_json = "^1"
+
+chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
 # Markdown → sanitised HTML for comment bodies. Enable the `html` feature
 # explicitly (it's default-on upstream, but we opt out of defaults to stay lean).
 pulldown-cmark = { version = "^0.12", default-features = false, features = ["html"] }
-# Ids.
-ulid = { version = "^1", features = ["std"] }
-# Logging.
-tracing = "^0.1"
-chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
-
+# Proxy adapters — talk to third-party APIs (GitHub, Disqus) over HTTP. The
+# sync CommentService trait is bridged to async via a tokio block_on.
+reqwest = { version = "^0.12", optional = true, features = ["json", "blocking"] }
 # Optional storage backends. Each is feature-gated so a backend binary pulls
 # only what it needs (e.g. a CF Worker build never compiles rusqlite).
 # `bundled` compiles sqlite3 from source so the binary has zero external deps
 # (critical for cross-platform self-hosted deploys and CI without a system
 # sqlite3 dev package).
 rusqlite = { version = "^0.32", optional = true, features = ["bundled"] }
-
-# Proxy adapters — talk to third-party APIs (GitHub, Disqus) over HTTP. The
-# sync CommentService trait is bridged to async via a tokio block_on.
-reqwest = { version = "^0.12", optional = true, features = ["json", "blocking"] }
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
 tokio = { version = "^1", optional = true, features = ["rt"] }
-
+# Logging.
+tracing = "^0.1"
+# Ids.
+ulid = { version = "^1", features = ["std"] }
 [dev-dependencies]
-tempfile = "^3"
 
+tempfile = "^3"
 [features]
 default = ["memory", "sqlite"]
 # In-process store — always available; used by tests and tiny self-hosted
