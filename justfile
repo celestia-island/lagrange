@@ -36,6 +36,7 @@ fetch URL='':
 default:
     @just --list
 fmt:
+    just fmt-toml
     cargo fmt -p lagrange-library
 fmt-check:
     cargo fmt -p lagrange-library -- --check
