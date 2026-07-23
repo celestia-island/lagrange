@@ -18,7 +18,7 @@ toml = "^0.8"
 # XML for WordPress WXR imports.
 quick-xml = { version = "^0.36", features = ["serialize"] }
 # HTML → markdown for CMS imports whose body is HTML.
-htmd = "^0.1"
+htmd = "^0.5"
 # Ids + time.
 ulid = { version = "^1", features = ["std"] }
 chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
