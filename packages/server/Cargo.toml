@@ -31,7 +31,7 @@ tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
 # Lightweight local auth: argon2 hashing + JWT.
 argon2 = "^0.5"
 rand_core = { version = "^0.6", features = ["std"] }
-jsonwebtoken = "^9"
+jsonwebtoken = "^10"
 chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
 ulid = { version = "^1", features = ["std"] }
 # Interactive password entry for create-admin (optional but standard).
