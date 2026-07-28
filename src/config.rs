@@ -24,6 +24,22 @@ pub struct Config {
     /// Theme customisation (colour overrides for code blocks, etc.).
     #[serde(default)]
     pub theme: ThemeConfig,
+    /// Live preview server configuration (`[live]` in `lagrange.toml`).
+    /// When set, TSX blocks render as iframes pointing to this URL.
+    /// Rust blocks continue to use compile-time rendering.
+    #[serde(default)]
+    pub live: LiveConfig,
+}
+
+/// Live preview server configuration (`[live]` in `lagrange.toml`).
+#[derive(Deserialize, Default)]
+pub struct LiveConfig {
+    /// Base URL of the hikari dev server for TSX component previews.
+    /// Example: `"http://localhost:5173/demo"` — iframes will load
+    /// `{url}/?component=Button&variant=primary&...`.
+    /// Leave empty to show placeholder text instead.
+    #[serde(default)]
+    pub preview_url: Option<String>,
 }
 
 /// Layout behaviour configuration (`[layout]` in `lagrange.toml`).

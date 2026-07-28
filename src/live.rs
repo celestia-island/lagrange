@@ -31,7 +31,7 @@ pub fn collect_sources(blocks: &[Block]) -> Vec<String> {
 fn collect_sources_inner(blocks: &[Block], out: &mut Vec<String>) {
     for block in blocks {
         match block {
-            Block::LiveComponent { source } => out.push(source.clone()),
+            Block::LiveComponent { source, .. } => out.push(source.clone()),
             Block::Blockquote(inner) => collect_sources_inner(inner, out),
             Block::Center(inner) => collect_sources_inner(inner, out),
             Block::Div { children, .. } => collect_sources_inner(children, out),
@@ -205,7 +205,7 @@ fn main() {{
     )
 }
 
-fn short_hash(s: &str) -> String {
+pub fn short_hash(s: &str) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut h = DefaultHasher::new();
