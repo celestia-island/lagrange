@@ -15,8 +15,8 @@
 <div align="center">
 
 [English](../en/README.md) ·
-[简体中文](../zhs/README.md) ·
-[繁體中文](../zht/README.md) ·
+[简体中文](../zh-Hans/README.md) ·
+[繁體中文](../zh-Hant/README.md) ·
 [日本語](../ja/README.md) ·
 [한국어](../ko/README.md) ·
 **Français** ·
@@ -59,7 +59,7 @@ docs/
 │   ├── README.md      # becomes <site>/en/index.html
 │   ├── SUMMARY.md     # drives the sidebar
 │   └── guides/*.md
-└── zhs/ …             # one directory per language
+└── zh-Hans/ …             # one directory per language
 ```
 
 ```bash
