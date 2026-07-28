@@ -35,7 +35,7 @@ docs/
 │   ├── README.md        # -> ../../README.md (the repo landing page)
 │   ├── SUMMARY.md       # drives the sidebar
 │   └── guides/*.md
-├── zhs/
+├── zh-Hans/
 │   ├── README.md        # one translated landing page per language
 │   └── ...
 ```

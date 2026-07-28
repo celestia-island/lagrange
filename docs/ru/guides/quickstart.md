@@ -18,7 +18,7 @@ docs/
 │   ├── SUMMARY.md
 │   ├── index.md
 │   └── guides/quickstart.md
-├── zhs/
+├── zh-Hans/
 │   └── ...
 ```
 
