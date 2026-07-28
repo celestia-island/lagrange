@@ -4,6 +4,9 @@
 //! markdown AST node maps to one or more hikari components, producing
 //! consistent styled output across the entire documentation site.
 
+use std::path::Path;
+use std::fs;
+
 use hikari_components::basic::{
     Arrow, ArrowProps, Avatar, AvatarProps, Badge, BadgeProps, Button, ButtonProps, Card,
     CardContent, CardContentProps, CardHeader, CardHeaderProps, CardProps, Checkbox, CheckboxProps,
@@ -46,13 +49,15 @@ pub fn render_to_html(blocks: &[Block]) -> String {
 pub fn render_to_html_with_live(
     blocks: &[Block],
     live_html: &std::collections::HashMap<String, String>,
+    live_config: &crate::config::LiveConfig,
+    out_dir: &Path,
 ) -> String {
     // Render blocks directly — NO hikari layout wrapping. The document body
     // is a plain content flow; lagrange's own .content CSS controls width,
     // margins, and padding. Hikari layout components (Container/Grid/Row/Col/
     // Card) impose grid-column and max-width constraints that squeeze the
     // content into a narrow column — they're for app UI, not documentation.
-    let inner = render_blocks_with_live(blocks, live_html);
+    let inner = render_blocks_with_live(blocks, live_html, live_config, out_dir);
     inner.render_to_html()
 }
 
@@ -65,13 +70,44 @@ pub fn render_blocks(blocks: &[Block]) -> VNode {
 fn render_blocks_with_live(
     blocks: &[Block],
     live_html: &std::collections::HashMap<String, String>,
+    live_config: &crate::config::LiveConfig,
+    out_dir: &Path,
 ) -> VNode {
-    VNode::Fragment(
-        blocks
-            .iter()
-            .map(|b| render_block_with_live(b, live_html))
-            .collect(),
-    )
+    let mut out: Vec<VNode> = Vec::new();
+    let mut i = 0;
+    while i < blocks.len() {
+        let Block::LiveComponent { source, lang } = &blocks[i] else {
+            out.push(render_block_with_live(&blocks[i], live_html));
+            i += 1;
+            continue;
+        };
+        // Check if next block is also a LiveComponent with a different lang
+        let mut rust_src: Option<&str> = None;
+        let mut tsx_src: Option<&str> = None;
+        if lang.as_deref() == Some("rust") {
+            rust_src = Some(source.as_str());
+        } else if lang.as_deref() == Some("tsx") {
+            tsx_src = Some(source.as_str());
+        } else {
+            // Legacy: treat unlabeled as rust
+            rust_src = Some(source.as_str());
+        }
+        // Peek at next block
+        if i + 1 < blocks.len() {
+            if let Block::LiveComponent { source: next_src, lang: next_lang } = &blocks[i + 1] {
+                if next_lang.as_deref() == Some("tsx") && tsx_src.is_none() {
+                    tsx_src = Some(next_src.as_str());
+                    i += 1;
+                } else if next_lang.as_deref() == Some("rust") && rust_src.is_none() {
+                    rust_src = Some(next_src.as_str());
+                    i += 1;
+                }
+            }
+        }
+        out.push(render_live_pair(rust_src, tsx_src, live_html, live_config, out_dir));
+        i += 1;
+    }
+    VNode::Fragment(out)
 }
 
 fn render_block(b: &Block) -> VNode {
@@ -97,7 +133,7 @@ fn render_block_with_live(
             let lang_class = format!("language-{}", lang.as_deref().unwrap_or(""));
             el_pre_code(&lang_class, code)
         }
-        Block::LiveComponent { source } => render_live_block(source, live_html.get(source)),
+        Block::LiveComponent { source, .. } => render_live_block(source, live_html.get(source)),
         Block::Diagram { kind, source } => render_diagram_block(*kind, source),
         Block::List { ordered, items } => {
             let tag = if *ordered { "ol" } else { "ul" };
@@ -213,88 +249,145 @@ fn render_inline(i: &Inline) -> VNode {
 // ── live block rendering ──────────────────────────────────────────────────
 
 fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
+    render_live_pair(Some(source), None, &std::collections::HashMap::new(), &crate::config::LiveConfig::default(), Path::new(""))
+}
+
+fn render_live_pair(
+    rust_src: Option<&str>,
+    tsx_src: Option<&str>,
+    live_html: &std::collections::HashMap<String, String>,
+    live_config: &crate::config::LiveConfig,
+    out_dir: &Path,
+) -> VNode {
+    let has_rust = rust_src.is_some();
+    let has_tsx = tsx_src.is_some();
+
     let mut children = Vec::new();
 
-    // Tab bar.
+    // Language toggle row: Rust | TSX
     children.push(VNode::Element(Box::new(
-        el("div").attr("class", "lg-live-tabs").children(vec![
+        el("div").attr("class", "lg-live-langs").children(vec![
             VNode::Element(Box::new(
                 el("button")
-                    .attr("class", "lg-live-tab active")
-                    .attr("data-tab", "preview")
-                    .child(txt("Preview")),
+                    .attr("class", if has_tsx { "lg-live-lang" } else { "lg-live-lang active" })
+                    .attr("data-lang", "rust")
+                    .child(txt("Rust")),
             )),
             VNode::Element(Box::new(
                 el("button")
-                    .attr("class", "lg-live-tab")
-                    .attr("data-tab", "source")
-                    .child(txt("Source")),
+                    .attr("class", if has_tsx { "lg-live-lang active" } else { "lg-live-lang" })
+                    .attr("data-lang", "tsx")
+                    .child(txt("TSX")),
             )),
         ]),
     )));
 
-    // Preview pane: use Empty component for fallback, or a Card wrapping the HTML.
-    let preview_inner = if let Some(html) = rendered_html {
-        Card(CardProps {
-            children: VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "lg-live-preview-inner")
-                    .dangerous_inner_html(html),
-            )),
-            ..Default::default()
-        })
-    } else {
-        Empty(EmptyProps {
-            description: "(live preview unavailable)".to_string(),
-            ..Default::default()
-        })
-    };
+    // State toggle row: Preview | Source
     children.push(VNode::Element(Box::new(
-        el("div")
-            .attr("class", "lg-live-preview")
-            .child(preview_inner),
+        el("div").attr("class", "lg-live-tabs").children(vec![
+            VNode::Element(Box::new(el("button").attr("class", "lg-live-tab active").attr("data-tab", "preview").child(txt("Preview")))),
+            VNode::Element(Box::new(el("button").attr("class", "lg-live-tab").attr("data-tab", "source").child(txt("Source")))),
+        ]),
     )));
 
-    // Source pane — syntax-highlighted with line numbers, matching el_pre_code.
-    let highlighted_src = syntax_highlight(source, "rust");
-    let line_count = source.lines().count().max(1);
-    let line_num_nodes: Vec<VNode> = (1..=line_count)
-        .map(|i| {
-            VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "hi-code-highlight-line-number")
-                    .child(txt(&i.to_string())),
-            ))
-        })
-        .collect();
+    // Rust preview pane
+    let rust_html = rust_src.and_then(|s| live_html.get(s));
+    let rust_preview = if let Some(html) = rust_html {
+        Card(CardProps { children: VNode::Element(Box::new(el("div").attr("class", "lg-live-preview-inner").dangerous_inner_html(html))), ..Default::default() })
+    } else if has_rust {
+        Empty(EmptyProps { description: "(live preview unavailable)".to_string(), ..Default::default() })
+    } else {
+        Card(CardProps { children: VNode::Element(Box::new(el("div").attr("class", "lg-live-preview-inner").attr("style","display:flex;align-items:center;justify-content:center;min-height:80px;color:var(--fg-sec)").child(txt("No Rust source provided")))), ..Default::default() })
+    };
+    children.push(VNode::Element(Box::new(el("div").attr("class", "lg-live-preview").attr("data-lang-group", "rust").attr("style", if has_tsx { "display:none" } else { "" }).child(rust_preview))));
+
+    // TSX preview pane
+    let tsx_content = if let Some(src) = tsx_src {
+        let hash = crate::live::short_hash(src);
+        let demo_dir = out_dir.join("static").join("demo").join(&hash);
+        let _ = fs::create_dir_all(&demo_dir);
+        let doc = format!(
+            "<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{{margin:0;padding:1rem;font-family:system-ui;background:#0b1220;color:#cfe3ff}}{lcss}</style></head><body>{body}</body></html>",
+            lcss = crate::theme::build_css(&crate::config::ThemeConfig::default()),
+            body = src,
+        );
+        let _ = fs::write(demo_dir.join("index.html"), &doc);
+        let url = format!("/static/demo/{hash}/");
+        VNode::Element(Box::new(
+            el("iframe")
+                .attr("src", &url)
+                .attr("style", "width:100%;height:300px;border:none;border-radius:4px")
+                .attr("sandbox", "allow-scripts"),
+        ))
+    } else if has_tsx {
+        VNode::Element(Box::new(
+            el("div")
+                .attr("class", "lg-live-preview-inner")
+                .attr("style", "display:flex;align-items:center;justify-content:center;min-height:80px;color:var(--fg-sec)")
+                .child(txt("TSX preview — set [live] preview_url in lagrange.toml to enable")),
+        ))
+    } else {
+        VNode::Element(Box::new(
+            el("div")
+                .attr("class", "lg-live-preview-inner")
+                .attr("style", "display:flex;align-items:center;justify-content:center;min-height:80px;color:var(--fg-sec)")
+                .child(txt("Add a ```hikari:tsx block after ```hikari:rust to enable TSX preview")),
+        ))
+    };
     children.push(VNode::Element(Box::new(
-        el("div")
+        el("div").attr("class", "lg-live-preview").attr("data-lang-group", "tsx").attr("style", if has_tsx { "" } else { "display:none" })
+            .child(Card(CardProps { children: tsx_content, ..Default::default() }))
+    )));
+
+    // Source pane for Rust
+    if let Some(src) = rust_src {
+        let highlighted = syntax_highlight(src, "rust");
+        let lc = src.lines().count().max(1);
+        let nums: Vec<VNode> = (1..=lc)
+            .map(|i| {
+                VNode::Element(Box::new(
+                    el("div").attr("class", "hi-code-highlight-line-number").child(txt(&i.to_string())),
+                ))
+            })
+            .collect();
+        let source_div = el("div")
+            .attr("class", "hi-code-highlight-content")
+            .child(VNode::Element(Box::new(el("div").attr("class", "hi-code-highlight-line-numbers").children(nums))))
+            .child(VNode::Element(Box::new(el("pre").attr("class", "hi-code-highlight-code hi-scroll-container").child(VNode::Element(Box::new(el("code").attr("class", "language-rust").dangerous_inner_html(&highlighted)))))));
+        let wrapper = el("div")
             .attr("class", "hi-code-highlight")
             .attr("style", "display:none")
             .attr("data-lg-source", "")
-            .child(VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "hi-code-highlight-content")
-                    .child(VNode::Element(Box::new(
-                        el("div")
-                            .attr("class", "hi-code-highlight-line-numbers")
-                            .children(line_num_nodes),
-                    )))
-                    .child(VNode::Element(Box::new(
-                        el("pre")
-                            .attr("class", "hi-code-highlight-code hi-scroll-container")
-                            .child(VNode::Element(Box::new(
-                                el("code")
-                                    .attr("class", "language-rust")
-                                    .dangerous_inner_html(&highlighted_src),
-                            ))),
-                    ))),
-            ))),
-    )));
+            .attr("data-lang-group", "rust")
+            .child(VNode::Element(Box::new(source_div)));
+        children.push(VNode::Element(Box::new(wrapper)));
+    }
 
-    VNode::Element(Box::new(
-        el("div").attr("class", "lg-live-block").children(children),
-    ))
+    // Source pane for TSX
+    if let Some(src) = tsx_src {
+        let highlighted = syntax_highlight(src, "tsx");
+        let lc = src.lines().count().max(1);
+        let nums: Vec<VNode> = (1..=lc)
+            .map(|i| {
+                VNode::Element(Box::new(
+                    el("div").attr("class", "hi-code-highlight-line-number").child(txt(&i.to_string())),
+                ))
+            })
+            .collect();
+        let source_div = el("div")
+            .attr("class", "hi-code-highlight-content")
+            .child(VNode::Element(Box::new(el("div").attr("class", "hi-code-highlight-line-numbers").children(nums))))
+            .child(VNode::Element(Box::new(el("pre").attr("class", "hi-code-highlight-code hi-scroll-container").child(VNode::Element(Box::new(el("code").attr("class", "language-tsx").dangerous_inner_html(&highlighted)))))));
+        let wrapper = el("div")
+            .attr("class", "hi-code-highlight")
+            .attr("style", "display:none")
+            .attr("data-lg-source", "")
+            .attr("data-lang-group", "tsx")
+            .child(VNode::Element(Box::new(source_div)));
+        children.push(VNode::Element(Box::new(wrapper)));
+    }
+
+    VNode::Element(Box::new(el("div").attr("class","lg-live-block").children(children)))
 }
 
 // ── diagram block rendering (mermaid / math) ──────────────────────────────
