@@ -60,6 +60,15 @@ pub struct MultiPage {
     pub page_path: String, // e.g. "index.html", "guides/quickstart.html"
 }
 
+/// A node in the sidebar navigation tree.
+#[derive(Debug, Clone)]
+struct NavNode {
+    title: String,
+    href: String,
+    collapsed: bool,
+    children: Vec<NavNode>,
+}
+
 /// Build the whole site.
 pub fn build(opts: &BuildOptions) -> Result<()> {
     let t0 = Instant::now();
@@ -178,7 +187,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             let (_fm_kind, fm, body_src) = frontmatter::strip(&source);
             let blocks = markdown::parse(body_src);
             // Render with live component HTML if any were pre-compiled.
-            let body_raw = render::render_to_html_with_live(&blocks, &live_html);
+            let body_raw = render::render_to_html_with_live(&blocks, &live_html, &config.live, &opts.out);
             // Title: explicit frontmatter wins, else first heading, else default.
             let title = fm
                 .title
@@ -200,15 +209,49 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             let sidebar_html = if nav.is_empty() {
                 String::new()
             } else {
-                let items: String = nav
-                    .iter()
-                    .map(|(t, href)| {
-                        let abs = absolute_href(href, lang);
-                        format!("<li><a href=\"{abs}\">{t}</a></li>")
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("<h2>Contents</h2><ul>\n{items}\n</ul>")
+                fn render_nav(nodes: &[NavNode], lang: &str) -> String {
+                    if nodes.is_empty() {
+                        return String::new();
+                    }
+                    let mut html = String::from("<ul>");
+                    for node in nodes {
+                        let has_kids = !node.children.is_empty();
+                        let is_section = node.href.is_empty();
+                        if has_kids {
+                            html.push_str("<li class=\"lg-nav-section\">");
+                            if is_section {
+                                html.push_str(&format!(
+                                    "<details open><summary><span class=\"lg-nav-section-title\">{}</span></summary>",
+                                    html_escape_text(&node.title)
+                                ));
+                            } else {
+                                let abs = absolute_href(&node.href, lang);
+                                html.push_str(&format!(
+                                    "<details open><summary><a href=\"{abs}\">{}</a></summary>",
+                                    html_escape_text(&node.title)
+                                ));
+                            }
+                            html.push_str(&render_nav(&node.children, lang));
+                            html.push_str("</details></li>");
+                        } else {
+                            let abs = absolute_href(&node.href, lang);
+                            if is_section {
+                                html.push_str(&format!(
+                                    "<li><span class=\"lg-nav-section-title\">{}</span></li>",
+                                    html_escape_text(&node.title)
+                                ));
+                            } else {
+                                html.push_str(&format!(
+                                    "<li><a href=\"{abs}\">{}</a></li>",
+                                    html_escape_text(&node.title)
+                                ));
+                            }
+                        }
+                    }
+                    html.push_str("</ul>");
+                    html
+                }
+                format!("<h2>Contents</h2>{}", render_nav(&nav, lang))
             };
 
             // Rewrite asset paths (logo from README `docs/logo.webp`).
@@ -452,9 +495,22 @@ fn live_block_js() -> String {
     );
     let suffix = r##"<script>
 (function(){
- /* ── live block tab toggling (preview ↔ source) — delegated so tabs keep
-    working after the language switcher replaces #lg-body ── */
+ /* ── live block tab toggling (language + preview/source) — delegated so
+    tabs keep working after the language switcher replaces #lg-body ── */
  document.addEventListener('click',function(e){
+  /* Language toggle: Rust vs TSX */
+  var lang=e.target&&e.target.closest?e.target.closest('.lg-live-lang'):null;
+  if(lang){
+   var block=lang.closest('.lg-live-block');if(!block)return;
+   var sel=lang.getAttribute('data-lang');
+   var langs=block.querySelectorAll('.lg-live-lang');
+   for(var i=0;i<langs.length;i++)langs[i].classList.remove('active');
+   lang.classList.add('active');
+   var previews=block.querySelectorAll('.lg-live-preview');
+   for(var i=0;i<previews.length;i++)previews[i].style.display=previews[i].getAttribute('data-lang-group')===sel?'':'none';
+   return;
+  }
+  /* State toggle: Preview vs Source */
   var tab=e.target&&e.target.closest?e.target.closest('.lg-live-tab'):null;
   if(!tab)return;
   var block=tab.closest('.lg-live-block');if(!block)return;
@@ -462,10 +518,11 @@ fn live_block_js() -> String {
   for(var i=0;i<tabs.length;i++)tabs[i].classList.remove('active');
   tab.classList.add('active');
   var isSource=tab.getAttribute('data-tab')==='source';
-  var preview=block.querySelector('.lg-live-preview');
-  var source=block.querySelector('[data-lg-source]');
-  if(preview)preview.style.display=isSource?'none':'';
-  if(source)source.style.display=isSource?'block':'none';
+  var sel=(block.querySelector('.lg-live-lang.active')||{}).getAttribute('data-lang')||'tsx';
+  var previews=block.querySelectorAll('.lg-live-preview');
+  for(var i=0;i<previews.length;i++)previews[i].style.display=isSource?'none':previews[i].getAttribute('data-lang-group')===sel?'':'none';
+  var sources=block.querySelectorAll('[data-lg-source]');
+  for(var i=0;i<sources.length;i++)sources[i].style.display=isSource&&sources[i].getAttribute('data-lang-group')===sel?'':'none';
  });
 })();
 </script>"##;
@@ -489,9 +546,9 @@ fn lagrange_js() -> String {
 const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
 (function(){
  var D=JSON.parse(document.getElementById('lg-data').textContent);
- var N={"ar":"العربية","en":"English","es":"Español","fr":"Français","ja":"日本語","ko":"한국어","ru":"Русский","zhs":"简体中文","zht":"繁體中文"};
+ var N={"ar":"العربية","en":"English","es":"Español","fr":"Français","ja":"日本語","ko":"한국어","ru":"Русский","zh-Hans":"简体中文","zh-Hant":"繁體中文"};
  var DL='en',CUR='en';
- var BL={'zh':'zhs','zh-CN':'zhs','zh-Hans':'zhs','zh-TW':'zht','zh-Hant':'zht','zh-HK':'zht'};
+ var BL={'zh':'zh-Hans','zh-CN':'zh-Hans','zh-Hans':'zh-Hans','zh-TW':'zh-Hant','zh-Hant':'zh-Hant','zh-HK':'zh-Hant'};
  function gL(){var q=new URLSearchParams(location.search).get('lang');if(q&&D[q])return q;var s=localStorage['lagrange-lang'];if(s&&D[s])return s;var bl=navigator.language||'';if(BL[bl])return BL[bl];var sh=bl.split('-')[0];if(BL[sh])return BL[sh];return D[sh]?sh:DL}
  function sL(l){if(!D[l])l=DL;CUR=l;localStorage['lagrange-lang']=l;var u=new URL(location);u.searchParams.set('lang',l);history.replaceState(null,'',u);rL(l)}
  function rL(l){
@@ -701,34 +758,96 @@ fn collect_text(inlines: &[markdown::Inline]) -> String {
 
 // ── file-system walkers ───────────────────────────────────────────────────
 
-fn parse_summary(path: &Path) -> Result<Vec<(String, String)>> {
+fn parse_summary(path: &Path) -> Result<Vec<NavNode>> {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(_) => return Ok(Vec::new()),
     };
-    let mut entries = Vec::new();
+    let mut roots: Vec<NavNode> = Vec::new();
+    let mut current_section: Option<NavNode> = None;
+    let mut section_depth = 0;
+
     for line in source.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed == "---" {
+        if trimmed.is_empty() || trimmed == "---" {
             continue;
         }
-        let body = trimmed.trim_start_matches('-').trim_start();
-        let Some(open) = body.find('[') else { continue };
-        let Some(rel_close) = body[open..].find(']') else {
+        // # Section header — start a new section group
+        if trimmed.starts_with('#') && !trimmed.starts_with("##") {
+            if let Some(section) = current_section.take() {
+                roots.push(section);
+            }
+            let title = trimmed.trim_start_matches('#').trim().to_string();
+            current_section = Some(NavNode {
+                title,
+                href: String::new(),
+                collapsed: false,
+                children: Vec::new(),
+            });
+            section_depth = 0;
             continue;
-        };
+        }
+        // ## Sub-section within a section
+        if trimmed.starts_with("##") {
+            let title = trimmed.trim_start_matches('#').trim().to_string();
+            let sub = NavNode {
+                title,
+                href: String::new(),
+                collapsed: false,
+                children: Vec::new(),
+            };
+            if let Some(ref mut sec) = current_section {
+                sec.children.push(sub);
+                section_depth = 1;
+            }
+            continue;
+        }
+        // Parse - [Title](url) or * [Title](url)
+        let indent = line.len() - trimmed.len();
+        let body = trimmed
+            .trim_start_matches('-')
+            .trim_start_matches('*')
+            .trim_start();
+        let Some(open) = body.find('[') else { continue };
+        let Some(rel_close) = body[open..].find(']') else { continue };
         let close = open + rel_close;
         let title = &body[open + 1..close];
         let rest = &body[close + 1..];
         let Some(lp) = rest.find('(') else { continue };
-        let Some(rp_rel) = rest[lp..].find(')') else {
-            continue;
-        };
+        let Some(rp_rel) = rest[lp..].find(')') else { continue };
         let rp = lp + rp_rel;
         let url = &rest[lp + 1..rp];
-        entries.push((title.to_string(), rewrite_nav_link(url)));
+
+        let node = NavNode {
+            title: title.to_string(),
+            href: rewrite_nav_link(url),
+            collapsed: false,
+            children: Vec::new(),
+        };
+
+        // Place under current section, respecting indentation
+        let effective_depth = if section_depth > 0 { section_depth + 1 } else { 1 };
+        // For top-level items (no current section), add to roots
+        if current_section.is_none() {
+            roots.push(node);
+        } else {
+            let section = current_section.as_mut().unwrap();
+            if section_depth > 0 {
+                // Place under the last ## sub-section
+                if let Some(sub) = section.children.last_mut() {
+                    sub.children.push(node);
+                } else {
+                    section.children.push(node);
+                }
+            } else {
+                section.children.push(node);
+            }
+        }
     }
-    Ok(entries)
+    if let Some(section) = current_section.take() {
+        roots.push(section);
+    }
+    Ok(roots)
 }
 
 fn rewrite_nav_link(url: &str) -> String {

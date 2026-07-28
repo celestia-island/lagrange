@@ -107,7 +107,11 @@ fn parse_fenced_code(lines: &[&str], i: usize) -> Option<(Block, usize)> {
 fn route_special_fence(info: &str, code: &str) -> Option<Block> {
     let source = || code.trim_end().to_string();
     match info {
-        "hikari" => Some(Block::LiveComponent { source: source() }),
+        "hikari" => Some(Block::LiveComponent { source: source(), lang: None }),
+        s if s.starts_with("hikari:") => {
+            let lang = s.strip_prefix("hikari:").unwrap().to_string();
+            Some(Block::LiveComponent { source: source(), lang: Some(lang) })
+        }
         "mermaid" => Some(Block::Diagram {
             kind: crate::markdown::ast::DiagramKind::Mermaid,
             source: source(),
