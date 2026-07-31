@@ -1,0 +1,12 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+overrides:
+  typescript: ~6.0
+
+importers:
+
+  .: {}
