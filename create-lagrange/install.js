@@ -9,7 +9,6 @@
 const { createWriteStream, existsSync, mkdirSync } = require("fs");
 const { pipeline } = require("stream/promises");
 const { createGunzip } = require("zlib");
-const { extract } = require("tar");
 const path = require("path");
 
 // --- platform → Rust target + archive suffix ---
@@ -83,6 +82,7 @@ async function main() {
 
     if (ext === "tar.gz") {
       // tar.gz: gunzip → untar → extract just the binary
+      const { extract } = require("tar");
       await pipeline(
         resp.body,
         createGunzip(),
