@@ -120,6 +120,21 @@ Framework preset **Other**, build command
 [`vercel-rust`](https://github.com/vercel-community/rust) runtime builder, or
 build in a prior CI step and deploy the static output.)
 
+## Releases
+
+### npm
+
+The `create-lagrange` scaffolder is published to npm and invoked with:
+
+```bash
+npm create lagrange
+```
+
+It downloads the prebuilt `lagrange` binary for your platform from the latest
+GitHub Release and runs `lagrange init`. Publishing to npm is triggered by
+pushing an `npm-v*` tag (e.g. `npm-v0.1.1`); plain `v*` tags drive the binary
+archives (`release.yml`) and the crates.io crate (`publish.yml`).
+
 ## Features
 
 - **pest-based markdown parser** — block + inline, modelled on
