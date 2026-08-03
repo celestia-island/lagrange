@@ -1,12 +1,26 @@
 name: npm Release (create-lagrange)
 
-# Publishes the `create-lagrange` scaffolding package to npm on version tags
-# (the prebuilt `lagrange` binary archive is uploaded to the GitHub Release by
-# release.yml; create-lagrange fetches it at install time).
+# Publishes the `create-lagrange` scaffolder to npm using OIDC Trusted
+# Publishing (id-token: write + --provenance), so the registry can verify the
+# provenance chain back to this repository without a stored token.
+#
+# The package has no dependencies of its own: `npm install` only runs the
+# postinstall binary fetcher (non-fatal if the network is unavailable), and
+# the downloaded binary is excluded from the tarball via the `files`
+# whitelist.
+#
+# Tag convention: crates and binary archives release on plain `v*` tags
+# (publish.yml, release.yml); the npm package releases on `npm-v*` tags so
+# the two version streams never collide.
+
 on:
   push:
-    tags: ["v*"]
+    tags: ["npm-v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.1.1), without leading v; falls back to the tag name"
+        required: false
 
 permissions:
   contents: read
@@ -18,17 +32,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
           registry-url: https://registry.npmjs.org/
-      - name: Align version with the tag
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            v="${{ github.event.inputs.version }}"
+          else
+            v="${GITHUB_REF_NAME#npm-v}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Publishing create-lagrange@$v"
+
+      - name: Install dependencies
         run: |
           cd create-lagrange
-          node -e "const p=require('./package.json'); p.version=process.env.GITHUB_REF_NAME.replace(/^v/,''); require('fs').writeFileSync('./package.json', JSON.stringify(p, null, 2) + '\n')"
-          git diff --stat
+          npm install
+
+      - name: Bump version
+        run: |
+          cd create-lagrange
+          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+
       - name: Publish
-        run: npm publish --access public --provenance
-        working-directory: create-lagrange
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd create-lagrange
+          npm publish --access public --provenance
