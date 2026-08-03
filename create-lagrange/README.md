@@ -1,9 +1,9 @@
-# create-lagrange
+# @celestia-island/create-lagrange
 
 Scaffold a new [lagrange](https://github.com/celestia-island/lagrange) documentation site with one command.
 
 ```bash
-npx create-lagrange my-docs
+npx @celestia-island/create-lagrange my-docs
 ```
 
 This downloads the prebuilt `lagrange` binary from GitHub Releases (no Rust toolchain needed) and runs `lagrange init` in the target directory, generating `lagrange.toml` + `docs/en/` skeleton.
@@ -12,13 +12,13 @@ This downloads the prebuilt `lagrange` binary from GitHub Releases (no Rust tool
 
 ```bash
 # Basic — creates ./my-docs with defaults
-npx create-lagrange my-docs
+npx @celestia-island/create-lagrange my-docs
 
 # With a title and native comments
-npx create-lagrange my-docs --title "My Project" --comments native
+npx @celestia-island/create-lagrange my-docs --title "My Project" --comments native
 
 # GitHub Discussions comments
-npx create-lagrange my-docs --comments github-discussions
+npx @celestia-island/create-lagrange my-docs --comments github-discussions
 ```
 
 Then:
