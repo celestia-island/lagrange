@@ -15,7 +15,10 @@ pub enum Block {
     /// A ```` ```hikari ```` code block — a live hikari component snippet.
     /// At build time lagrange compiles and executes this `rsx!{...}` expression
     /// to produce rendered HTML, displayed in a preview/source-toggle card.
-    LiveComponent { source: String, lang: Option<String> },
+    LiveComponent {
+        source: String,
+        lang: Option<String>,
+    },
     /// A ```` ```mermaid ```` / ```` ```math ```` (alias `latex`/`katex`)
     /// fenced block — rendered client-side by the vendored mermaid.js /
     /// KaTeX runtime into the preview pane of a demo block, with the source

@@ -107,10 +107,16 @@ fn parse_fenced_code(lines: &[&str], i: usize) -> Option<(Block, usize)> {
 fn route_special_fence(info: &str, code: &str) -> Option<Block> {
     let source = || code.trim_end().to_string();
     match info {
-        "hikari" => Some(Block::LiveComponent { source: source(), lang: None }),
+        "hikari" => Some(Block::LiveComponent {
+            source: source(),
+            lang: None,
+        }),
         s if s.starts_with("hikari:") => {
             let lang = s.strip_prefix("hikari:").unwrap().to_string();
-            Some(Block::LiveComponent { source: source(), lang: Some(lang) })
+            Some(Block::LiveComponent {
+                source: source(),
+                lang: Some(lang),
+            })
         }
         "mermaid" => Some(Block::Diagram {
             kind: crate::markdown::ast::DiagramKind::Mermaid,
@@ -276,9 +282,7 @@ fn parse_center_container(lines: &[&str], i: usize) -> Option<(Block, usize)> {
     if !trimmed.starts_with("<div") {
         return None;
     }
-    let Some(gt) = trimmed.find('>') else {
-        return None;
-    };
+    let gt = trimmed.find('>')?;
 
     let attrs = trimmed[4..gt].trim().to_string();
 
