@@ -65,7 +65,6 @@ pub struct MultiPage {
 struct NavNode {
     title: String,
     href: String,
-    collapsed: bool,
     children: Vec<NavNode>,
 }
 
@@ -187,7 +186,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             let (_fm_kind, fm, body_src) = frontmatter::strip(&source);
             let blocks = markdown::parse(body_src);
             // Render with live component HTML if any were pre-compiled.
-            let body_raw = render::render_to_html_with_live(&blocks, &live_html, &config.live, &opts.out);
+            let body_raw =
+                render::render_to_html_with_live(&blocks, &live_html, &config.live, &opts.out);
             // Title: explicit frontmatter wins, else first heading, else default.
             let title = fm
                 .title
@@ -357,6 +357,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn write_multi_page(
     out: &Path,
     mp: &MultiPage,
@@ -781,7 +782,6 @@ fn parse_summary(path: &Path) -> Result<Vec<NavNode>> {
             current_section = Some(NavNode {
                 title,
                 href: String::new(),
-                collapsed: false,
                 children: Vec::new(),
             });
             section_depth = 0;
@@ -793,7 +793,6 @@ fn parse_summary(path: &Path) -> Result<Vec<NavNode>> {
             let sub = NavNode {
                 title,
                 href: String::new(),
-                collapsed: false,
                 children: Vec::new(),
             };
             if let Some(ref mut sec) = current_section {
@@ -803,35 +802,32 @@ fn parse_summary(path: &Path) -> Result<Vec<NavNode>> {
             continue;
         }
         // Parse - [Title](url) or * [Title](url)
-        let indent = line.len() - trimmed.len();
         let body = trimmed
             .trim_start_matches('-')
             .trim_start_matches('*')
             .trim_start();
         let Some(open) = body.find('[') else { continue };
-        let Some(rel_close) = body[open..].find(']') else { continue };
+        let Some(rel_close) = body[open..].find(']') else {
+            continue;
+        };
         let close = open + rel_close;
         let title = &body[open + 1..close];
         let rest = &body[close + 1..];
         let Some(lp) = rest.find('(') else { continue };
-        let Some(rp_rel) = rest[lp..].find(')') else { continue };
+        let Some(rp_rel) = rest[lp..].find(')') else {
+            continue;
+        };
         let rp = lp + rp_rel;
         let url = &rest[lp + 1..rp];
 
         let node = NavNode {
             title: title.to_string(),
             href: rewrite_nav_link(url),
-            collapsed: false,
             children: Vec::new(),
         };
 
-        // Place under current section, respecting indentation
-        let effective_depth = if section_depth > 0 { section_depth + 1 } else { 1 };
         // For top-level items (no current section), add to roots
-        if current_section.is_none() {
-            roots.push(node);
-        } else {
-            let section = current_section.as_mut().unwrap();
+        if let Some(section) = current_section.as_mut() {
             if section_depth > 0 {
                 // Place under the last ## sub-section
                 if let Some(sub) = section.children.last_mut() {
@@ -842,6 +838,8 @@ fn parse_summary(path: &Path) -> Result<Vec<NavNode>> {
             } else {
                 section.children.push(node);
             }
+        } else {
+            roots.push(node);
         }
     }
     if let Some(section) = current_section.take() {
