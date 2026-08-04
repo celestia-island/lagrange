@@ -4,8 +4,8 @@
 //! markdown AST node maps to one or more hikari components, producing
 //! consistent styled output across the entire documentation site.
 
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 use hikari_components::basic::{
     Arrow, ArrowProps, Avatar, AvatarProps, Badge, BadgeProps, Button, ButtonProps, Card,
@@ -94,7 +94,11 @@ fn render_blocks_with_live(
         }
         // Peek at next block
         if i + 1 < blocks.len() {
-            if let Block::LiveComponent { source: next_src, lang: next_lang } = &blocks[i + 1] {
+            if let Block::LiveComponent {
+                source: next_src,
+                lang: next_lang,
+            } = &blocks[i + 1]
+            {
                 if next_lang.as_deref() == Some("tsx") && tsx_src.is_none() {
                     tsx_src = Some(next_src.as_str());
                     i += 1;
@@ -104,7 +108,13 @@ fn render_blocks_with_live(
                 }
             }
         }
-        out.push(render_live_pair(rust_src, tsx_src, live_html, live_config, out_dir));
+        out.push(render_live_pair(
+            rust_src,
+            tsx_src,
+            live_html,
+            live_config,
+            out_dir,
+        ));
         i += 1;
     }
     VNode::Fragment(out)
@@ -193,7 +203,7 @@ fn render_block_with_live(
                 .children(vec![render_blocks(inner)]),
         )),
         Block::Div { attrs, children } => {
-            let style = extract_style_attr(&attrs);
+            let style = extract_style_attr(attrs);
             let mut d = el("div");
             if let Some(s) = style {
                 d = d.attr("style", &s);
@@ -249,14 +259,23 @@ fn render_inline(i: &Inline) -> VNode {
 // ── live block rendering ──────────────────────────────────────────────────
 
 fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
-    render_live_pair(Some(source), None, &std::collections::HashMap::new(), &crate::config::LiveConfig::default(), Path::new(""))
+    let live_html = rendered_html
+        .map(|html| std::collections::HashMap::from([(source.to_string(), html.clone())]))
+        .unwrap_or_default();
+    render_live_pair(
+        Some(source),
+        None,
+        &live_html,
+        &crate::config::LiveConfig::default(),
+        Path::new(""),
+    )
 }
 
 fn render_live_pair(
     rust_src: Option<&str>,
     tsx_src: Option<&str>,
     live_html: &std::collections::HashMap<String, String>,
-    live_config: &crate::config::LiveConfig,
+    _live_config: &crate::config::LiveConfig,
     out_dir: &Path,
 ) -> VNode {
     let has_rust = rust_src.is_some();
@@ -269,13 +288,27 @@ fn render_live_pair(
         el("div").attr("class", "lg-live-langs").children(vec![
             VNode::Element(Box::new(
                 el("button")
-                    .attr("class", if has_tsx { "lg-live-lang" } else { "lg-live-lang active" })
+                    .attr(
+                        "class",
+                        if has_tsx {
+                            "lg-live-lang"
+                        } else {
+                            "lg-live-lang active"
+                        },
+                    )
                     .attr("data-lang", "rust")
                     .child(txt("Rust")),
             )),
             VNode::Element(Box::new(
                 el("button")
-                    .attr("class", if has_tsx { "lg-live-lang active" } else { "lg-live-lang" })
+                    .attr(
+                        "class",
+                        if has_tsx {
+                            "lg-live-lang active"
+                        } else {
+                            "lg-live-lang"
+                        },
+                    )
                     .attr("data-lang", "tsx")
                     .child(txt("TSX")),
             )),
@@ -285,21 +318,47 @@ fn render_live_pair(
     // State toggle row: Preview | Source
     children.push(VNode::Element(Box::new(
         el("div").attr("class", "lg-live-tabs").children(vec![
-            VNode::Element(Box::new(el("button").attr("class", "lg-live-tab active").attr("data-tab", "preview").child(txt("Preview")))),
-            VNode::Element(Box::new(el("button").attr("class", "lg-live-tab").attr("data-tab", "source").child(txt("Source")))),
+            VNode::Element(Box::new(
+                el("button")
+                    .attr("class", "lg-live-tab active")
+                    .attr("data-tab", "preview")
+                    .child(txt("Preview")),
+            )),
+            VNode::Element(Box::new(
+                el("button")
+                    .attr("class", "lg-live-tab")
+                    .attr("data-tab", "source")
+                    .child(txt("Source")),
+            )),
         ]),
     )));
 
     // Rust preview pane
     let rust_html = rust_src.and_then(|s| live_html.get(s));
     let rust_preview = if let Some(html) = rust_html {
-        Card(CardProps { children: VNode::Element(Box::new(el("div").attr("class", "lg-live-preview-inner").dangerous_inner_html(html))), ..Default::default() })
+        Card(CardProps {
+            children: VNode::Element(Box::new(
+                el("div")
+                    .attr("class", "lg-live-preview-inner")
+                    .dangerous_inner_html(html),
+            )),
+            ..Default::default()
+        })
     } else if has_rust {
-        Empty(EmptyProps { description: "(live preview unavailable)".to_string(), ..Default::default() })
+        Empty(EmptyProps {
+            description: "(live preview unavailable)".to_string(),
+            ..Default::default()
+        })
     } else {
         Card(CardProps { children: VNode::Element(Box::new(el("div").attr("class", "lg-live-preview-inner").attr("style","display:flex;align-items:center;justify-content:center;min-height:80px;color:var(--fg-sec)").child(txt("No Rust source provided")))), ..Default::default() })
     };
-    children.push(VNode::Element(Box::new(el("div").attr("class", "lg-live-preview").attr("data-lang-group", "rust").attr("style", if has_tsx { "display:none" } else { "" }).child(rust_preview))));
+    children.push(VNode::Element(Box::new(
+        el("div")
+            .attr("class", "lg-live-preview")
+            .attr("data-lang-group", "rust")
+            .attr("style", if has_tsx { "display:none" } else { "" })
+            .child(rust_preview),
+    )));
 
     // TSX preview pane
     let tsx_content = if let Some(src) = tsx_src {
@@ -316,7 +375,10 @@ fn render_live_pair(
         VNode::Element(Box::new(
             el("iframe")
                 .attr("src", &url)
-                .attr("style", "width:100%;height:300px;border:none;border-radius:4px")
+                .attr(
+                    "style",
+                    "width:100%;height:300px;border:none;border-radius:4px",
+                )
                 .attr("sandbox", "allow-scripts"),
         ))
     } else if has_tsx {
@@ -335,8 +397,14 @@ fn render_live_pair(
         ))
     };
     children.push(VNode::Element(Box::new(
-        el("div").attr("class", "lg-live-preview").attr("data-lang-group", "tsx").attr("style", if has_tsx { "" } else { "display:none" })
-            .child(Card(CardProps { children: tsx_content, ..Default::default() }))
+        el("div")
+            .attr("class", "lg-live-preview")
+            .attr("data-lang-group", "tsx")
+            .attr("style", if has_tsx { "" } else { "display:none" })
+            .child(Card(CardProps {
+                children: tsx_content,
+                ..Default::default()
+            })),
     )));
 
     // Source pane for Rust
@@ -346,14 +414,28 @@ fn render_live_pair(
         let nums: Vec<VNode> = (1..=lc)
             .map(|i| {
                 VNode::Element(Box::new(
-                    el("div").attr("class", "hi-code-highlight-line-number").child(txt(&i.to_string())),
+                    el("div")
+                        .attr("class", "hi-code-highlight-line-number")
+                        .child(txt(&i.to_string())),
                 ))
             })
             .collect();
         let source_div = el("div")
             .attr("class", "hi-code-highlight-content")
-            .child(VNode::Element(Box::new(el("div").attr("class", "hi-code-highlight-line-numbers").children(nums))))
-            .child(VNode::Element(Box::new(el("pre").attr("class", "hi-code-highlight-code hi-scroll-container").child(VNode::Element(Box::new(el("code").attr("class", "language-rust").dangerous_inner_html(&highlighted)))))));
+            .child(VNode::Element(Box::new(
+                el("div")
+                    .attr("class", "hi-code-highlight-line-numbers")
+                    .children(nums),
+            )))
+            .child(VNode::Element(Box::new(
+                el("pre")
+                    .attr("class", "hi-code-highlight-code hi-scroll-container")
+                    .child(VNode::Element(Box::new(
+                        el("code")
+                            .attr("class", "language-rust")
+                            .dangerous_inner_html(&highlighted),
+                    ))),
+            )));
         let wrapper = el("div")
             .attr("class", "hi-code-highlight")
             .attr("style", "display:none")
@@ -370,14 +452,28 @@ fn render_live_pair(
         let nums: Vec<VNode> = (1..=lc)
             .map(|i| {
                 VNode::Element(Box::new(
-                    el("div").attr("class", "hi-code-highlight-line-number").child(txt(&i.to_string())),
+                    el("div")
+                        .attr("class", "hi-code-highlight-line-number")
+                        .child(txt(&i.to_string())),
                 ))
             })
             .collect();
         let source_div = el("div")
             .attr("class", "hi-code-highlight-content")
-            .child(VNode::Element(Box::new(el("div").attr("class", "hi-code-highlight-line-numbers").children(nums))))
-            .child(VNode::Element(Box::new(el("pre").attr("class", "hi-code-highlight-code hi-scroll-container").child(VNode::Element(Box::new(el("code").attr("class", "language-tsx").dangerous_inner_html(&highlighted)))))));
+            .child(VNode::Element(Box::new(
+                el("div")
+                    .attr("class", "hi-code-highlight-line-numbers")
+                    .children(nums),
+            )))
+            .child(VNode::Element(Box::new(
+                el("pre")
+                    .attr("class", "hi-code-highlight-code hi-scroll-container")
+                    .child(VNode::Element(Box::new(
+                        el("code")
+                            .attr("class", "language-tsx")
+                            .dangerous_inner_html(&highlighted),
+                    ))),
+            )));
         let wrapper = el("div")
             .attr("class", "hi-code-highlight")
             .attr("style", "display:none")
@@ -387,7 +483,9 @@ fn render_live_pair(
         children.push(VNode::Element(Box::new(wrapper)));
     }
 
-    VNode::Element(Box::new(el("div").attr("class","lg-live-block").children(children)))
+    VNode::Element(Box::new(
+        el("div").attr("class", "lg-live-block").children(children),
+    ))
 }
 
 // ── diagram block rendering (mermaid / math) ──────────────────────────────
