@@ -20,7 +20,7 @@ quick-xml = { version = "^0.41", features = ["serialize"] }
 # HTML → markdown for CMS imports whose body is HTML.
 htmd = "^0.5"
 # Ids + time.
-ulid = { version = "^1", features = ["std"] }
+ulid = { version = "^3", features = ["std"] }
 chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
 # Logging.
 tracing = "^0.1"

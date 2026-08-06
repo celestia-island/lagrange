@@ -92,7 +92,7 @@ fn resolve_secret(secret: Option<String>) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(32);
     for _ in 0..2 {
         // ULID is 128 bits of time + randomness; two of them give 256 bits.
-        let id = ulid::Ulid::new().to_string();
+        let id = ulid::Ulid::generate().to_string();
         bytes.extend_from_slice(id.as_bytes());
     }
     bytes.truncate(32);

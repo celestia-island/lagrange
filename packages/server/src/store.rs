@@ -51,7 +51,7 @@ impl AppState {
         password_hash: &str,
         moderator: bool,
     ) -> Result<Account, ApiError> {
-        let id = format!("u_{}", ulid::Ulid::new());
+        let id = format!("u_{}", ulid::Ulid::generate());
         let conn = self.conn.lock().expect("accounts conn poisoned");
         conn.execute(
             "INSERT INTO accounts (id, name, password_hash, moderator) VALUES (?1, ?2, ?3, ?4)",

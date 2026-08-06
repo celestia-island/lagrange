@@ -261,7 +261,7 @@ fn extract_comments(item_xml: &str) -> Vec<ExchangeComment> {
 
         comments.push(ExchangeComment {
             id: if id.is_empty() {
-                format!("wp-comment-{}", ulid::Ulid::new())
+                format!("wp-comment-{}", ulid::Ulid::generate())
             } else {
                 format!("wp-{id}")
             },
