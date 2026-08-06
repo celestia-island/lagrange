@@ -117,7 +117,7 @@ impl ExchangeDoc {
                 .frontmatter
                 .slug
                 .clone()
-                .unwrap_or_else(|| format!("doc_{}", ulid::Ulid::new()));
+                .unwrap_or_else(|| format!("doc_{}", ulid::Ulid::generate()));
         }
     }
 }

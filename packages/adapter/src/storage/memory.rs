@@ -49,7 +49,7 @@ impl MemoryStore {
     }
 
     fn new_id(prefix: &str) -> String {
-        format!("{prefix}_{}", ulid::Ulid::new())
+        format!("{prefix}_{}", ulid::Ulid::generate())
     }
 
     fn now() -> String {
