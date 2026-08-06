@@ -28,7 +28,7 @@ chrono = { version = "^0.4", default-features = false, features = ["clock", "ser
 # `bundled` compiles sqlite3 from source so the binary has zero external deps
 # (critical for cross-platform self-hosted deploys and CI without a system
 # sqlite3 dev package).
-rusqlite = { version = "^0.32", optional = true, features = ["bundled"] }
+rusqlite = { version = "^0.40", optional = true, features = ["bundled"] }
 
 # Proxy adapters — talk to third-party APIs (GitHub, Disqus) over HTTP. The
 # sync CommentService trait is bridged to async via a tokio block_on.
