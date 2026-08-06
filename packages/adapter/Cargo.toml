@@ -18,7 +18,7 @@ serde_json = "^1"
 # explicitly (it's default-on upstream, but we opt out of defaults to stay lean).
 pulldown-cmark = { version = "^0.12", default-features = false, features = ["html"] }
 # Ids.
-ulid = { version = "^1", features = ["std"] }
+ulid = { version = "^3", features = ["std"] }
 # Logging.
 tracing = "^0.1"
 chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
