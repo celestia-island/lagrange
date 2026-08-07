@@ -13,7 +13,6 @@ use argon2::{
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use lagrange_protocol::{Author, Caller, IdentityKind};
-use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ApiError;
@@ -70,7 +69,7 @@ pub struct Account {
 
 /// Hash a password with argon2.
 pub fn hash_password(password: &str) -> Result<String, ApiError> {
-    let salt = SaltString::generate(&mut OsRng);
+    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
