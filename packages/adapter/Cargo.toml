@@ -32,7 +32,7 @@ rusqlite = { version = "^0.32", optional = true, features = ["bundled"] }
 
 # Proxy adapters — talk to third-party APIs (GitHub, Disqus) over HTTP. The
 # sync CommentService trait is bridged to async via a tokio block_on.
-reqwest = { version = "^0.12", optional = true, features = ["json", "blocking"] }
+reqwest = { version = "^0.13", optional = true, features = ["json", "blocking"] }
 tokio = { version = "^1", optional = true, features = ["rt"] }
 
 [dev-dependencies]
