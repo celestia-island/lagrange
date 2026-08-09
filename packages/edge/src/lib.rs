@@ -10,7 +10,7 @@
 //!     -> EdgeResponse { status, headers, body }
 //! ```
 //!
-//! A platform binding (see `examples/` and the per-platform notes below) is
+//! A platform binding (see the per-platform notes below) is
 //! then a ~30-line shim that translates its native request into the inputs and
 //! the [`EdgeResponse`] back into its native response. The handler owns all the
 //! protocol logic, error mapping, and JSON (de)serialisation — identical on
