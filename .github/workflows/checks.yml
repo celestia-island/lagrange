@@ -18,3 +18,7 @@ jobs:
       - run: cargo fmt -p lagrange-library -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all
+
+  verify-versions:
+    name: Verify version consistency
+    uses: celestia-island/celestia-devtools/.github/workflows/verify-versions.yml@master
