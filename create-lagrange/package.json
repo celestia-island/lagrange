@@ -1,6 +1,5 @@
 {
   "name": "@celestia-island/create-lagrange",
-  "name": "@celestia-island/lagrange",
   "version": "0.1.1",
   "description": "Scaffold a lagrange documentation site — fetches the prebuilt binary from GitHub Releases and runs `lagrange init`.",
   "license": "SySL-1.0",
