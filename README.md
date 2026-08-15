@@ -124,10 +124,10 @@ build in a prior CI step and deploy the static output.)
 
 ### npm
 
-The `create-lagrange` scaffolder is published to npm and invoked with:
+The lagrange scaffolder is published to npm as `@celestia-island/lagrange` and invoked with:
 
 ```bash
-npm create lagrange
+npx @celestia-island/lagrange
 ```
 
 It downloads the prebuilt `lagrange` binary for your platform from the latest

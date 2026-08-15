@@ -1,6 +1,6 @@
-name: npm Release (create-lagrange)
+name: npm Release (@celestia-island/lagrange)
 
-# Publishes the `create-lagrange` scaffolder to npm using OIDC Trusted
+# Publishes the `@celestia-island/lagrange` scaffolder to npm using OIDC Trusted
 # Publishing (id-token: write + --provenance), so the registry can verify the
 # provenance chain back to this repository without a stored token.
 #
@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   publish:
-    name: Publish create-lagrange to npm
+    name: Publish @celestia-island/lagrange to npm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
             v="${GITHUB_REF_NAME#npm-v}"
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "Publishing create-lagrange@$v"
+          echo "Publishing @celestia-island/lagrange@$v"
 
       - name: Install dependencies
         run: |
