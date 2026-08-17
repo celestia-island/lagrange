@@ -3,6 +3,24 @@
 All notable changes to lagrange are documented in this file.
 Versions before 0.2.0 predate this changelog.
 
+## [0.2.7] - 2026-08-17
+
+- Add a mobile navigation drawer: below 768px the sidebar becomes an
+  off-canvas drawer behind a floating toggle (hamburger) with a scrim,
+  Escape/link-click close and body scroll-lock, instead of a fixed
+  half-screen strip; the content keeps the full viewport.
+- Fix chrome i18n language mapping: `zh-Hans`/`zh-Hant` now resolve their
+  UI strings (search placeholder, code-copy labels, nav toggle title)
+  instead of silently falling back to English.
+- Warn at build time when a language falls back to the default language's
+  SUMMARY (sidebar titles stay untranslated) — names the exact missing path.
+- Floor hikari-components at 0.3.20 so component stylesheets compile in
+  crates.io layout (all `hi-*` component CSS used to be missing).
+
+## [0.2.6] - 2026-08-16
+
+- Publish 0.2.6 to crates.io (version alignment release; see git history).
+
 ## [0.2.5] - 2026-08-14
 
 - Fix the CI gates for fmt drift, clippy lints and the JWT crypto provider.

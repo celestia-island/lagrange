@@ -18,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     comments::{self, MountInput},
@@ -169,7 +169,13 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         let nav = parse_summary(&summary_path).unwrap_or_default();
         let nav = if nav.is_empty() && lang != &default_lang {
             let fallback = opts.src.join(&default_lang).join("SUMMARY.md");
-            parse_summary(&fallback).unwrap_or_default()
+            let fallback_nav = parse_summary(&fallback).unwrap_or_default();
+            if !fallback_nav.is_empty() {
+                warn!(
+                    "  {lang} has no SUMMARY.md — sidebar titles fall back to                      {default_lang}; add docs/{lang}/SUMMARY.md to localize the nav"
+                );
+            }
+            fallback_nav
         } else {
             nav
         };
@@ -563,10 +569,29 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
   var si=document.getElementById('lg-search-input');if(si)si.placeholder=lgUI.t('search');
   var sc=document.getElementById('lg-search-clear');if(sc){sc.title=lgUI.t('clearSearch');sc.setAttribute('aria-label',lgUI.t('clearSearch'))}
   var cp=document.querySelectorAll('.hi-code-highlight-copy');for(var i=0;i<cp.length;i++){cp[i].title=lgUI.t('copyCode');cp[i].setAttribute('aria-label',lgUI.t('copyCode'))}
+  var nt=document.querySelector('.lg-nav-toggle');if(nt){nt.title=lgUI.t('nav');nt.setAttribute('aria-label',lgUI.t('nav'))}
   /* diagrams — render mermaid/KaTeX previews in the freshly swapped body */
   if(window.lgDiagram)window.lgDiagram.init();
  }
  lgUI.i18n={cur:function(){return CUR},set:sL,detect:gL};
+ /* ── mobile nav drawer ── */
+ var mq=window.matchMedia('(max-width: 768px)');
+ var navBtn=document.createElement('button');
+ navBtn.type='button';navBtn.className='lg-nav-toggle';
+ navBtn.setAttribute('aria-expanded','false');navBtn.setAttribute('aria-controls','lg-sidebar');
+ navBtn.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+ var scrim=document.createElement('div');scrim.className='lg-nav-scrim';scrim.setAttribute('aria-hidden','true');
+ function navApply(o){document.body.classList.toggle('lg-nav-open',o);navBtn.setAttribute('aria-expanded',o?'true':'false')}
+ function navClose(){navApply(false)}
+ navBtn.onclick=function(){navApply(!document.body.classList.contains('lg-nav-open'))};
+ scrim.onclick=navClose;
+ document.addEventListener('keydown',function(e){if(e.key==='Escape')navClose()});
+ var sbl=document.getElementById('lg-sidebar');
+ if(sbl){sbl.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&mq.matches)navClose()})}
+ if(mq.addEventListener)mq.addEventListener('change',function(){if(!mq.matches)navClose()});
+ function navTitle(){navBtn.title=lgUI.t('nav');navBtn.setAttribute('aria-label',lgUI.t('nav'))}
+ navTitle();
+ document.body.appendChild(navBtn);document.body.appendChild(scrim);
  /* ── language dropdown ── */
  var sw=document.getElementById('lg-sw');sw.className='lg-lang-select';
  sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel hi-scroll-container"></div>';
