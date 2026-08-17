@@ -589,13 +589,83 @@ a {
     border-top: 1px solid var(--border);
 }
 
+/* ── mobile navigation drawer ─────────────────────────────────────────────
+ * The sidebar becomes an off-canvas drawer: hidden by default, slides in
+ * over a scrim when the floating toggle (injected by the page bootstrap)
+ * is pressed. The content keeps the full viewport — no fixed half-screen
+ * strip eating the reading area. */
+.lg-nav-toggle {
+    display: none; /* desktop: no toggle, sidebar is always visible */
+}
+
+.lg-nav-scrim {
+    display: none;
+}
+
 @media (max-width: 768px) {
-    .layout { flex-direction: column; height: auto; overflow: visible; }
-    /* Scroll the nav (#lg-sidebar, already overflow-y:auto) internally
-     * instead of the whole strip: an overflow here would crop the absolute
-     * search-results and language panels that open outside the sidebar's
-     * box. The nav is a scroll container, so its flex minimum is 0 and the
-     * 50vh cap still holds. */
-    .sidebar { height: auto; width: auto; max-height: 50vh; flex-shrink: 0; }
-    .content { height: auto; overflow-y: visible; padding: 1.5rem 1rem 3rem; }
+    .lg-nav-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 0.75rem;
+        left: 0.75rem;
+        z-index: 60;
+        width: 2.6rem;
+        height: 2.6rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--fg-sec);
+        cursor: pointer;
+        box-shadow: var(--shadow, 0 2px 12px rgba(0, 0, 0, .12));
+
+        &:hover { color: var(--fg); }
+        &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    }
+
+    .layout { display: block; height: auto; overflow: visible; }
+
+    .sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: min(82vw, 320px);
+        height: 100dvh;
+        max-height: none;
+        z-index: 50;
+        transform: translateX(-102%);
+        transition: transform .28s cubic-bezier(.16, 1, .3, 1);
+        box-shadow: none;
+        border-right: 1px solid var(--border);
+    }
+
+    body.lg-nav-open .sidebar { transform: translateX(0); }
+
+    .lg-nav-scrim {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(0, 0, 0, .45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .28s ease;
+    }
+
+    body.lg-nav-open .lg-nav-scrim { opacity: 1; pointer-events: auto; }
+    body.lg-nav-open { overflow: hidden; }
+
+    /* The toggle flips to a close (×) affordance while the drawer is open. */
+    body.lg-nav-open .lg-nav-toggle { background: var(--bg-subtle); }
+
+    .content {
+        height: auto;
+        overflow-y: visible;
+        padding: 1.5rem 1rem 3rem;
+        /* leave breathing room under the floating toggle on the first line */
+        scroll-margin-top: 3.5rem;
+    }
+
+    /* Hero pages carry their own header — keep the toggle below it. */
+    body.lg-hero .lg-nav-toggle { top: 3.4rem; }
 }

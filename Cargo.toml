@@ -1,6 +1,6 @@
 [package]
 name = "lagrange-library"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2021"
 rust-version = "1.80"
 authors = ["langyo <langyo.china@gmail.com>"]
@@ -70,8 +70,10 @@ hikari-icons = { version = "^0.3", default-features = false }
 # Hikari UI components (Card, CodeHighlight, Typography, etc.) — rendered via
 # tairitsu-vdom SSR at build time, same VNode→HTML path lagrange already uses.
 # Uses local path for dev; crates.io consumers get the published version.
-# Floor 0.3.13: first hikari release rebuilt against the fixed scss! macro.
-hikari-components = "^0.3.13"
+# Floor 0.3.20: component SCSS imports resolve through grass load paths in
+# both monorepo and crates.io layouts — below this every component stylesheet
+# compiled to a "CSS generation failed" comment in downstream builds.
+hikari-components = "^0.3.20"
 # Hikari i18n — component UI string translations (copy/cancel/etc.)
 hikari-i18n = "^0.3"
 

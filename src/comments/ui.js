@@ -14,21 +14,23 @@
 
   /* ── chrome i18n: UI strings for lagrange's own chrome (not page content) ── */
   var CHROME = {
-    en: { search: "Search…", noResults: "No results", clearSearch: "Clear search", copyCode: "Copy code", preview: "Preview", source: "Source" },
-    zhs: { search: "搜索…", noResults: "无结果", clearSearch: "清除搜索", copyCode: "复制代码", preview: "预览", source: "源码" },
-    zht: { search: "搜尋…", noResults: "無結果", clearSearch: "清除搜尋", copyCode: "複製程式碼", preview: "預覽", source: "原始碼" },
-    ja: { search: "検索…", noResults: "結果なし", clearSearch: "検索をクリア", copyCode: "コードをコピー", preview: "プレビュー", source: "ソース" },
-    ko: { search: "검색…", noResults: "결과 없음", clearSearch: "검색 지우기", copyCode: "코드 복사", preview: "미리보기", source: "소스" },
-    fr: { search: "Rechercher…", noResults: "Aucun résultat", clearSearch: "Effacer la recherche", copyCode: "Copier le code", preview: "Aperçu", source: "Source" },
-    es: { search: "Buscar…", noResults: "Sin resultados", clearSearch: "Borrar búsqueda", copyCode: "Copiar código", preview: "Vista previa", source: "Fuente" },
-    ru: { search: "Поиск…", noResults: "Нет результатов", clearSearch: "Очистить поиск", copyCode: "Копировать код", preview: "Предпросмотр", source: "Исходник" },
-    ar: { search: "بحث…", noResults: "لا نتائج", clearSearch: "مسح البحث", copyCode: "نسخ الكود", preview: "معاينة", source: "المصدر" },
+    en: { search: "Search…", noResults: "No results", clearSearch: "Clear search", copyCode: "Copy code", preview: "Preview", source: "Source", nav: "Toggle navigation" },
+    zhs: { search: "搜索…", noResults: "无结果", clearSearch: "清除搜索", copyCode: "复制代码", preview: "预览", source: "源码", nav: "切换导航" },
+    zht: { search: "搜尋…", noResults: "無結果", clearSearch: "清除搜尋", copyCode: "複製程式碼", preview: "預覽", source: "原始碼", nav: "切換導覽" },
+    ja: { search: "検索…", noResults: "結果なし", clearSearch: "検索をクリア", copyCode: "コードをコピー", preview: "プレビュー", source: "ソース", nav: "ナビゲーション切替" },
+    ko: { search: "검색…", noResults: "결과 없음", clearSearch: "검색 지우기", copyCode: "코드 복사", preview: "미리보기", source: "소스", nav: "탐색 전환" },
+    fr: { search: "Rechercher…", noResults: "Aucun résultat", clearSearch: "Effacer la recherche", copyCode: "Copier le code", preview: "Aperçu", source: "Source", nav: "Basculer la navigation" },
+    es: { search: "Buscar…", noResults: "Sin resultados", clearSearch: "Borrar búsqueda", copyCode: "Copiar código", preview: "Vista previa", source: "Fuente", nav: "Alternar navegación" },
+    ru: { search: "Поиск…", noResults: "Нет результатов", clearSearch: "Очистить поиск", copyCode: "Копировать код", preview: "Предпросмотр", source: "Исходник", nav: "Показать/скрыть меню" },
+    ar: { search: "بحث…", noResults: "لا نتائج", clearSearch: "مسح البحث", copyCode: "نسخ الكود", preview: "معاينة", source: "المصدر", nav: "تبديل التنقل" },
   };
 
   /* lgUI.i18n is installed by the page bootstrap (site data is per-page);
    * t() falls back to English until then. */
   lgUI.t = function (key) {
     var lang = lgUI.i18n && lgUI.i18n.cur ? lgUI.i18n.cur() : "en";
+    if (lang === "zh-Hans") lang = "zhs";
+    else if (lang === "zh-Hant") lang = "zht";
     var pack = CHROME[lang] || CHROME.en;
     return pack[key] || CHROME.en[key] || key;
   };
