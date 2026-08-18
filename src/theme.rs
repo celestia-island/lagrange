@@ -38,9 +38,36 @@ fn hikari_component_css() -> String {
     let all = registry.get_all();
     let mut names: Vec<&'static str> = all.keys().copied().collect();
     names.sort_unstable();
-    names.iter().map(|n| all[n]).collect::<Vec<_>>().join("\n")
-}
+    let css = names.iter().map(|n| all[n]).collect::<Vec<_>>().join("\n");
 
+    // Bridge the class-name contract gap: hikari's stylesheet styles
+    // `.hk-code-highlight-*`, but lagrange's renderer emits `hi-code-highlight-*`
+    // (render.rs). Duplicate every code-highlight rule under the `hi-` alias so
+    // the shipped DOM is styled without touching hikari's published CSS.
+    // A "rule" here is selector-block + `{ ... }` up to the matching `}` — the
+    // component stylesheets are flat (no nested braces), so brace counting is
+    // exact.
+    let mut bridge = String::new();
+    let mut rest = css.as_str();
+    while let Some(pos) = rest.find(".hk-code-highlight") {
+        // selector start: after the previous '}'
+        let sel_start = rest[..pos].rfind('}').map(|x| x + 1).unwrap_or(0);
+        if let Some(brace) = rest[sel_start..].find('{') {
+            let brace_abs = sel_start + brace;
+            if let Some(close) = rest[brace_abs..].find('}') {
+                let close_abs = brace_abs + close;
+                let sel = &rest[sel_start..brace_abs];
+                let body = &rest[brace_abs..=close_abs];
+                let aliased = sel.replace(".hk-code-highlight", ".hi-code-highlight");
+                bridge.push_str(&format!("{aliased}{body}\n"));
+                rest = &rest[close_abs..];
+                continue;
+            }
+        }
+        break;
+    }
+    format!("{css}\n/* lagrange: hi-code-highlight aliases for hikari hk- classes */\n{bridge}")
+}
 const HIKARI_VARS: &str = r#":root {
 --hi-radius-sm: 4px; --hi-radius-md: 8px; --hi-radius-lg: 12px; --hi-radius-full: 9999px;
 --hi-blur-sm: 8px; --hi-blur-md: 16px;
