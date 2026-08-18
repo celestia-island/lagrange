@@ -3,7 +3,17 @@
 All notable changes to lagrange are documented in this file.
 Versions before 0.2.0 predate this changelog.
 
+## [0.2.8] - 2026-08-18
+
+- Bridge the code-highlight class-name contract: hikari's component
+  stylesheet styles `.hk-code-highlight-*` but lagrange's renderer emits
+  `hi-code-highlight-*`, so every code block shipped unstyled despite the
+  rules being present. The component CSS now duplicates each rule under the
+  `hi-` alias, restoring container/line-number/token styling (verified:
+  rendered keyword tokens carry the theme syntax colors).
+
 ## [0.2.7] - 2026-08-17
+
 
 - Add a mobile navigation drawer: below 768px the sidebar becomes an
   off-canvas drawer behind a floating toggle (hamburger) with a scrim,
