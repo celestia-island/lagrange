@@ -44,27 +44,76 @@ fn hikari_component_css() -> String {
     // `.hk-code-highlight-*`, but lagrange's renderer emits `hi-code-highlight-*`
     // (render.rs). Duplicate every code-highlight rule under the `hi-` alias so
     // the shipped DOM is styled without touching hikari's published CSS.
-    // A "rule" here is selector-block + `{ ... }` up to the matching `}` — the
-    // component stylesheets are flat (no nested braces), so brace counting is
-    // exact.
+    //
+    // Rules are split by brace depth, skipping comments and strings — a naive
+    // `rfind('}')` boundary scan breaks on comment bodies containing braces
+    // (e.g. `pre { margin-block: 1em }`), orphaning the following rule.
     let mut bridge = String::new();
-    let mut rest = css.as_str();
-    while let Some(pos) = rest.find(".hk-code-highlight") {
-        // selector start: after the previous '}'
-        let sel_start = rest[..pos].rfind('}').map(|x| x + 1).unwrap_or(0);
-        if let Some(brace) = rest[sel_start..].find('{') {
-            let brace_abs = sel_start + brace;
-            if let Some(close) = rest[brace_abs..].find('}') {
-                let close_abs = brace_abs + close;
-                let sel = &rest[sel_start..brace_abs];
-                let body = &rest[brace_abs..=close_abs];
-                let aliased = sel.replace(".hk-code-highlight", ".hi-code-highlight");
-                bridge.push_str(&format!("{aliased}{body}\n"));
-                rest = &rest[close_abs..];
+    {
+        let mut depth: i32 = 0;
+        let mut in_comment = false;
+        let mut in_string: Option<char> = None;
+        let mut rule_start = 0usize;
+        let mut last_rule_end = 0usize;
+        let bytes = css.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            let c = bytes[i] as char;
+            if in_comment {
+                if c == '*' && i + 1 < bytes.len() && bytes[i + 1] as char == '/' {
+                    in_comment = false;
+                    i += 2;
+                    continue;
+                }
+                i += 1;
                 continue;
             }
+            if let Some(q) = in_string {
+                if c == q && (i == 0 || bytes[i - 1] as char != '\\') {
+                    in_string = None;
+                }
+                i += 1;
+                continue;
+            }
+            match c {
+                '/' if i + 1 < bytes.len() && bytes[i + 1] as char == '*' => {
+                    in_comment = true;
+                    i += 2;
+                    continue;
+                }
+                '\'' | '"' => {
+                    in_string = Some(c);
+                    i += 1;
+                    continue;
+                }
+                '{' => {
+                    if depth == 0 {
+                        rule_start = last_rule_end;
+                    }
+                    depth += 1;
+                    i += 1;
+                    continue;
+                }
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let rule = &css[rule_start..=i];
+                        if rule.contains(".hk-code-highlight") {
+                            let aliased = rule.replace(".hk-code-highlight", ".hi-code-highlight");
+                            bridge.push_str(&aliased);
+                            bridge.push('\n');
+                        }
+                        last_rule_end = i + 1;
+                    }
+                    i += 1;
+                    continue;
+                }
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            }
         }
-        break;
     }
     format!("{css}\n/* lagrange: hi-code-highlight aliases for hikari hk- classes */\n{bridge}")
 }
