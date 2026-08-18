@@ -3,7 +3,19 @@
 All notable changes to lagrange are documented in this file.
 Versions before 0.2.0 predate this changelog.
 
+## [0.2.9] - 2026-08-18
+
+- Fix the code-highlight alias bridge from 0.2.8: the rule-boundary scanner
+  used a naive `rfind('}')` that latched onto the `}` inside comment bodies
+  (e.g. `pre { margin-block: 1em }`), slicing the `/*` off the comment ahead
+  of `.hk-code-highlight-code` — the orphaned `*/` made browsers drop the
+  alias rule, leaving code blocks with 0 padding flush against the line
+  numbers. Rules are now split by brace depth while skipping comments and
+  strings, with explicit rule-end tracking; verified: code padding renders
+  16px with a real gap to the gutter.
+
 ## [0.2.8] - 2026-08-18
+
 
 - Bridge the code-highlight class-name contract: hikari's component
   stylesheet styles `.hk-code-highlight-*` but lagrange's renderer emits
