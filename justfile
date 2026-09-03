@@ -37,15 +37,15 @@ default:
     @just --list
 fmt:
     just fmt-toml
-    cargo fmt -p lagrange-library
+    cargo fmt --all
 fmt-check:
-    cargo fmt -p lagrange-library -- --check
-check:
-    cargo check --all-targets
+    cargo fmt --all -- --check
+check: fmt-check clippy
+    cargo check --workspace
 clippy:
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
 test:
-    cargo test --all
+    cargo test --workspace
 build:
     cargo build --release
 
