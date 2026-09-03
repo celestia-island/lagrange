@@ -10,6 +10,9 @@ description = "Runtime-neutral HTTP handler for lagrange comments on the edge (C
 keywords = ["comments", "serverless", "edge", "cloudflare", "lagrange"]
 categories = ["web-programming", "api-bindings"]
 
+[lints]
+workspace = true
+
 [dependencies]
 lagrange-protocol = { path = "../protocol", version = "^0.2" }
 lagrange-adapter = { path = "../adapter", version = "^0.2", default-features = false, features = ["memory"] }

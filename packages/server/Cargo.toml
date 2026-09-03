@@ -10,6 +10,9 @@ description = "Self-hostable lagrange comment backend (axum + sqlite)"
 keywords = ["comments", "bbs", "server", "lagrange", "axum"]
 categories = ["web-programming", "command-line-utilities"]
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "lagrange-server"
 path = "src/main.rs"

@@ -10,6 +10,9 @@ description = "CLI to migrate content from WordPress / Hexo / Zola / Hugo / Jeky
 keywords = ["migration", "wordpress", "hexo", "lagrange", "cli"]
 categories = ["command-line-utilities"]
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "lagrange-migrate"
 path = "src/main.rs"
