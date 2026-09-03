@@ -10,6 +10,9 @@ description = "Storage / auth / moderation SPI for lagrange comment backends"
 keywords = ["comments", "storage", "sqlite", "lagrange", "adapter"]
 categories = ["web-programming", "database"]
 
+[lints]
+workspace = true
+
 [dependencies]
 lagrange-protocol = { path = "../protocol", version = "^0.2" }
 serde = { version = "^1", features = ["derive"] }
