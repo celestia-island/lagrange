@@ -62,11 +62,11 @@ tower-http = { version = "^0.7", features = ["fs"] }
 # NOTE: floors require tairitsu 0.5.18 — the first release whose scss! macro
 # honours `no_hash`; older macros silently hashed (and corrupted) the global
 # layout stylesheet, stripping pages of nearly all styling.
-tairitsu-vdom = "^0.5.18"
+tairitsu-vdom = "^0.5"
 # tairitsu hooks runtime (needed by hikari components).
-tairitsu-hooks = "^0.5.18"
+tairitsu-hooks = "^0.5"
 # tairitsu macros (rsx!, component!, define_props — needed by hikari components).
-tairitsu-macros = "^0.5.18"
+tairitsu-macros = "^0.5"
 # Theming: hikari color palette + icon system.
 hikari-palette = "^0.3"
 hikari-icons = { version = "^0.3", default-features = false }
@@ -76,7 +76,7 @@ hikari-icons = { version = "^0.3", default-features = false }
 # Floor 0.3.20: component SCSS imports resolve through grass load paths in
 # both monorepo and crates.io layouts — below this every component stylesheet
 # compiled to a "CSS generation failed" comment in downstream builds.
-hikari-components = "^0.3.20"
+hikari-components = "^0.3"
 # Hikari i18n — component UI string translations (copy/cancel/etc.)
 hikari-i18n = "^0.3"
 
