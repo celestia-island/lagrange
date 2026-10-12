@@ -54,7 +54,13 @@ pub fn parse(input: &str) -> Vec<Block> {
         } else {
             let (block, next) = parse_paragraph(&lines, i);
             blocks.push(block);
-            i = next;
+            // Never wedge the block loop: a line that starts_block()
+            // rejects as paragraph content while no detector claims it
+            // (e.g. '#604' — a hash glued to text is not an ATX heading)
+            // used to leave `next == i`, spinning here forever and growing
+            // `blocks` unbounded (the 2026-10 wowsp docs outage, where
+            // every site deploy died on a runner shutdown signal).
+            i = next.max(i + 1);
         }
     }
     blocks
@@ -143,17 +149,25 @@ fn leading_fence(s: &str) -> Option<(char, usize)> {
     }
 }
 
-fn parse_atx_heading(line: &str, lines: &[&str], i: usize) -> Option<(Block, usize)> {
-    let _ = lines;
-    let trimmed = line.trim_start();
-    let hashes = trimmed.chars().take_while(|&c| c == '#').count();
+/// Level of a valid ATX heading opener: 1-6 '#' immediately followed by a
+/// space, a tab, or end-of-line. A hash run glued to other text ('#604')
+/// is not a heading — CommonMark keeps such a line as paragraph content.
+fn atx_level(t: &str) -> Option<usize> {
+    let hashes = t.chars().take_while(|&c| c == '#').count();
     if hashes == 0 || hashes > 6 {
         return None;
     }
-    let rest = &trimmed[hashes..];
-    if !rest.is_empty() && !rest.starts_with(' ') && !rest.starts_with('\t') {
-        return None;
+    match t[hashes..].chars().next() {
+        None | Some(' ') | Some('\t') => Some(hashes),
+        _ => None,
     }
+}
+
+fn parse_atx_heading(line: &str, lines: &[&str], i: usize) -> Option<(Block, usize)> {
+    let _ = lines;
+    let trimmed = line.trim_start();
+    let hashes = atx_level(trimmed)?;
+    let rest = &trimmed[hashes..];
     let text = parse_inline(rest.trim());
     Some((
         Block::Heading {
@@ -428,7 +442,11 @@ fn list_item_marker(line: &str) -> Option<(bool, String)> {
 
 fn starts_block(line: &str) -> bool {
     let t = line.trim_start();
-    t.starts_with('#') || t.starts_with('>') || t.starts_with("```") || t.starts_with("~~~")
+    // Only a VALID heading breaks a paragraph/list run: '#604' (hash glued
+    // to text) is paragraph content per CommonMark and used to wedge the
+    // block loop via the parse_paragraph early-break — see the progress
+    // guard in parse().
+    atx_level(t).is_some() || t.starts_with('>') || t.starts_with("```") || t.starts_with("~~~")
 }
 
 fn parse_paragraph(lines: &[&str], i: usize) -> (Block, usize) {
@@ -781,9 +799,38 @@ mod tests {
     fn entities_work_inside_emphasis() {
         let blocks = parse("**a &nbsp; b**");
         let Block::Paragraph(inlines) = &blocks[0] else {
-            panic!("expected a Paragraph, got {:?}", blocks);
+            panic!("expected a Paragraph, got {:?}", blocks[0]);
         };
         assert_eq!(joined_text(inlines), "a \u{00A0} b");
+    }
+
+    #[test]
+    fn hash_glued_to_text_is_paragraph_content_not_a_wedge() {
+        // A soft-wrapped line starting with '#604' (an issue reference, no
+        // space after the hash) is not an ATX heading. It used to break
+        // parse_paragraph on its own line while no detector consumed it,
+        // wedging the block loop in an unbounded spin (the 2026-10 wowsp
+        // docs outage). It must parse in bounded time and stay merged into
+        // the surrounding paragraph, per CommonMark lazy continuation.
+        let blocks = parse("intro line\n#604). tail text\n\nnext paragraph");
+        assert_eq!(blocks.len(), 2);
+        let Block::Paragraph(inlines) = &blocks[0] else {
+            panic!("expected a Paragraph, got {:?}", blocks[0]);
+        };
+        let text = joined_text(inlines);
+        assert!(text.contains("intro line"), "inlines: {:?}", inlines);
+        assert!(text.contains("#604)."), "inlines: {:?}", inlines);
+        assert!(matches!(blocks[1], Block::Paragraph(_)));
+    }
+
+    #[test]
+    fn hash_glued_to_text_alone_still_parses() {
+        let blocks = parse("#604");
+        assert!(
+            matches!(&blocks[..], [Block::Paragraph(_)]),
+            "expected one Paragraph, got {:?}",
+            blocks
+        );
     }
 
     fn text_contains_image(inlines: &[Inline], alt: &str, url_part: &str) -> bool {
