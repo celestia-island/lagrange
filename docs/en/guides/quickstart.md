@@ -59,3 +59,21 @@ untouched).
 The build emits a static directory — see the root
 [README](./README.md#deploying-the-site) for GitHub Pages, Cloudflare Pages and
 Vercel recipes.
+
+## Theme-conditional images
+
+Screenshots that must differ between light and dark pages carry the
+ecosystem's URL-fragment convention — GitHub's `#gh-light-mode-only` /
+`#gh-dark-mode-only`, or the mkdocs-material aliases `#only-light` /
+`#only-dark`:
+
+```markdown
+![Dashboard in light mode](dashboard.webp#gh-light-mode-only)
+![Dashboard in dark mode](dashboard.dark.webp#gh-dark-mode-only)
+```
+
+The fragment is stripped from the emitted `src`, and the page hides the
+variant that does not match the reader's `prefers-color-scheme`. An image
+without a fragment belongs to both schemes, so a plain screenshot only needs
+the default (light) file. The same markdown renders correctly on GitHub,
+which understands the `gh-*` spelling.

@@ -30,3 +30,19 @@ docs/
 图片，以及行内 `代码`、**粗体**、*斜体*、[链接](./architecture.md)。
 
 > 引用块同样受支持。
+
+## 亮暗主题配图
+
+需要在亮色与暗色页面展示不同图片的截图，沿用生态里的 URL 片段约定 ——
+GitHub 的 `#gh-light-mode-only` / `#gh-dark-mode-only`，或 mkdocs-material
+的别名 `#only-light` / `#only-dark`：
+
+```markdown
+![亮色模式下的仪表盘](dashboard.webp#gh-light-mode-only)
+![暗色模式下的仪表盘](dashboard.dark.webp#gh-dark-mode-only)
+```
+
+该片段会从输出的 `src` 中剥离，页面按读者的 `prefers-color-scheme` 隐藏
+不匹配的那一张；不带片段的图片在两种模式下都会显示，所以普通截图只需默认的
+（亮色）文件。同一份 markdown 在 GitHub 上同样能正确渲染（它认识 `gh-*`
+写法）。

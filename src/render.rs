@@ -247,13 +247,79 @@ fn render_inline(i: &Inline) -> VNode {
             children: VNode::Fragment(render_inlines(text)),
             ..Default::default()
         }),
-        Inline::Image { alt, url } => Image(ImageProps {
-            src: Some(url.clone()),
-            alt: alt.clone(),
-            ..Default::default()
-        }),
+        Inline::Image { alt, url } => match split_image_theme_fragment(url) {
+            // Theme-conditional variant: a bare `<img>` rather than the hikari
+            // Image wrapper. The wrapper adds a loading skeleton that nothing
+            // hydrates on a static page and a container the scheme CSS cannot
+            // hide, so the variant class lives on the `<img>` itself.
+            (src, Some(scheme)) => VNode::Element(Box::new(
+                el("img")
+                    .attr("src", src)
+                    .attr("alt", alt)
+                    .attr("class", scheme.class()),
+            )),
+            (_, None) => Image(ImageProps {
+                src: Some(url.clone()),
+                alt: alt.clone(),
+                ..Default::default()
+            }),
+        },
         Inline::InlineHtml(raw) => VNode::Element(Box::new(el("span").dangerous_inner_html(raw))),
     }
+}
+
+// ── theme-conditional images ─────────────────────────────────────────────
+
+/// Colour scheme a theme-conditional image is restricted to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImageScheme {
+    Light,
+    Dark,
+}
+
+impl ImageScheme {
+    /// The class `styles/layout.scss` hides in the opposite scheme.
+    fn class(self) -> &'static str {
+        match self {
+            ImageScheme::Light => "lg-img-only-light",
+            ImageScheme::Dark => "lg-img-only-dark",
+        }
+    }
+}
+
+/// Split a theme fragment off an image URL.
+///
+/// A documentation image that must differ between colour schemes carries the
+/// fragment conventions of the surrounding markdown ecosystem, so the same
+/// file renders correctly here AND on GitHub (whose own renderer understands
+/// the `gh-*` spelling) or on an mkdocs-material host (`#only-*`):
+///
+/// ```markdown
+/// ![Dashboard in light mode](dashboard.webp#gh-light-mode-only)
+/// ![Dashboard in dark mode](dashboard.dark.webp#gh-dark-mode-only)
+/// ```
+///
+/// The fragment is stripped from the emitted `src` — left on, the browser
+/// would request the file with a bogus fragment appended — and the rendered
+/// `<img>` carries the matching `.lg-img-only-*` class, which the layout
+/// stylesheet hides under the opposite `prefers-color-scheme`. A markdown
+/// image without the tag keeps the plain hikari `Image` and shows in both
+/// schemes, so existing documentation is unaffected.
+fn split_image_theme_fragment(url: &str) -> (&str, Option<ImageScheme>) {
+    const SUFFIXES: [(&str, ImageScheme); 4] = [
+        // GitHub's spelling.
+        ("#gh-light-mode-only", ImageScheme::Light),
+        ("#gh-dark-mode-only", ImageScheme::Dark),
+        // mkdocs-material aliases.
+        ("#only-light", ImageScheme::Light),
+        ("#only-dark", ImageScheme::Dark),
+    ];
+    for (suffix, scheme) in SUFFIXES {
+        if let Some(stripped) = url.strip_suffix(suffix) {
+            return (stripped, Some(scheme));
+        }
+    }
+    (url, None)
 }
 
 // ── live block rendering ──────────────────────────────────────────────────
@@ -1129,4 +1195,81 @@ pub fn render_timeline() -> VNode {
     Timeline(TimelineProps {
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::markdown::parse;
+
+    #[test]
+    fn theme_fragment_github_spelling() {
+        assert_eq!(
+            split_image_theme_fragment("shot.webp#gh-light-mode-only"),
+            ("shot.webp", Some(ImageScheme::Light))
+        );
+        assert_eq!(
+            split_image_theme_fragment("shot.webp#gh-dark-mode-only"),
+            ("shot.webp", Some(ImageScheme::Dark))
+        );
+    }
+
+    #[test]
+    fn theme_fragment_mkdocs_aliases() {
+        assert_eq!(
+            split_image_theme_fragment("../a/b.webp#only-light"),
+            ("../a/b.webp", Some(ImageScheme::Light))
+        );
+        assert_eq!(
+            split_image_theme_fragment("../a/b.webp#only-dark"),
+            ("../a/b.webp", Some(ImageScheme::Dark))
+        );
+    }
+
+    #[test]
+    fn theme_fragment_untagged_passthrough() {
+        assert_eq!(split_image_theme_fragment("shot.webp"), ("shot.webp", None));
+        // A fragment that is not a scheme marker stays part of the URL.
+        assert_eq!(
+            split_image_theme_fragment("sprite.svg#icon"),
+            ("sprite.svg#icon", None)
+        );
+        // The marker only counts at the very end of the URL.
+        assert_eq!(
+            split_image_theme_fragment("a.webp#only-dark/b.webp"),
+            ("a.webp#only-dark/b.webp", None)
+        );
+    }
+
+    #[test]
+    fn theme_tagged_image_renders_variant_class_and_strips_fragment() {
+        let blocks = parse("![Shot](../shots/dashboard.webp#gh-light-mode-only)");
+        let html = render_to_html(&blocks);
+        assert!(
+            html.contains("class=\"lg-img-only-light\""),
+            "variant class missing in: {html}"
+        );
+        assert!(
+            html.contains("src=\"../shots/dashboard.webp\""),
+            "fragment not stripped from src in: {html}"
+        );
+        assert!(
+            !html.contains("gh-light-mode-only"),
+            "URL fragment leaked into the output: {html}"
+        );
+    }
+
+    #[test]
+    fn untagged_image_keeps_default_render() {
+        let blocks = parse("![Shot](../shots/dashboard.webp)");
+        let html = render_to_html(&blocks);
+        assert!(
+            !html.contains("lg-img-only-"),
+            "unexpected variant class: {html}"
+        );
+        assert!(
+            html.contains("src=\"../shots/dashboard.webp\""),
+            "image src missing in: {html}"
+        );
+    }
 }
