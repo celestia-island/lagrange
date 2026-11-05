@@ -383,6 +383,19 @@ a {
     h3 { font-size: 1.1rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
     p { margin: 0.75rem 0; }
     img { max-width: 100%; border-radius: var(--radius); }
+    /* Theme-conditional images: render.rs splits the markdown URL-fragment
+     * convention (`#gh-light-mode-only` / `#gh-dark-mode-only`, plus the
+     * mkdocs-material `#only-light` / `#only-dark` aliases) off the src and
+     * tags the <img> with the class below, so the variant that does not
+     * match the reader's scheme is hidden here. The palette above resolves
+     * through the same `prefers-color-scheme` query, which keeps image and
+     * chrome in step; an image without the tag belongs to both schemes and
+     * keeps rendering everywhere (the default-light authoring rule). */
+    img.lg-img-only-light { display: none; }
+    @media (prefers-color-scheme: light) {
+        img.lg-img-only-light { display: inline; }
+        img.lg-img-only-dark { display: none; }
+    }
     /* hikari markup carries its own styles (injected via build_css);
      * keep lagrange's generic pre/code rules off it — the specificity
      * tie (.content pre / .hi-code-highlight-code) would otherwise
