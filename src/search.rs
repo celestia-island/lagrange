@@ -82,7 +82,7 @@ pub fn write_index(
                 lang: lang.clone(),
                 title: page.title.clone(),
                 url: if base.is_empty() {
-                    mp.page_path.clone()
+                    format!("/{}", mp.page_path)
                 } else {
                     format!("{base}/{}", mp.page_path)
                 },
