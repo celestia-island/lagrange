@@ -25,6 +25,7 @@ $ts: 0.18s;
     --sidebar-w: #{$sidebar-w};
     --radius: #{$radius};
     --ts: #{$ts};
+    --lg-topbar-h: 3.3rem;
 }
 
 @media (prefers-color-scheme: light) {
@@ -56,6 +57,13 @@ body {
     line-height: 1.65;
     color: var(--fg);
     background: var(--bg);
+
+    /* Page frame: top bar on top, sidebar + content filling the rest —
+       each region owns its own scroller. */
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }
 
 a {
@@ -64,57 +72,92 @@ a {
     &:hover { text-decoration: underline; }
 }
 
-.layout {
+/* ── top bar (hikari header grammar on lagrange's palette) ──────────────
+ * Sticky above every region; the hikari header SCSS ships the internal
+ * layout, this wrapper supplies the page surface and stacking. */
+.lg-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    flex: none;
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+}
+
+.lg-topbar .hk-header {
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.45rem 0.9rem;
+    min-height: var(--lg-topbar-h);
+}
+
+/* Desktop: the sidebar is always visible, the toggle only exists for the
+   mobile drawer. */
+.lg-nav-toggle { display: none; }
+
+.lg-topbar .hk-header-left {
     display: flex;
-    height: 100%;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+}
+
+.lg-brand {
+    font-weight: 650;
+    font-size: 0.95rem;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    &:hover { color: var(--accent); text-decoration: none; }
+}
+
+.lg-topnav {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.lg-topnav-link {
+    padding: 0.28rem 0.65rem;
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    color: var(--fg-sec);
+    white-space: nowrap;
+    transition: color var(--ts), background var(--ts);
+
+    &:hover {
+        color: var(--fg);
+        background: var(--accent-bg);
+        text-decoration: none;
+    }
+}
+
+/* Top-bar search: compact, opens its results panel downward. */
+.lg-topbar .lg-search-box {
+    padding: 0;
+    margin-left: auto;
+
+    input { width: clamp(140px, 24vw, 220px); }
+    #lg-search-results { left: 0; right: 0; }
+}
+
+.layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
 }
 
 .sidebar {
     width: var(--sidebar-w);
     border-right: 1px solid var(--border);
-    height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     background: var(--bg-subtle);
     flex-shrink: 0;
-
-    h2 {
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--fg-sec);
-        margin: 1rem 0.25rem 0.5rem;
-    }
-
-    ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-
-    li a {
-        display: block;
-        padding: 0.42rem 0.6rem;
-        font-size: 0.875rem;
-        color: var(--fg-sec);
-        border-radius: 4px;
-        transition: all var(--ts);
-        border-left: 2px solid transparent;
-
-        &:hover {
-            color: var(--fg);
-            background: var(--accent-bg);
-            text-decoration: none;
-        }
-
-        &.active {
-            color: var(--accent);
-            font-weight: 500;
-            border-left-color: var(--accent);
-            background: var(--accent-bg);
-        }
-    }
 }
 
 .lg-search-box {
@@ -239,61 +282,55 @@ a {
 #lg-sidebar {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem 0.75rem 1rem;
+    padding: 0.35rem 0.45rem 1rem;
 
-    h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
-         color: var(--fg-sec); margin-bottom: 0.5rem; padding: 0 0.25rem; }
-
-    ul { list-style: none; margin: 0; padding: 0; }
-
-    li { margin: 0; }
-
-    li > a, summary > a {
+    /* lagrange bridge: the hikari sidebar SCSS ships the chrome (sections,
+       arrows, collapse); these keep the leaf/item LINKS inside it readable
+       and give the current page its highlight. */
+    .hk-sidebar-leaf-content a,
+    .hk-sidebar-item-content a {
         display: block;
-        padding: 0.25rem 0.5rem;
+        padding: 0.3rem 0.5rem;
         border-radius: var(--radius);
         color: var(--fg);
         text-decoration: none;
         font-size: 0.875rem;
-        transition: background 0.15s;
-        border-left: 3px solid transparent;
+        transition: background 0.15s, color 0.15s;
 
-        &:hover { background: var(--bg-hover); }
-        &.active, [aria-current="page"] & {
+        &:hover {
             background: var(--accent-bg);
-            border-left-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* the current page — added by lagrange_js after each language swap */
+        &.lg-nav-active {
+            background: var(--accent-bg);
+            color: var(--accent);
             font-weight: 600;
         }
     }
 
-    summary { cursor: pointer; list-style: none; display: flex; align-items: center;
-        &::-webkit-details-marker { display: none; }
-        &::before {
-            content: "";
-            display: inline-block;
-            width: 16px; height: 16px;
-            background: var(--fg-sec);
-            mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z'/></svg>");
-            mask-size: contain;
-            margin-right: 4px;
-            transition: transform 0.15s;
-            flex-shrink: 0;
-        }
-    }
-    details[open] > summary::before { transform: rotate(90deg); }
-
-    .lg-nav-section > ul {
-        padding-left: 1rem;
+    .hk-sidebar-item-content,
+    .hk-sidebar-leaf-content {
+        font-size: 0.875rem;
     }
 
-    .lg-nav-section-title {
-        display: block;
-        padding: 0.25rem 0.5rem;
-        font-size: 0.75rem;
+    /* a childless group title (no link, no children) */
+    .hk-sidebar-section-title {
+        padding: 0.6rem 0.5rem 0.25rem;
+        font-size: 0.72rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         color: var(--fg-sec);
+    }
+
+    /* collapse affordances — the component SCSS owns the closed state
+       ([data-expanded="false"] hides the children); these mirror the arrow
+       rotation the hikari sidebar section uses. */
+    .hk-sidebar-item-arrow.rotated,
+    .hk-sidebar-section-arrow.rotated {
+        transform: rotate(180deg);
     }
 }
 
@@ -373,7 +410,7 @@ a {
 
 .content {
     flex: 1;
-    height: 100vh;
+    height: 100%;
     overflow-y: auto;
     padding: 2rem max(1.5rem, calc((100% - 820px) / 2)) 5rem;
     min-width: 0;
@@ -472,38 +509,12 @@ a {
     box-shadow: none;
 }
 
-.lg-header {
-    background: var(--bg-subtle);
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 100;
-
-    .lg-lang-panel {
-        bottom: auto;
-        top: calc(100% + 4px);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-    }
-}
-
-.lg-header-inner {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.6rem 1.5rem;
-}
-
-.lg-site-title {
-    font-weight: 600;
-    color: var(--fg);
-    text-decoration: none;
-    &:hover { color: var(--accent); }
-}
-
+/* Landing (hero) pages: same top bar, hero content below; no sidebar and
+   no nav toggle (there is nothing for it to open). */
 .lg-hero {
     overflow-y: auto;
+
+    .lg-nav-toggle { display: none; }
 
     .content {
         max-width: 1200px;
@@ -511,6 +522,13 @@ a {
         padding: 2rem 1.5rem 5rem;
         height: auto;
         overflow: visible;
+    }
+
+    /* the language dropdown opens DOWN from the top bar here */
+    .lg-lang-panel {
+        bottom: auto;
+        top: calc(100% + 4px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     }
 }
 
@@ -616,24 +634,21 @@ a {
 }
 
 @media (max-width: 768px) {
+    /* The toggle lives in the top bar's left edge now. */
     .lg-nav-toggle {
         display: flex;
         align-items: center;
         justify-content: center;
-        position: fixed;
-        top: 0.75rem;
-        left: 0.75rem;
-        z-index: 60;
-        width: 2.6rem;
-        height: 2.6rem;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--bg);
+        width: 2.2rem;
+        height: 2.2rem;
+        padding: 0;
+        border: none;
+        border-radius: var(--radius);
+        background: transparent;
         color: var(--fg-sec);
         cursor: pointer;
-        box-shadow: var(--shadow, 0 2px 12px rgba(0, 0, 0, .12));
 
-        &:hover { color: var(--fg); }
+        &:hover { color: var(--fg); background: var(--accent-bg); }
         &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     }
 
@@ -641,9 +656,11 @@ a {
 
     .sidebar {
         position: fixed;
-        inset: 0 auto 0 0;
+        top: var(--lg-topbar-h);
+        bottom: 0;
+        left: 0;
         width: min(82vw, 320px);
-        height: 100dvh;
+        height: auto;
         max-height: none;
         z-index: 50;
         transform: translateX(-102%);
@@ -675,10 +692,9 @@ a {
         height: auto;
         overflow-y: visible;
         padding: 1.5rem 1rem 3rem;
-        /* leave breathing room under the floating toggle on the first line */
-        scroll-margin-top: 3.5rem;
+        scroll-margin-top: calc(var(--lg-topbar-h) + 0.5rem);
     }
 
-    /* Hero pages carry their own header — keep the toggle below it. */
-    body.lg-hero .lg-nav-toggle { top: 3.4rem; }
+    /* The top-bar search shrinks with the viewport. */
+    .lg-topbar .lg-search-box input { width: clamp(120px, 30vw, 220px); }
 }
