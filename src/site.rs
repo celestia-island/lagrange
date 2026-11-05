@@ -145,6 +145,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         crate::live::compile_all(&all_live_sources, &opts.out)
     };
 
+    let base = site_base(&opts.site_url);
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
@@ -219,7 +220,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             let sidebar_html = if nav.is_empty() {
                 String::new()
             } else {
-                fn render_nav(nodes: &[NavNode], lang: &str, chevron: &str) -> String {
+                fn render_nav(nodes: &[NavNode], chevron: &str, base: &str) -> String {
                     if nodes.is_empty() {
                         return String::new();
                     }
@@ -258,7 +259,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                                 // outside it toggles the children (lagrange_js).
                                 format!(
                                     "<div class=\"hk-sidebar-item-content\"><a href=\"{}\">{title}</a></div>",
-                                    absolute_href(&node.href, lang)
+                                    absolute_href(&node.href, base)
                                 )
                             };
                             html.push_str(&format!(
@@ -267,7 +268,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                                  <div class=\"{arrow}\">{chevron}</div></div>\
                                  <div class=\"{children}\" data-expanded=\"true\">"
                             ));
-                            html.push_str(&render_nav(&node.children, lang, chevron));
+                            html.push_str(&render_nav(&node.children, chevron, base));
                             html.push_str("</div></div>");
                         } else if is_section {
                             html.push_str(&format!(
@@ -276,14 +277,14 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                         } else {
                             html.push_str(&format!(
                                 "<div class=\"hk-sidebar-leaf\"><div class=\"hk-sidebar-leaf-content\"><a href=\"{}\">{title}</a></div></div>",
-                                absolute_href(&node.href, lang)
+                                absolute_href(&node.href, base)
                             ));
                         }
                     }
                     html
                 }
                 let chevron = crate::icons::icon_svg("chevron-down", 14);
-                render_nav(&nav, lang, &chevron)
+                render_nav(&nav, &chevron, &base)
             };
 
             // Rewrite asset paths (logo from README `docs/logo.webp`).
@@ -333,7 +334,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             &default_lang,
             &lang_order,
             &css,
-            &opts.site_url,
+            &base,
             &config.site.title,
             &config.site.favicon,
             &config.site.title_template,
@@ -361,7 +362,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     }
 
     // ── 4. Build the search index.
-    crate::search::write_index(&opts.out, &multi)?;
+    crate::search::write_index(&opts.out, &multi, &base)?;
 
     // 4b. BBS projection: when enabled, emit a boards index per language that
     //     groups pages by their frontmatter `category`. Pure static — the board
@@ -397,7 +398,7 @@ fn write_multi_page(
     default_lang: &str,
     lang_order: &[&str],
     css: &str,
-    _site_url: &Option<String>,
+    site_base: &str,
     site_title: &Option<String>,
     favicon: &Option<String>,
     title_template: &str,
@@ -458,12 +459,17 @@ fn write_multi_page(
     // lagrange_js, hidden by CSS on desktop widths).
     let topbar = |right: &str| {
         let brand = html_escape_text(site_title.as_deref().unwrap_or(&page_title));
+        let home = if site_base.is_empty() {
+            "/".to_string()
+        } else {
+            site_base.to_string()
+        };
         format!(
             "<div class=\"lg-topbar\">\
              <header class=\"hk-header hk-header-md\">\
              <div class=\"hk-header-left\">\
              <button type=\"button\" class=\"lg-nav-toggle\" aria-label=\"Navigation\" aria-expanded=\"false\">{}</button>\
-             <a href=\"/\" class=\"lg-brand\" title=\"{brand}\">{brand}</a>\
+             <a href=\"{home}\" class=\"lg-brand\" title=\"{brand}\">{brand}</a>\
              </div>\
              {menu_nav}\
              <div class=\"hk-header-right\">{right}</div>\
@@ -772,9 +778,38 @@ impl From<&FrontMatter> for PageMeta {
 
 // ── single page (legacy, kept for potential direct use) ───────────────────
 
-/// Turn a SUMMARY href into a flat site path (no language prefix).
-/// Language switching is handled via `?lang=xx` query params.
-fn absolute_href(href: &str, _lang: &str) -> String {
+/// The site's base PATH from `--site-url` ("" at the domain root).
+///
+/// `--site-url https://wowsp.langyo.xyz/docs` deploys the flat output under
+/// `/docs/` on that host; every root-relative link lagrange emits must carry
+/// this prefix or it escapes the deployment (404 into the hosting SPA's
+/// fallback). Only the URL's path participates — scheme and host never do.
+fn site_base(site_url: &Option<String>) -> String {
+    let url = site_url.as_deref().unwrap_or("");
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let path = rest.split_once('/').map(|(_, p)| p).unwrap_or("");
+    let path = path.trim_end_matches('/');
+    if path.is_empty() {
+        String::new()
+    } else {
+        format!("/{path}")
+    }
+}
+
+/// Turn a SUMMARY href into a flat site path (no language prefix), joined
+/// onto the site's base path. Language switching is handled via
+/// `?lang=xx` query params.
+///
+/// The base is the PATH portion of `--site-url` ("" when the site is
+/// deployed at the domain root). Root-relative output would escape that
+/// prefix on hosts serving the site under a sub-path — the wowsp docs live
+/// at `wowsp.langyo.xyz/docs/` and every `/guides/…` link 404'd into the
+/// website's SPA fallback (user report, 2026-11-05) — so the base rides
+/// along on every emitted link.
+fn absolute_href(href: &str, base: &str) -> String {
     if href.starts_with("http://")
         || href.starts_with("https://")
         || href.starts_with("mailto:")
@@ -794,7 +829,11 @@ fn absolute_href(href: &str, _lang: &str) -> String {
     } else {
         p
     };
-    format!("/{p}")
+    if base.is_empty() {
+        format!("/{p}")
+    } else {
+        format!("{base}/{p}")
+    }
 }
 
 fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
@@ -1197,20 +1236,20 @@ mod tests {
 
     #[test]
     fn absolute_href_passthrough() {
-        assert_eq!(absolute_href("https://x.com", "en"), "https://x.com");
-        assert_eq!(absolute_href("#anchor", "en"), "#anchor");
-        assert_eq!(absolute_href("/abs/path", "en"), "/abs/path");
+        assert_eq!(absolute_href("https://x.com", ""), "https://x.com");
+        assert_eq!(absolute_href("#anchor", ""), "#anchor");
+        assert_eq!(absolute_href("/abs/path", ""), "/abs/path");
     }
 
     #[test]
     fn absolute_href_flat_paths() {
         assert_eq!(
-            absolute_href("./guides/quickstart.md", "en"),
+            absolute_href("./guides/quickstart.md", ""),
             "/guides/quickstart.html"
         );
-        assert_eq!(absolute_href("./README.md", "en"), "/index.html");
+        assert_eq!(absolute_href("./README.md", ""), "/index.html");
         assert_eq!(
-            absolute_href("guides/architecture.md", "zhs"),
+            absolute_href("guides/architecture.md", ""),
             "/guides/architecture.html"
         );
     }

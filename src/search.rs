@@ -62,6 +62,7 @@ struct SearchMeta {
 pub fn write_index(
     out: &Path,
     pages: &std::collections::BTreeMap<String, crate::site::MultiPage>,
+    base: &str,
 ) -> anyhow::Result<()> {
     let mut metas: Vec<DocMeta> = Vec::new();
     let mut shards: Vec<Shard> = (0..SHARD_COUNT)
@@ -80,7 +81,11 @@ pub fn write_index(
                 id: doc_id,
                 lang: lang.clone(),
                 title: page.title.clone(),
-                url: mp.page_path.clone(),
+                url: if base.is_empty() {
+                    mp.page_path.clone()
+                } else {
+                    format!("{base}/{}", mp.page_path)
+                },
                 snippet,
             });
 
