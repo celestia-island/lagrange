@@ -535,7 +535,12 @@ fn write_multi_page(
         diagram_needs.merge(p.diagrams);
     }
     html.push_str(&crate::diagram::vendor_tags(diagram_needs));
-    html.push_str(&lagrange_js());
+    // The search index lives at the site root, not next to the page: give
+    // the runtime the "../../" prefix for this page's depth so a page in a
+    // subdirectory fetches the real index (root-hosted or under a
+    // --site-url path prefix — the prefix is never involved).
+    let site_root = "../".repeat(mp.page_path.matches('/').count());
+    html.push_str(&lagrange_js(&site_root));
     html.push_str(&live_block_js());
     html.push_str("</body>\n</html>\n");
 
@@ -597,7 +602,7 @@ fn live_block_js() -> String {
     prefix + suffix
 }
 
-fn lagrange_js() -> String {
+fn lagrange_js(site_root: &str) -> String {
     let ui_js = include_str!("comments/ui.js");
     // Feed the lgUI icon registry from the same mdi_path table that
     // build-time icon_svg() renders from — one source of truth for icons
@@ -607,13 +612,15 @@ fn lagrange_js() -> String {
     let chevron = format!("<path d=\"{}\"/>", crate::icons::mdi_path("chevron-down"));
     let boot = LAGRANGE_JS_TEMPLATE
         .replace("@TRANSLATE_ICON@", &translate)
-        .replace("@CHEVRON_ICON_PATH@", &chevron);
+        .replace("@CHEVRON_ICON_PATH@", &chevron)
+        .replace("@SITE_ROOT@", site_root);
     format!("<script>window.lgUI=window.lgUI||{{}};lgUI.icons={icons};</script>\n<script>{ui_js}</script>\n{boot}")
 }
 
 const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
 (function(){
  var D=JSON.parse(document.getElementById('lg-data').textContent);
+ var LR='@SITE_ROOT@';
  var N={"ar":"العربية","en":"English","es":"Español","fr":"Français","ja":"日本語","ko":"한국어","ru":"Русский","zh-Hans":"简体中文","zh-Hant":"繁體中文"};
  var DL='en',CUR='en';
  var BL={'zh':'zh-Hans','zh-CN':'zh-Hans','zh-Hans':'zh-Hans','zh-TW':'zh-Hant','zh-Hant':'zh-Hant','zh-HK':'zh-Hant'};
@@ -668,7 +675,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
  function tokenize(q){var t=[];var cs=q.split('');var i=0;while(i<cs.length){var c=cs[i];if(c.charCodeAt(0)<128&&c.match(/[a-z0-9]/i)){var w='';while(i<cs.length&&cs[i].match(/[a-z0-9]/i))w+=cs[i++].toLowerCase();if(w.length>=2)t.push(w)}else if(isCJK(c)){if(i+1<cs.length&&isCJK(cs[i+1]))t.push(c+cs[i+1]);i++}else{i++}}return t}
  function doSearch(q){
   if(!q||q.length<2){sr.innerHTML='';sp.close();return}
-  lgUI.loadJSON('search_meta.json',function(meta){
+  lgUI.loadJSON(LR+'search_meta.json',function(meta){
    if(!meta||!meta.shards)meta={docs:[],shards:[]};
    var tokens=tokenize(q);if(!tokens.length){sr.innerHTML='';sp.close();return}
    var L=CUR;var needed={};for(var i=0;i<tokens.length;i++){var c=tokens[i].charCodeAt(0)%16;needed[meta.shards[c]]=true}
@@ -690,7 +697,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
     for(var i=0;i<result.length;i++){var r=result[i];h+='<a href="'+he(r.url)+'?lang='+L+'" class="lg-hit"><b>'+he(r.title)+'</b>';if(r.snippet)h+='<span>'+r.snippet.replace(/</g,'&lt;')+'</span>';h+='</a>'}
     sr.innerHTML=h;sp.open()
    }
-   for(var i=0;i<names.length;i++){(function(n){lgUI.loadJSON(n,function(idx){all[n]=idx;check()})})(names[i])}
+   for(var i=0;i<names.length;i++){(function(n){lgUI.loadJSON(LR+n,function(idx){all[n]=idx;check()})})(names[i])}
   })
  }
  if(si){
@@ -1252,5 +1259,24 @@ mod tests {
             absolute_href("guides/architecture.md", ""),
             "/guides/architecture.html"
         );
+    }
+
+    #[test]
+    fn search_index_resolves_from_the_site_root() {
+        // Sub-directory pages must ask the site root for the search index;
+        // the page-relative 'search_meta.json' fetch silently 404'd (or hit
+        // the hosting SPA's fallback) on every non-root page.
+        let root_js = lagrange_js("../");
+        assert!(root_js.contains("var LR='../';"), "root prefix missing");
+        assert!(
+            root_js.contains("lgUI.loadJSON(LR+'search_meta.json'"),
+            "index fetch must use the root prefix"
+        );
+        assert!(
+            root_js.contains("lgUI.loadJSON(LR+n,"),
+            "shard fetches must use the root prefix"
+        );
+        // A page at the site root keeps an empty prefix.
+        assert!(lagrange_js("").contains("var LR='';"));
     }
 }
