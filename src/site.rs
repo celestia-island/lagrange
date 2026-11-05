@@ -211,53 +211,79 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             }
             let page_path = out_rel.to_string_lossy().replace('\\', "/");
 
-            // Render sidebar for THIS language.
+            // Render sidebar for THIS language — hikari's own sidebar
+            // grammar (.hk-sidebar-section / .hk-sidebar-item / .hk-sidebar-leaf),
+            // styled by the shipped component SCSS. Collapse is attribute-
+            // driven (aria-expanded + data-expanded), toggled in lagrange_js,
+            // so the static HTML stays fully functional without a framework.
             let sidebar_html = if nav.is_empty() {
                 String::new()
             } else {
-                fn render_nav(nodes: &[NavNode], lang: &str) -> String {
+                fn render_nav(nodes: &[NavNode], lang: &str, chevron: &str) -> String {
                     if nodes.is_empty() {
                         return String::new();
                     }
-                    let mut html = String::from("<ul>");
+                    let mut html = String::new();
                     for node in nodes {
                         let has_kids = !node.children.is_empty();
                         let is_section = node.href.is_empty();
+
+                        let title = html_escape_text(&node.title);
                         if has_kids {
-                            html.push_str("<li class=\"lg-nav-section\">");
-                            if is_section {
-                                html.push_str(&format!(
-                                    "<details open><summary><span class=\"lg-nav-section-title\">{}</span></summary>",
-                                    html_escape_text(&node.title)
-                                ));
+                            let (wrapper, header, children) = if is_section {
+                                (
+                                    "hk-sidebar-section",
+                                    "hk-sidebar-section-header",
+                                    "hk-sidebar-section-children",
+                                )
                             } else {
-                                let abs = absolute_href(&node.href, lang);
-                                html.push_str(&format!(
-                                    "<details open><summary><a href=\"{abs}\">{}</a></summary>",
-                                    html_escape_text(&node.title)
-                                ));
-                            }
-                            html.push_str(&render_nav(&node.children, lang));
-                            html.push_str("</details></li>");
+                                (
+                                    "hk-sidebar-item",
+                                    "hk-sidebar-item-header",
+                                    "hk-sidebar-item-children",
+                                )
+                            };
+                            let arrow = if is_section {
+                                "hk-sidebar-section-arrow"
+                            } else {
+                                "hk-sidebar-item-arrow"
+                            };
+                            let head_inner = if is_section {
+                                format!(
+                                    "<div class=\"hk-sidebar-section-title-group\"><span class=\"hk-sidebar-section-title-primary\">{title}</span></div>"
+                                )
+                            } else {
+                                // A parent entry is BOTH a link and a collapse
+                                // toggle: the link rides the content, a click
+                                // outside it toggles the children (lagrange_js).
+                                format!(
+                                    "<div class=\"hk-sidebar-item-content\"><a href=\"{}\">{title}</a></div>",
+                                    absolute_href(&node.href, lang)
+                                )
+                            };
+                            html.push_str(&format!(
+                                "<div class=\"{wrapper}\">\
+                                 <div class=\"{header}\" aria-expanded=\"true\">{head_inner}\
+                                 <div class=\"{arrow}\">{chevron}</div></div>\
+                                 <div class=\"{children}\" data-expanded=\"true\">"
+                            ));
+                            html.push_str(&render_nav(&node.children, lang, chevron));
+                            html.push_str("</div></div>");
+                        } else if is_section {
+                            html.push_str(&format!(
+                                "<div class=\"hk-sidebar-section-title\"><span>{title}</span></div>"
+                            ));
                         } else {
-                            let abs = absolute_href(&node.href, lang);
-                            if is_section {
-                                html.push_str(&format!(
-                                    "<li><span class=\"lg-nav-section-title\">{}</span></li>",
-                                    html_escape_text(&node.title)
-                                ));
-                            } else {
-                                html.push_str(&format!(
-                                    "<li><a href=\"{abs}\">{}</a></li>",
-                                    html_escape_text(&node.title)
-                                ));
-                            }
+                            html.push_str(&format!(
+                                "<div class=\"hk-sidebar-leaf\"><div class=\"hk-sidebar-leaf-content\"><a href=\"{}\">{title}</a></div></div>",
+                                absolute_href(&node.href, lang)
+                            ));
                         }
                     }
-                    html.push_str("</ul>");
                     html
                 }
-                format!("<h2>Contents</h2>{}", render_nav(&nav, lang))
+                let chevron = crate::icons::icon_svg("chevron-down", 14);
+                render_nav(&nav, lang, &chevron)
             };
 
             // Rewrite asset paths (logo from README `docs/logo.webp`).
@@ -311,6 +337,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             &config.site.title,
             &config.site.favicon,
             &config.site.title_template,
+            &config.site.menu,
         )?;
         page_count += 1;
     }
@@ -374,6 +401,7 @@ fn write_multi_page(
     site_title: &Option<String>,
     favicon: &Option<String>,
     title_template: &str,
+    menu: &[crate::config::MenuEntry],
 ) -> Result<()> {
     // Pick the default language's content for the visible HTML (SEO + no-JS).
     let default = mp
@@ -409,38 +437,65 @@ fn write_multi_page(
     html.push_str("<style>\n");
     html.push_str(css);
     let magnify = crate::icons::icon_svg("magnify", 16);
-    if has_hero {
-        html.push_str(
-            "\n</style>\n</head>\n<body class=\"lg-hero\">\n\
-             <header class=\"lg-header\"><div class=\"lg-header-inner\">\
-             <a href=\"/\" class=\"lg-site-title\">",
-        );
-        html.push_str(&html_escape_text(
-            site_title.as_deref().unwrap_or(&page_title),
+
+    // Top-bar menu entries ([site.menu] rows) — the header's center nav.
+    let mut menu_html = String::new();
+    for entry in menu {
+        menu_html.push_str(&format!(
+            "<a class=\"lg-topnav-link\" href=\"{}\">{}</a>",
+            html_escape_text(&rewrite_nav_link(&entry.href)),
+            html_escape_text(&entry.label)
         ));
-        html.push_str(
-            "</a><div id=\"lg-sw\"></div></div></header>\n\
-             <main class=\"content\" id=\"lg-body\">\n",
-        );
+    }
+    let menu_nav = if menu_html.is_empty() {
+        String::new()
     } else {
-        html.push_str(
-            "\n</style>\n</head>\n<body>\n<div class=\"layout\">\n\
-             <aside class=\"sidebar\">\n\
-             <div class=\"lg-search-box\">\
-             <span class=\"lg-search-icon\">",
-        );
-        html.push_str(&magnify);
-        html.push_str(
-            "</span>\
+        format!("<nav class=\"hk-header-nav lg-topnav\" aria-label=\"Site\">{menu_html}</nav>")
+    };
+
+    // The top bar — hikari header grammar: brand left, menu center, page
+    // tools right; the mobile nav toggle rides the left edge (wired by
+    // lagrange_js, hidden by CSS on desktop widths).
+    let topbar = |right: &str| {
+        let brand = html_escape_text(site_title.as_deref().unwrap_or(&page_title));
+        format!(
+            "<div class=\"lg-topbar\">\
+             <header class=\"hk-header hk-header-md\">\
+             <div class=\"hk-header-left\">\
+             <button type=\"button\" class=\"lg-nav-toggle\" aria-label=\"Navigation\" aria-expanded=\"false\">{}</button>\
+             <a href=\"/\" class=\"lg-brand\" title=\"{brand}\">{brand}</a>\
+             </div>\
+             {menu_nav}\
+             <div class=\"hk-header-right\">{right}</div>\
+             </header>\
+             </div>",
+            crate::icons::icon_svg("menu", 20),
+        )
+    };
+
+    if has_hero {
+        // Landing pages: top bar with the language switcher, no sidebar.
+        html.push_str("\n</style>\n</head>\n<body class=\"lg-hero\">\n");
+        html.push_str(&topbar("<div id=\"lg-sw\"></div>"));
+        html.push_str("<main class=\"content\" id=\"lg-body\">\n");
+    } else {
+        // Docs pages: top bar carries the search; the sidebar keeps the nav
+        // tree and the bottom-left language dropdown.
+        let search_html = format!(
+            "<div class=\"lg-search-box\">\
+             <span class=\"lg-search-icon\">{magnify}</span>\
              <input type=\"text\" placeholder=\"Search…\" id=\"lg-search-input\" autocomplete=\"off\" spellcheck=\"false\">\
-             <button type=\"button\" id=\"lg-search-clear\" aria-label=\"Clear search\" title=\"Clear search\">",
-        );
-        html.push_str(&crate::icons::icon_svg("close", 12));
-        html.push_str(
-            "</button>\
+             <button type=\"button\" id=\"lg-search-clear\" aria-label=\"Clear search\" title=\"Clear search\">{}</button>\
              <div id=\"lg-search-results\" class=\"hi-scroll-container\"></div>\
-             </div>\n\
-             <nav id=\"lg-sidebar\" class=\"hi-scroll-container\">\n",
+             </div>",
+            crate::icons::icon_svg("close", 12),
+        );
+        html.push_str("\n</style>\n</head>\n<body>\n");
+        html.push_str(&topbar(&search_html));
+        html.push_str(
+            "<div class=\"layout\">\n\
+             <aside class=\"sidebar\">\n\
+             <nav id=\"lg-sidebar\" class=\"hk-sidebar hi-scroll-container\">\n",
         );
         html.push_str(&default.sidebar_html);
         html.push_str(
@@ -576,10 +631,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
  lgUI.i18n={cur:function(){return CUR},set:sL,detect:gL};
  /* ── mobile nav drawer ── */
  var mq=window.matchMedia('(max-width: 768px)');
- var navBtn=document.createElement('button');
- navBtn.type='button';navBtn.className='lg-nav-toggle';
- navBtn.setAttribute('aria-expanded','false');navBtn.setAttribute('aria-controls','lg-sidebar');
- navBtn.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+ var navBtn=document.querySelector('.lg-nav-toggle');
  var scrim=document.createElement('div');scrim.className='lg-nav-scrim';scrim.setAttribute('aria-hidden','true');
  function navApply(o){document.body.classList.toggle('lg-nav-open',o);navBtn.setAttribute('aria-expanded',o?'true':'false')}
  function navClose(){navApply(false)}
@@ -591,10 +643,10 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
  if(mq.addEventListener)mq.addEventListener('change',function(){if(!mq.matches)navClose()});
  function navTitle(){navBtn.title=lgUI.t('nav');navBtn.setAttribute('aria-label',lgUI.t('nav'))}
  navTitle();
- document.body.appendChild(navBtn);document.body.appendChild(scrim);
- /* ── language dropdown ── */
+ document.body.appendChild(scrim);
+ /* ── language dropdown — hikari select grammar ── */
  var sw=document.getElementById('lg-sw');sw.className='lg-lang-select';
- sw.innerHTML='<button type="button" class="lg-lang-trigger">@TRANSLATE_ICON@<span id="lg-lang-cur"></span><svg class="lg-lang-arrow" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></button><div class="lg-lang-panel hi-scroll-container"></div>';
+ sw.innerHTML='<button type="button" class="hk-select-trigger hk-select-sm lg-lang-trigger">@TRANSLATE_ICON@<span class="hk-select-value" id="lg-lang-cur"></span><span class="hk-select-arrow lg-lang-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">@CHEVRON_ICON_PATH@</svg></span></button><div class="lg-lang-panel hk-select-dropdown hi-scroll-container"></div>';
  var trigger=sw.querySelector('.lg-lang-trigger');
  var panel=sw.querySelector('.lg-lang-panel');
  var ls=document.documentElement.dataset.langs?document.documentElement.dataset.langs.split(','):Object.keys(D).sort();
@@ -639,6 +691,23 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
   si.oninput=lgUI.debounce(function(){if(sc)sc.classList.toggle('show',!!si.value);doSearch(si.value)},200);
   if(sc)sc.onclick=function(){si.value='';sc.classList.remove('show');sp.close();si.focus()};
  }
+
+ /* ── hikari sidebar collapse — delegated so section toggles survive the
+    language switch (rL replaces the sidebar innerHTML). The hikari SCSS
+    hides children on [data-expanded="false"]; the header click flips the
+    attributes and the arrow class. A click on a link inside the header
+    navigates instead. ── */
+ document.addEventListener('click',function(e){
+  var h=e.target&&e.target.closest?e.target.closest('.hk-sidebar-section-header,.hk-sidebar-item-header'):null;
+  if(!h)return;
+  if(e.target.closest('a'))return;
+  var ex=h.getAttribute('aria-expanded')==='true';
+  h.setAttribute('aria-expanded',ex?'false':'true');
+  var ch=h.parentElement.querySelector('.hk-sidebar-section-children,.hk-sidebar-item-children');
+  if(ch){ch.setAttribute('data-expanded',ex?'false':'true');ch.setAttribute('aria-hidden',ex?'true':'false')}
+  var ar=h.querySelector('.hk-sidebar-section-arrow,.hk-sidebar-item-arrow');
+  if(ar)ar.classList.toggle('rotated',!ex);
+ });
 
  /* ── code copy — delegated so buttons keep working after rL body swaps ── */
  document.addEventListener('click',function(e){

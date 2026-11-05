@@ -34,6 +34,10 @@ fn hikari_component_css() -> String {
     registry.register_available();
     hikari_components::basic::link::LinkComponent::register(&mut registry);
     hikari_components::production::code_highlight::CodeHighlightComponent::register(&mut registry);
+    // The layout group is NOT covered by register_available — but the site
+    // top bar renders hikari's header grammar (.hk-header*), so its sheet
+    // must ship too.
+    hikari_components::layout::HeaderComponent::register(&mut registry);
 
     let all = registry.get_all();
     let mut names: Vec<&'static str> = all.keys().copied().collect();
@@ -135,6 +139,8 @@ const HIKARI_VARS: &str = r#":root {
 --hi-color-bg-container: var(--code-bg);
 --hi-color-bg-elevated: var(--bg-subtle);
 --hi-color-border: var(--border);
+--hi-surface: var(--bg-subtle);
+--hi-border: var(--border);
 --hi-color-text-primary: var(--fg);
 --hi-color-text-secondary: var(--fg-sec);
 --hi-color-text-tertiary: var(--fg-sec);

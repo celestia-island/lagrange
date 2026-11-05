@@ -89,6 +89,17 @@ pub struct ThemeConfig {
     pub border: Option<String>,
 }
 
+/// One top-bar menu entry (a `[[site.menu]]` row in lagrange.toml).
+#[derive(Deserialize)]
+pub struct MenuEntry {
+    /// Visible label (rendered verbatim — localization is the site
+    /// author's job).
+    pub label: String,
+    /// Link target, absolute URL or site-relative (rewritten like nav
+    /// links: `README.html` → `index.html`, `.md` → `.html`).
+    pub href: String,
+}
+
 /// Site-wide settings (title, description, custom domain).
 #[derive(Deserialize, Default)]
 pub struct SiteConfig {
@@ -106,6 +117,10 @@ pub struct SiteConfig {
     /// Default: `{title}` (page title only). Example: `{title} — My Site`.
     #[serde(default = "default_title_template")]
     pub title_template: String,
+    /// Top-bar menu entries (the "top menu"): rendered left-to-right in the
+    /// header's center nav on every page. Optional.
+    #[serde(default)]
+    pub menu: Vec<MenuEntry>,
 }
 
 fn default_title_template() -> String {
