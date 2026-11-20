@@ -2,7 +2,7 @@
 
 <h1 align="center">Lagrange</h1>
 
-<p align="center"><strong>A WASI-rendered Markdown static site facility — multilingual out of the box</strong></p>
+<p align="center"><strong>An agent-ready documentation knowledge base — Markdown in, citations out, MCP-native</strong></p>
 
 <div align="center">
 
@@ -66,6 +66,32 @@ lagrange build --src docs --out _site
 `README.md` and `index.md` both map to `index.html`; a `docs/en/README.md`
 symlink to the root `README.md` is the recommended way to keep the GitHub
 landing page and the docs index in sync.
+
+## Agent knowledge base
+
+Lagrange is being repositioned as an **agent-ready documentation knowledge base**: the
+authoritative source is the git/noa Markdown tree, and the build pipeline produces both
+a static site and a `knowledge.json` file (documents, translations, revisions, chunks
+with source-coordinate spans) that downstream agents consume via the `lagrange dev --mcp`
+tool surface.
+
+### MCP tools (via `lagrange dev --mcp`)
+
+| Tool | Purpose |
+|---|---|
+| `docs.search` | Chunk-level search with citations (five-tuple: document_id / lang / revision / span / anchor) |
+| `docs.fetch` | Fetch a chunk by citation; fails with `STALE:` if the revision has changed |
+| `docs.tree` | Document tree with translations and freshness |
+| `docs.write` | Write back Markdown (scope-limited, identity-guarded) |
+| `docs.status` | Build diagnostics (errors, broken links, missing translations) |
+| `build.trigger` | Trigger a rebuild |
+
+### Webui
+
+The `packages/webui/` directory contains a Vue 3 + Vite app that renders the knowledge
+base with hikari components (HkFaceShell / HkMenu / HkMarkdownRenderer) for human
+consumption, plus a console tab with build diagnostics.
+
 
 ## Deploying the site
 
@@ -136,6 +162,11 @@ pushing an `npm-v*` tag (e.g. `npm-v0.1.1`); plain `v*` tags drive the binary
 archives (`release.yml`) and the crates.io crate (`publish.yml`).
 
 ## Features
+
+> ⚠️ The comment system is **experimental** — the `proxied` delivery mode has a known
+> gap (the runtime does not recognise it) and the GitHub Discussions adapter is a skeleton.
+> Only the `static-json` archive mode is functional. See the ledger for details.
+
 
 - **pest-based markdown parser** — block + inline, modelled on
   [ratatui-markdown](https://github.com/celestia-island/ratatui-markdown), plus
