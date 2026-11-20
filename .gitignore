@@ -16,3 +16,4 @@ Thumbs.db
 /.just/
 /celestia-devtools.just
 _site/
+node_modules/

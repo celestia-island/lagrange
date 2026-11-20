@@ -1,0 +1,22 @@
+{
+  "name": "@celestia-island/lagrange-webui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "lint": "vue-tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@celestia-island/hikari": "^0.55",
+    "vue": "^3.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6",
+    "typescript": "~6.0",
+    "vite": "^8.2",
+    "vitest": "^3",
+    "vue-tsc": "^3.3"
+  }
+}
