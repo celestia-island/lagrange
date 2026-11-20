@@ -413,7 +413,7 @@ mod sibling_lenient_tests {
     /// down (title gone, id gone). Every hand-written spelling must read.
     #[test]
     fn sibling_bool_and_list_fields_survive_loose_spelling() {
-        let raw = "---\ntitle: Keep\nid: stable\nhero: no\ntags: rust\n---\n\nbody\n";
+        let raw = "---\ntitle: Keep\nid: stable\nhero: no\ntags: rust\ncomments: no\n---\n\nbody\n";
         let (_, fm, _, _) = strip_with_offset(raw);
         assert_eq!(fm.title.as_deref(), Some("Keep"), "title must survive");
         assert_eq!(fm.id.as_deref(), Some("stable"));
@@ -423,11 +423,17 @@ mod sibling_lenient_tests {
             vec!["rust".to_string()],
             "scalar tags becomes a list"
         );
+        // This cell had NO pin until review R9: deleting the comments field's
+        // lenient wiring left the whole suite green (strict parsing still
+        // passed the canonical spelling used here), so the lenient spelling
+        // below is what bites.
+        assert_eq!(fm.comments, Some(false), "comments: no");
         // Canonical spellings still work.
-        let raw = "---\ntitle: Keep\nhero: true\ntags: [a, b]\n---\n\nbody\n";
+        let raw = "---\ntitle: Keep\nhero: true\ntags: [a, b]\ncomments: false\n---\n\nbody\n";
         let (_, fm, _, _) = strip_with_offset(raw);
         assert_eq!(fm.hero, Some(true));
         assert_eq!(fm.tags, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(fm.comments, Some(false));
     }
 }
 

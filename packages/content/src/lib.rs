@@ -85,7 +85,13 @@ where
         // as array elements, so `tags: 7` and `tags: [7]` agree (review R8
         // S3: the first cut stringified array numbers but dropped top-level
         // ones, contradicting its own doc).
-        Some(scalar @ (serde_json::Value::String(_) | serde_json::Value::Number(_))) => {
+        Some(
+            scalar @ (serde_json::Value::String(_)
+            | serde_json::Value::Number(_)
+            | serde_json::Value::Bool(_)),
+        ) => {
+            // Booleans included: `tags: true` must agree with `tags: [true]`
+            // (review R9 S3 — the first cut honoured the array form only).
             Some(vec![match scalar {
                 serde_json::Value::String(s) => s,
                 other => other.to_string(),
@@ -354,6 +360,20 @@ mod tests {
 
     /// Review R8 S3: a top-level NUMBER scalar must follow the same rule as
     /// array elements and string scalars — one-element list, not silent drop.
+    /// Review R9 S3: the comments/hero cells of the unified struct's own
+    /// serde face had no pin — the lenient wiring could be deleted silently
+    /// (dormant today, but the struct IS a public JSON contract).
+    #[test]
+    fn comments_and_hero_serde_cells_accept_loose_spellings() {
+        let fm: FrontMatter = serde_json::from_str(r#"{"comments":"no","hero":"yes"}"#).unwrap();
+        assert_eq!(fm.comments, Some(false));
+        assert_eq!(fm.hero, Some(true));
+        // Strict canonical spellings unaffected.
+        let fm: FrontMatter = serde_json::from_str(r#"{"comments":false,"hero":true}"#).unwrap();
+        assert_eq!(fm.comments, Some(false));
+        assert_eq!(fm.hero, Some(true));
+    }
+
     #[test]
     fn scalar_number_tags_become_a_list_like_arrays_do() {
         let fm: FrontMatter = serde_json::from_str(r#"{"tags":7}"#).unwrap();

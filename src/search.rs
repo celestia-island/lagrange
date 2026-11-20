@@ -451,10 +451,12 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
                         // After the target: a reference label is a name —
                         // drop it with a boundary (sequential, see the prose
                         // arm; review R7 S2).
-                        if chars.get(i) == Some(&'[') {
+                        while chars.get(i) == Some(&'[') {
                             if let Some(label) = find_close_bracket(&chars, i) {
                                 out.push(' ');
                                 i = label + 1;
+                            } else {
+                                break;
                             }
                         }
                         continue;
@@ -698,15 +700,15 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                             i = parens + 1;
                         }
                     }
-                    // AFTER the target: a following reference label is a
-                    // name, not text — drop it with a boundary. This must be
-                    // a SEQUENTIAL if: chained to the (url) arm as else-if it
-                    // could never fire, and `badge` + `img` glued into the
-                    // invented token `badgeimg` (review R7 S2).
-                    if i < chars.len() && chars[i] == '[' {
+                    // AFTER the target: adjacent reference labels are
+                    // NAMES, dropped with boundaries (sequential — the R7
+                    // else-if form could never fire, review R7/R9).
+                    while i < chars.len() && chars[i] == '[' {
                         if let Some(label) = find_close_bracket(&chars, i) {
                             out.push(' ');
                             i = label + 1;
+                        } else {
+                            break;
                         }
                     }
                     continue;
@@ -731,15 +733,18 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                         if let Some(parens) = find_close_paren(&chars, i) {
                             i = parens + 1;
                         }
-                    } else if i < chars.len() && chars[i] == '[' {
-                        // Reference form `[text][ref]`: the label is a name,
-                        // not visible text — drop it, but leave a WORD
-                        // BOUNDARY so `[text][ref]` cannot become `textref`
-                        // (review R6, S3: that invented a token and made both
-                        // words unfindable).
+                    }
+                    // AFTER the target: adjacent reference labels are NAMES,
+                    // dropped with boundaries — the same rule the image and
+                    // fence arms follow. This was an else-if chained to the
+                    // (url) arm until review R9: it could never fire, so
+                    // `[t](u)[r]` glued into the invented token `tr`.
+                    while i < chars.len() && chars[i] == '[' {
                         if let Some(label) = find_close_bracket(&chars, i) {
                             out.push(' ');
                             i = label + 1;
+                        } else {
+                            break;
                         }
                     }
                     continue;
@@ -1193,6 +1198,26 @@ mod tests {
             !text.contains("leak.test"),
             "the fence must have closed at `- ``` `: {text}"
         );
+    }
+
+    /// Review R9 S2-B: adjacent reference labels after an inline target are
+    /// NAMES in all three arms — the prose link arm used to glue them into
+    /// the invented token `tr` while the other two arms dropped them.
+    #[test]
+    fn adjacent_reference_labels_are_dropped_in_prose_links() {
+        assert_eq!(plain_text("see [t](u)[r] end"), "see t end");
+        assert_eq!(plain_text("see [t](u)[r][r2] end"), "see t end");
+        // `t` is single-character and never tokenized; the pin is that the
+        // invented `tr` does not exist and the real words survive.
+        let tokens = tokenize(&plain_text("see [target](u)[r] end"));
+        assert!(!tokens.iter().any(|token| token == "tr"));
+        assert!(tokens.iter().any(|token| token == "target"));
+    }
+
+    /// Image arm parity: consecutive reference labels all drop.
+    #[test]
+    fn adjacent_reference_labels_are_dropped_in_prose_images() {
+        assert_eq!(plain_text("![a](b)[c][d] done"), "a done");
     }
 
     #[test]
