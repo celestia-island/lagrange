@@ -9,9 +9,8 @@
 //! - Every entity references an article **only** by `node_id` / `canonical_url`.
 //!   No comment carries article body or title — isolation is enforced at the
 //!   type level.
-//! - Dates are RFC 3339 strings over the wire (serde serialises
-//!   `chrono::DateTime` accordingly when the `chrono` feature is on; otherwise
-//!   they are plain `String`).
+//! - Dates are RFC 3339 strings over the wire (plain `String`, no typed
+//!   date dependency).
 //! - `body_markdown` is always present; `body_html` is optional and, when
 //!   present, is already sanitised server-side. The client may fall back to
 //!   rendering `body_markdown` itself with a conservative renderer.

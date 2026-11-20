@@ -3,7 +3,7 @@
 //! This crate is the single source of truth for the wire format spoken between
 //! any lagrange comment backend (`lagrange-server`, `lagrange-edge`, a
 //! third-party serverless function) and the front-end Web Component. It is
-//! deliberately dependency-light (serde + chrono) so it can be consumed by:
+//! deliberately dependency-light (serde only) so it can be consumed by:
 //!
 //! - Rust backends (as a regular crate),
 //! - TypeScript clients (via the generated `bindings/lagrange-protocol.ts`),

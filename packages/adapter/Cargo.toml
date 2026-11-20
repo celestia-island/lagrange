@@ -23,7 +23,6 @@ pulldown-cmark = { version = "^0.13", default-features = false, features = ["htm
 # Ids.
 ulid = { version = "^3", features = ["std"] }
 # Logging.
-tracing = "^0.1"
 chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
 
 # Optional storage backends. Each is feature-gated so a backend binary pulls
