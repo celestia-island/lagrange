@@ -506,12 +506,18 @@ fn parse_center_container(
         return None;
     }
 
-    // Inner blocks keep their file coordinates: the line slice and its byte
-    // tables pass straight through; the heading stack is cloned so container
-    // headings stay local to their subtree.
+    // Inner blocks keep their file coordinates. Byte tables already carry
+    // full-file offsets, but the LINE slice starts at the container's first
+    // inner line, so the shift must absorb that offset — otherwise every
+    // nested block's start_line/end_line is reported relative to the
+    // container instead of the file (review S1: a `<div align="center">` on
+    // file line 3 reported its child at line 2 instead of 5). The heading
+    // stack is cloned so container headings stay local to their subtree.
     let mut inner = Scan {
         full: scan.full,
-        shift: scan.shift,
+        shift: TableShift {
+            line_shift: scan.shift.line_shift + i + 1,
+        },
         stack: scan.stack.clone(),
         ctx: scan.ctx,
     };
@@ -565,9 +571,14 @@ fn parse_blockquote(
             break;
         }
     }
+    // Same line-offset discipline as the div/center container: the peeled
+    // inner line array starts at the blockquote's OWN first line (`i`), so
+    // the shift absorbs that offset while the byte tables stay full-file.
     let mut inner = Scan {
         full: scan.full,
-        shift: scan.shift,
+        shift: TableShift {
+            line_shift: scan.shift.line_shift + i,
+        },
         stack: scan.stack.clone(),
         ctx: scan.ctx,
     };
@@ -989,6 +1000,47 @@ mod span_tests {
         assert_eq!(
             &src[inner[0].span.start_byte..inner[0].span.end_byte],
             "quoted"
+        );
+        // LINE coordinates are pinned too: the byte assertions above passed
+        // while nested line numbers were systematically offset (review S1),
+        // so a span test that only slices bytes cannot catch that class.
+        assert_eq!(children[0].span.start_line, 3);
+        assert_eq!(children[0].span.end_line, 3);
+        assert_eq!(inner[0].span.start_line, 7);
+        assert_eq!(inner[0].span.end_line, 7);
+    }
+
+    /// Review S1 regression: a container that does NOT start on line 1 used
+    /// to report every nested block relative to the container instead of the
+    /// file (`<div>` on line 3 reported its child at line 2 instead of 5;
+    /// a blockquote on line 5 reported its child at line 1).
+    #[test]
+    fn nested_blocks_report_file_lines_not_container_relative_lines() {
+        let src = "# Title\n\n<div align=\"center\">\n\nchild para\n\n</div>\n\n> quoted here\n";
+        let blocks = parse_doc(src);
+
+        let Block::Center(children) = &blocks[1].block else {
+            panic!("expected center as second block");
+        };
+        // Container header sits on line 3; its child paragraph on line 5.
+        assert_eq!(blocks[1].span.start_line, 3);
+        assert_eq!(children[0].span.start_line, 5);
+        assert_eq!(children[0].span.end_line, 5);
+        assert_eq!(
+            &src[children[0].span.start_byte..children[0].span.end_byte],
+            "child para"
+        );
+
+        let Block::Blockquote(inner) = &blocks[2].block else {
+            panic!("expected blockquote as third block");
+        };
+        // Blockquote sits on line 9; its inner paragraph shares that line.
+        assert_eq!(blocks[2].span.start_line, 9);
+        assert_eq!(inner[0].span.start_line, 9);
+        assert_eq!(inner[0].span.end_line, 9);
+        assert_eq!(
+            &src[inner[0].span.start_byte..inner[0].span.end_byte],
+            "quoted here"
         );
     }
 

@@ -89,6 +89,9 @@ fn render_frontmatter(doc: &ExchangeDoc) -> String {
     push_opt(&mut lines, "title", &fm.title);
     push_opt(&mut lines, "date", &fm.date);
     push_opt(&mut lines, "slug", &fm.slug);
+    // The logical document id round-trips: renaming a migrated file keeps
+    // its identity only when this field survives.
+    push_opt(&mut lines, "id", &fm.id);
     push_opt(&mut lines, "description", &fm.description);
     push_opt(&mut lines, "category", &fm.category);
     push_opt(&mut lines, "canonical", &fm.canonical);

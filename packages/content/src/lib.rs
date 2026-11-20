@@ -118,10 +118,11 @@ pub fn derive_document_id(explicit: Option<&str>, rel_path: &str) -> String {
     }
 }
 
-/// Compute the anchor (URL fragment) for a heading: lowercase ASCII, every
-/// whitespace run collapses to one `-`, word characters (`alphanumeric` or
-/// `_`, CJK included) are kept, everything else is dropped, and leading or
-/// trailing `-` are trimmed.
+/// Compute the anchor (URL fragment) for a heading, GitHub-slugger style:
+/// lowercase ASCII, every whitespace run collapses to one `-`, hyphens are
+/// KEPT (so `Already-Existing` → `already-existing`), word characters
+/// (`alphanumeric` or `_`, CJK included) are kept, everything else is
+/// dropped, and leading or trailing `-` are trimmed.
 ///
 /// Two headings in one document may produce the same anchor; the caller
 /// tracks emitted anchors per document and disambiguates repeats by
@@ -135,6 +136,10 @@ pub fn slugify_anchor(heading_text: &str) -> String {
                 out.push('-');
                 last_was_sep = true;
             }
+        } else if ch == '-' {
+            // Hyphens are kept verbatim (GitHub slugger behaviour).
+            out.push('-');
+            last_was_sep = false;
         } else if ch.is_alphanumeric() || ch == '_' {
             out.extend(ch.to_lowercase());
             last_was_sep = false;
@@ -144,10 +149,9 @@ pub fn slugify_anchor(heading_text: &str) -> String {
             // "drop punctuation" half of the GitHub slugger.)
         }
     }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    out
+    // Leading/trailing hyphens (literal or whitespace-derived) are edges,
+    // not word content.
+    out.trim_matches('-').to_string()
 }
 
 #[cfg(test)]
@@ -223,6 +227,15 @@ mod tests {
         assert_eq!(slugify_anchor("What's new?"), "whats-new");
         assert_eq!(slugify_anchor("snake_case names"), "snake_case-names");
         assert_eq!(slugify_anchor("v2.0 release"), "v20-release");
+    }
+
+    #[test]
+    fn slugify_keeps_hyphens_inside_words() {
+        assert_eq!(slugify_anchor("Already-Existing"), "already-existing");
+        // Literal hyphen survives; each whitespace run adds exactly one '-'.
+        assert_eq!(slugify_anchor("multi - dash"), "multi---dash");
+        assert_eq!(slugify_anchor("-lead-and-trail-"), "lead-and-trail");
+        assert_eq!(slugify_anchor("--- Leading"), "leading");
     }
 
     #[test]

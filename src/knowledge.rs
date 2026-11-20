@@ -601,7 +601,11 @@ mod golden_tests {
         assert_eq!(kb.chunks[2].lang, "zh-Hans");
         assert_eq!(kb.chunks[2].heading_path, vec!["快速开始"]);
         assert_eq!(kb.chunks[2].anchor, "快速开始");
-        // The serialised JSON shape: pinned keys, in order.
+        // The serialised JSON shape: the KEY SET is pinned (which fields the
+        // contract carries), not their order — serde_json maps are
+        // BTreeMap-backed and JSON object member order carries no meaning.
+        // Field ORDER inside a struct is a Rust-side concern and is pinned
+        // separately where it matters (ast.rs span).
         let json = serde_json::to_string_pretty(&kb).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         let top = value.as_object().unwrap();

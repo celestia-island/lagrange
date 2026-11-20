@@ -196,6 +196,8 @@ struct YamlFm {
     #[serde(default)]
     slug: Option<String>,
     #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
     description: Option<String>,
     #[serde(default)]
     category: Option<String>,
@@ -216,6 +218,8 @@ struct TomlFm {
     #[serde(default)]
     slug: Option<String>,
     #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
     description: Option<String>,
     #[serde(default)]
     category: Option<String>,
@@ -233,6 +237,7 @@ impl From<YamlFm> for FrontMatter {
             title,
             date,
             slug,
+            id,
             description,
             category,
             categories,
@@ -261,6 +266,7 @@ impl From<YamlFm> for FrontMatter {
             title,
             date,
             slug,
+            id,
             description,
             category,
             canonical: None,
@@ -279,6 +285,7 @@ impl From<TomlFm> for FrontMatter {
             title: t.title,
             date: t.date,
             slug: t.slug,
+            id: t.id,
             description: t.description,
             category: t.category,
             canonical: None,

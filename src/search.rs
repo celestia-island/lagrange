@@ -388,18 +388,42 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
     }
 }
 
+/// Balanced-bracket close of the `[` at `open`. Nested link/image syntax
+/// (`[![alt](img)](link)`) means the FIRST `]` may belong to an inner
+/// bracket — only the depth-balanced one closes this link.
 fn find_close_bracket(chars: &[char], open: usize) -> Option<usize> {
-    chars[open..]
-        .iter()
-        .position(|&c| c == ']')
-        .map(|p| open + p)
+    let mut depth = 0usize;
+    for (p, &c) in chars[open..].iter().enumerate() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + p);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
+/// Balanced-paren close of the `(` at `open` (URLs may contain parens).
 fn find_close_paren(chars: &[char], open: usize) -> Option<usize> {
-    chars[open..]
-        .iter()
-        .position(|&c| c == ')')
-        .map(|p| open + p)
+    let mut depth = 0usize;
+    for (p, &c) in chars[open..].iter().enumerate() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + p);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -439,6 +463,25 @@ mod tests {
         assert_eq!(plain_text("see [docs](https://x.y) now"), "see docs now");
         assert_eq!(plain_text("keep snake_case"), "keep snake_case");
         assert_eq!(plain_text("```\ncode line\n```"), "code line");
+    }
+
+    #[test]
+    fn badge_link_leaves_no_url_in_snippet_or_tokens() {
+        // Review probe: the nested badge link used to leak BOTH urls into
+        // the snippet (and thus into the index tokens) — the naive
+        // first-`]` scan cut the outer link at the inner alt bracket.
+        let raw = "[![License](badge.svg)](./LICENSE)";
+        let text = plain_text(raw);
+        assert!(!text.contains("badge.svg"), "img url leaked: {text}");
+        assert!(!text.contains("./LICENSE"), "link url leaked: {text}");
+        assert!(!text.contains("http"), "unexpected url in: {text}");
+        assert_eq!(text, "License");
+        // Tokens carry the visible alt text — but no URL fragments.
+        for token in tokenize(&text) {
+            assert!(!token.contains("badge"), "token {token}");
+            assert!(!token.contains("svg"), "token {token}");
+            assert!(!token.contains("http"), "token {token}");
+        }
     }
 
     #[test]
@@ -489,15 +532,29 @@ mod tests {
                 "url"
             ]
         );
-        // Postings carry [doc, chunk] pairs.
-        let shard0: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(dir.path().join("search_i_00.json")).unwrap())
-                .unwrap();
-        for (_, postings) in shard0.as_object().unwrap() {
-            for posting in postings.as_array().unwrap() {
-                assert_eq!(posting.as_array().unwrap().len(), 2, "posting {posting}");
+        // Postings carry [doc, chunk] pairs — scan EVERY shard (the fixture
+        // words land in shards 2/4/7/8; asserting only shard 0 would spin
+        // on an empty set) and pin the exact total: tokens "body", "words",
+        // "here" (≥2 chars) × 1 chunk = 3 postings.
+        let mut total_postings = 0usize;
+        let mut words_seen = Vec::new();
+        for i in 0..SHARD_COUNT {
+            let shard: serde_json::Value = serde_json::from_str(
+                &fs::read_to_string(dir.path().join(format!("search_i_{i:02}.json"))).unwrap(),
+            )
+            .unwrap();
+            for (word, postings) in shard.as_object().unwrap() {
+                words_seen.push(word.clone());
+                for posting in postings.as_array().unwrap() {
+                    assert_eq!(posting.as_array().unwrap().len(), 2, "posting {posting}");
+                    assert_eq!(posting[0], 0, "doc id");
+                    assert_eq!(posting[1], 0, "chunk index");
+                    total_postings += 1;
+                }
             }
         }
+        assert_eq!(total_postings, 3, "words_seen = {words_seen:?}");
+        assert_eq!(words_seen.len(), 3);
     }
 
     #[test]
@@ -545,5 +602,14 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("运行"));
+    }
+}
+
+#[cfg(test)]
+mod dbg_probe {
+    #[test]
+    fn probe_badge() {
+        let t = super::plain_text("[![License](badge.svg)](./LICENSE)");
+        eprintln!("PROBE-RESULT: {:?}", t);
     }
 }
