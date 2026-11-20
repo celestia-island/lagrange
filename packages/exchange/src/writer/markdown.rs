@@ -274,6 +274,37 @@ mod tests {
         assert_eq!(fm.and_then(|f| f.comments), Some(false));
     }
 
+    /// Review R5 S2-2 (a regression this PR introduced): the strict
+    /// `Option<bool>` made a hand-written `comments: no` fail the WHOLE
+    /// front matter block, and the caller's `.ok()` then reported "no front
+    /// matter" — dropping title, tags and id along with it. Every spelling
+    /// must read, and nothing else may die on the way.
+    #[test]
+    fn comments_accepts_every_hand_written_boolean_spelling() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        for (spelling, expected) in [
+            ("false", Some(false)),
+            ("no", Some(false)),
+            ("off", Some(false)),
+            ("0", Some(false)),
+            ("\"false\"", Some(false)),
+            ("true", Some(true)),
+            ("yes", Some(true)),
+            ("null", None),
+        ] {
+            let src = format!(
+                "---\ntitle: Keep me\ntags: [a, b]\nid: stable\ncomments: {spelling}\n---\n\nbody\n"
+            );
+            let (fm, _) = strip_frontmatter(&src, FmStyle::Yaml);
+            let fm = fm.expect("front matter must still parse");
+            assert_eq!(fm.comments, expected, "comments: {spelling}");
+            // The rest of the block survives regardless of the spelling.
+            assert_eq!(fm.title.as_deref(), Some("Keep me"));
+            assert_eq!(fm.tags, vec!["a".to_string(), "b".to_string()]);
+            assert_eq!(fm.id.as_deref(), Some("stable"));
+        }
+    }
+
     #[test]
     fn nested_layout_uses_subdirs() {
         let dir = tempdir().unwrap();

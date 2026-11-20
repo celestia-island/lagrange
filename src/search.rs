@@ -248,44 +248,103 @@ fn shard_for(word: &str) -> usize {
 
 // ── source-span text projection ───────────────────────────────────────────
 
-/// CommonMark fence marker at the start of `line` (blockquote markers
-/// already stripped): `(char, run length)` when the line opens a fence.
-fn fence_marker(line: &str) -> (Option<char>, usize) {
-    let mut probe = line;
+/// How many leading `>` blockquote markers `line` carries, plus the rest.
+fn leading_quotes(line: &str) -> (usize, &str) {
+    let mut rest = line;
+    let mut depth = 0;
     loop {
-        let trimmed = probe.trim_start();
+        let trimmed = rest.trim_start();
         match trimmed.strip_prefix('>') {
-            Some(rest) => probe = rest,
-            None => {
-                probe = trimmed;
-                break;
+            Some(after) => {
+                depth += 1;
+                rest = after;
             }
+            None => return (depth, trimmed),
         }
-    }
-    let Some(lead) = probe.chars().next() else {
-        return (None, 0);
-    };
-    if lead != '`' && lead != '~' {
-        return (None, 0);
-    }
-    let run = probe.chars().take_while(|&c| c == lead).count();
-    if run >= 3 {
-        (Some(lead), run)
-    } else {
-        (None, 0)
     }
 }
 
-/// Drop leading `>` markers (and the space after each) from a fence body so
-/// a quoted fence reads the same as a bare one.
-fn strip_quote_markers(line: &str) -> &str {
-    let mut probe = line.trim_start();
-    loop {
-        match probe.strip_prefix('>') {
-            Some(rest) => probe = rest.trim_start(),
-            None => return probe,
+/// Strip exactly `depth` blockquote markers (used inside a fence, where the
+/// author's own `>` characters must survive — review R5 S1-1: the first cut
+/// dropped every leading `>`, so a quoted shell prompt or a `> **Note**`
+/// callout inside a fence lost its own markers).
+fn strip_n_quotes(line: &str, depth: usize) -> &str {
+    let mut rest = line;
+    for _ in 0..depth {
+        let trimmed = rest.trim_start();
+        match trimmed.strip_prefix('>') {
+            Some(after) => rest = after,
+            None => break,
         }
     }
+    rest.trim_start()
+}
+
+/// A fence opener at the start of `rest` (blockquote markers already
+/// stripped): delimiter character, run length, and the info string.
+fn fence_opener(rest: &str) -> Option<(char, usize, String)> {
+    let lead = rest.chars().next()?;
+    if lead != '`' && lead != '~' {
+        return None;
+    }
+    let run = rest.chars().take_while(|&c| c == lead).count();
+    if run < 3 {
+        return None;
+    }
+    let info = rest[run..].trim().to_string();
+    // A backtick info string may not itself contain a backtick (CommonMark).
+    if lead == '`' && info.contains('`') {
+        return None;
+    }
+    Some((lead, run, info))
+}
+
+/// Whether a fence's info string marks Markdown content — the only case
+/// where the body's `[text](target)` shapes are markdown links rather than
+/// the host language's own syntax (`arr[0](1)` is a call, not a link).
+fn is_markdown_info(info: &str) -> bool {
+    // An EMPTY info string means "language unknown". Treating it as Markdown
+    // would eat `map[key](value)` in a bare code fence, so the conservative
+    // reading wins: strip targets only when the fence SAYS it is Markdown.
+    // Consequence, stated plainly: a Markdown example in a bare fence keeps
+    // its URLs. Code correctness beats snippet cosmetics, and every fence in
+    // this repo's docs that demonstrates link syntax is labelled.
+    if info.is_empty() {
+        return false;
+    }
+    let lang = info.split_whitespace().next().unwrap_or("");
+    matches!(
+        lang.to_ascii_lowercase().as_str(),
+        "markdown" | "md" | "mdx" | "gfm" | "commonmark"
+    )
+}
+
+/// A reference-style link DEFINITION line (`[label]: https://…`). The whole
+/// line is metadata: its target must not reach the snippet or the index
+/// (review R5 S1-2 — the inline form was stripped, this form was not).
+fn is_reference_definition(line: &str) -> bool {
+    let trimmed = line.trim();
+    let Some(rest) = trimmed.strip_prefix('[') else {
+        return false;
+    };
+    let Some(close) = rest.find(']') else {
+        return false;
+    };
+    let after = &rest[close + 1..];
+    let Some(target) = after.trim_start().strip_prefix(':') else {
+        return false;
+    };
+    !target.trim().is_empty()
+}
+
+/// Fence state carried between lines.
+struct FenceState {
+    ch: char,
+    len: usize,
+    /// Blockquote markers the author put in front of the fence itself.
+    depth: usize,
+    /// Body is Markdown, so link/image targets are projected away.
+    markdown: bool,
 }
 
 /// Copy `text` verbatim EXCEPT markdown link/image targets: `[a](b)` → `a`,
@@ -340,30 +399,48 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
 /// longer fence can contain a shorter one (```` ```` ```` around ``` ``` ```).
 fn plain_text(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() / 2);
-    // (fence char, opening run length) while inside a fence.
-    let mut fence: Option<(char, usize)> = None;
+    let mut fence: Option<FenceState> = None;
     for raw_line in raw.lines() {
         let line = raw_line.trim();
-        let (fence_char, fence_run) = fence_marker(line);
-        if let Some((open_char, open_len)) = fence {
-            if fence_char == Some(open_char) && fence_run >= open_len {
-                fence = None;
-                continue; // closing marker carries no prose
+        if fence.is_none() && is_reference_definition(line) {
+            continue; // a link definition is metadata, not prose
+        }
+        let (depth, body) = leading_quotes(line);
+        let opener = fence_opener(body);
+        if let Some(state) = &fence {
+            // A closing fence is the same character, at least as long, with
+            // NOTHING after it — ` ```rust ` inside a fence is content, not a
+            // closer (CommonMark; review R5 S3).
+            if let Some((ch, run, info)) = &opener {
+                if *ch == state.ch && *run >= state.len && info.is_empty() {
+                    fence = None;
+                    continue; // closing marker carries no prose
+                }
             }
-            // Fence body: literal text, minus blockquote markers and
-            // link/image targets only.
             if !out.is_empty() {
                 out.push(' ');
             }
-            strip_link_targets_into(strip_quote_markers(line), &mut out);
+            let literal = strip_n_quotes(line, state.depth);
+            if state.markdown {
+                // Markdown example: keep the text, drop the target.
+                strip_link_targets_into(literal, &mut out);
+            } else {
+                // Code in another language: `arr[0](1)` is a call, not a link.
+                out.push_str(literal);
+            }
             continue;
         }
-        if let Some(open_char) = fence_char {
-            fence = Some((open_char, fence_run));
+        if let Some((ch, run, info)) = opener {
+            fence = Some(FenceState {
+                ch,
+                len: run,
+                depth,
+                markdown: is_markdown_info(&info),
+            });
             continue; // opening marker carries no prose
         }
         // Strip leading block markers repeatedly ("> - item", "## # tag"...).
-        let mut rest = line;
+        let mut rest = body;
         loop {
             let trimmed = rest.trim_start();
             let mut stripped = None;
@@ -648,7 +725,7 @@ mod tests {
         assert_eq!(text, "Dashboard shot", "alt text stays, URL does not");
         assert!(!text.contains("webp"), "image target leaked: {text}");
 
-        let link = "```\nsee [the guide](https://x.y/guide) here\n```";
+        let link = "```markdown\nsee [the guide](https://x.y/guide) here\n```";
         assert_eq!(plain_text(link), "see the guide here");
 
         // Code stays literal: tags, angle brackets, quotes, indentation.
@@ -661,7 +738,9 @@ mod tests {
             "lagrange --out <dir>"
         );
         // Tokens from that body carry the placeholder, never the URL.
-        let tokens = tokenize(&plain_text("```\n--out <dir> ![a](b.svg)\n```"));
+        // A NON-markdown fence keeps `[..](..)` verbatim (it may be code), so
+        // only the Markdown-labelled case can promise no URL tokens.
+        let tokens = tokenize(&plain_text("```markdown\n--out <dir> ![a](b.svg)\n```"));
         assert!(tokens.iter().any(|t| t == "dir"));
         assert!(!tokens.iter().any(|t| t == "svg"));
     }
@@ -697,6 +776,64 @@ mod tests {
             !text.contains("bash"),
             "the fence language tag is not prose: {text}"
         );
+    }
+
+    /// Review R5 S1-1: quote markers INSIDE a fence belong to the author.
+    /// The first cut dropped every leading `>`, so a quoted shell prompt lost
+    /// its prompt and a `> **Note**` callout lost its marker while keeping
+    /// the bold — neither literal nor prose. Only the fence's OWN depth goes.
+    #[test]
+    fn fence_bodies_keep_their_own_quote_markers() {
+        // A quoted fence: the single author-level marker is stripped.
+        let quoted = "> ```\n> cargo build --offline\n> ```";
+        assert_eq!(plain_text(quoted), "cargo build --offline");
+
+        // Inside it, the author's own `>` survives.
+        let prompt = "```\n> cargo build --offline\n```";
+        assert_eq!(plain_text(prompt), "> cargo build --offline");
+
+        // A callout in a quoted fence keeps its deeper marker.
+        let callout = "> ```markdown\n> > quoted line\n> ```";
+        assert_eq!(plain_text(callout), "> quoted line");
+    }
+
+    /// Review R5 S1-2: a reference-style DEFINITION carries a target too.
+    /// It used to reach both the snippet and the index, so a URL's path
+    /// segments became searchable words.
+    #[test]
+    fn reference_link_definitions_are_not_prose() {
+        let raw = "[deploy]: https://example.invalid/secret-deploy-path";
+        assert_eq!(plain_text(raw), "", "the definition line is metadata");
+        let tokens = tokenize(&plain_text(raw));
+        assert!(!tokens.iter().any(|t| t == "invalid" || t == "secret"));
+
+        // A definition among prose drops only its own line.
+        let mixed = "See the guide.\n\n[guide]: https://x.y/g\n\nMore text.";
+        assert_eq!(plain_text(mixed), "See the guide. More text.");
+    }
+
+    /// Review R5 S2-1: `[i](x)` shapes in a NON-markdown fence are the host
+    /// language's syntax (`arr[0](1)` is an index followed by a call), so
+    /// only a Markdown fence may project link targets away.
+    #[test]
+    fn only_markdown_fences_project_link_targets() {
+        let code = "```rust\nlet v = arr[0](1);\n```";
+        assert_eq!(plain_text(code), "let v = arr[0](1);");
+        let code = "```\nmap[key](value);\n```";
+        assert_eq!(plain_text(code), "map[key](value);");
+        // A Markdown example still loses the target and keeps the text.
+        let md = "```markdown\nsee [the guide](https://x.y/g)\n```";
+        assert_eq!(plain_text(md), "see the guide");
+        // Info strings on the fence do not join the prose.
+        assert_eq!(plain_text("```rust\nfn main() {}\n```"), "fn main() {}");
+    }
+
+    /// Review R5 S3: a closing fence carries NO info string — ```` ```rust ````
+    /// inside a fence is content, not a closer.
+    #[test]
+    fn a_fence_closes_only_on_a_bare_marker() {
+        let raw = "```\nalpha\n```rust\nbeta\n```";
+        assert_eq!(plain_text(raw), "alpha ```rust beta");
     }
 
     #[test]
