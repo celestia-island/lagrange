@@ -33,7 +33,7 @@ Open \`target/site/index.html\` — it redirects into the English book.
 - **Self-hosting** — Lagrange's own documentation is built by Lagrange
 `;
 
-const navMenuItems = kb.documents.map((doc) => ({
+const navMenuItems = kb.documents.map((doc: import("./composables/types").DocumentInfo) => ({
   key: doc.document_id,
   label: doc.translations["en"]?.title ?? doc.document_id,
   children: Object.entries(doc.translations).map(([lang, t]) => ({
@@ -44,8 +44,8 @@ const navMenuItems = kb.documents.map((doc) => ({
 
 const chunks = computed(() => {
   if (!currentDocId.value) return [];
-  return kb.chunks.filter(
-    (c) => c.document_id === currentDocId.value && c.lang === currentLang.value,
+  return kb.chunks.filter((c: import("./composables/types").Chunk) =>
+    c.document_id === currentDocId.value && c.lang === currentLang.value
   );
 });
 
@@ -71,8 +71,8 @@ railStyle.value =
     sidebar-width="260px"
     sidebar-collapsible
     nav-title="Lagrange"
-    :sidebar-rail-style="railStyle"
-    @update:sidebar-rail-style="onRailStyleChange"
+    :sidebar-rail-style="railStyle as any"
+    @update:sidebar-rail-style="onRailStyleChange as any"
   >
     <template #sidebar>
       <HkMenu
@@ -84,7 +84,7 @@ railStyle.value =
         @select="onSelect"
       />
     </template>
-    <template #default>
+    <template #content>
       <div class="lagrange-render">
         <HkLogo size="md" alt="Lagrange" />
         <HkMarkdownRenderer :content="SAMPLE_MARKDOWN" :plain="false" />
