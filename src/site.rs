@@ -28,6 +28,7 @@ use crate::{
 };
 
 /// Options for [`build`].
+#[derive(Debug, Clone)]
 pub struct BuildOptions {
     pub src: PathBuf,
     pub out: PathBuf,
@@ -66,6 +67,53 @@ struct NavNode {
     title: String,
     href: String,
     children: Vec<NavNode>,
+}
+
+/// One missing-translation report entry: a logical document and the
+/// configured languages it has no translation for.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MissingTranslation {
+    pub document_id: String,
+    pub missing: Vec<String>,
+}
+
+/// One broken internal page reference: `href` as written in the source, the
+/// page-path target it normalizes to, and where it was found.
+///
+/// Scope: only references that point at PAGES (`.md` sources or `.html`
+/// paths). Asset references (images, downloads) and external URLs are not
+/// checked — the build never emits them as pages, so there is nothing to
+/// compare against.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub struct BrokenLink {
+    pub lang: String,
+    /// Page path of the referencing page, or `SUMMARY` for nav entries.
+    pub page: String,
+    /// The raw href as written in the markdown/SUMMARY source.
+    pub href: String,
+    /// The normalized page-path target that does not exist.
+    pub target: String,
+}
+
+/// Build outcome record, persisted as `build_status.json` in the output
+/// directory on every build (success AND failure). The dev-server `status`
+/// surface reads this file — it is the single source of "what did the last
+/// build do", never an in-memory claim.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BuildStatus {
+    /// RFC 3339 local timestamp of the build start.
+    pub built_at: String,
+    pub duration_ms: u64,
+    pub ok: bool,
+    /// Full anyhow error chain, present only when `ok` is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub pages: usize,
+    pub documents: usize,
+    pub chunks: usize,
+    pub langs: Vec<String>,
+    pub missing_translations: Vec<MissingTranslation>,
+    pub broken_links: Vec<BrokenLink>,
 }
 
 /// Build the whole site.
@@ -151,6 +199,9 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // Knowledge collection: one entry per (document, language) translation,
     // folded into knowledge.json after the page loop.
     let mut collected: Vec<knowledge::CollectedDoc> = Vec::new();
+    // Internal page references for the broken-link report, collected while
+    // walking the tree and verified against the emitted page set after.
+    let mut link_refs: Vec<LinkRef> = Vec::new();
     // Site-wide union of diagram-runtime needs — one vendor asset emission
     // for the whole build when any page in any language has a diagram fence.
     let mut site_diagram_needs = crate::diagram::DiagramNeeds::default();
@@ -170,6 +221,17 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         // so links work regardless of which language's nav we use.
         let summary_path = lang_dir.join("SUMMARY.md");
         let nav = parse_summary(&summary_path).unwrap_or_default();
+        // Nav refs feed the broken-link report (collected from THIS
+        // language's own SUMMARY, before any fallback — fallback navs were
+        // already collected while processing their own language).
+        for href in collect_nav_hrefs(&nav) {
+            link_refs.push(LinkRef {
+                lang: lang.clone(),
+                page: "SUMMARY".to_string(),
+                page_dir: String::new(),
+                href,
+            });
+        }
         let nav = if nav.is_empty() && lang != &default_lang {
             let fallback = opts.src.join(&default_lang).join("SUMMARY.md");
             let fallback_nav = parse_summary(&fallback).unwrap_or_default();
@@ -216,6 +278,22 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                 out_rel = out_rel.with_file_name("index.html");
             }
             let page_path = out_rel.to_string_lossy().replace('\\', "/");
+
+            // Body link refs feed the broken-link report; they are resolved
+            // against THIS page's directory (that is how the browser will
+            // resolve them in the flat output).
+            let page_dir = match page_path.rsplit_once('/') {
+                Some((dir, _)) => dir.to_string(),
+                None => String::new(),
+            };
+            for href in collect_inline_link_urls(&blocks) {
+                link_refs.push(LinkRef {
+                    lang: lang.clone(),
+                    page: page_path.clone(),
+                    page_dir: page_dir.clone(),
+                    href,
+                });
+            }
 
             // Render sidebar for THIS language — hikari's own sidebar
             // grammar (.hk-sidebar-section / .hk-sidebar-item / .hk-sidebar-leaf),
@@ -396,6 +474,64 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     let search_docs = build_search_docs(&collected);
     crate::search::write_index(&opts.out, &search_docs, &base)?;
 
+    // ── 4b. Diagnostics + build record. Missing translations come from the
+    //        assembled knowledge (doc → translations vs configured langs);
+    //        broken links verify every collected reference against the page
+    //        set emitted in step 2.
+    let missing_translations: Vec<MissingTranslation> = kb
+        .documents
+        .iter()
+        .filter_map(|doc| {
+            let missing: Vec<String> = langs
+                .iter()
+                .filter(|l| !doc.translations.contains_key(*l))
+                .cloned()
+                .collect();
+            if missing.is_empty() {
+                None
+            } else {
+                Some(MissingTranslation {
+                    document_id: doc.document_id.clone(),
+                    missing,
+                })
+            }
+        })
+        .collect();
+    let page_set: std::collections::BTreeSet<&str> = multi.keys().map(|s| s.as_str()).collect();
+    let mut broken_links: Vec<BrokenLink> = Vec::new();
+    for r in &link_refs {
+        if let Some(target) = normalize_page_ref(&r.href, &r.page_dir) {
+            if !page_set.contains(target.as_str()) {
+                broken_links.push(BrokenLink {
+                    lang: r.lang.clone(),
+                    page: r.page.clone(),
+                    href: r.href.clone(),
+                    target,
+                });
+            }
+        }
+    }
+    broken_links.sort();
+    let status = BuildStatus {
+        built_at: timestamp_now(),
+        duration_ms: t0.elapsed().as_millis() as u64,
+        ok: true,
+        error: None,
+        pages: page_count,
+        documents: kb.documents.len(),
+        chunks: kb.chunks.len(),
+        langs: langs.clone(),
+        missing_translations,
+        broken_links: broken_links.clone(),
+    };
+    write_build_status(&opts.out, &status)?;
+    if !status.broken_links.is_empty() {
+        warn!(
+            "broken links: {} (see build_status.json)",
+            status.broken_links.len()
+        );
+    }
+
     // 4b. BBS projection: when enabled, emit a boards index per language that
     //     groups pages by their frontmatter `category`. Pure static — the board
     //     listing is just another generated HTML page linking to the articles.
@@ -422,6 +558,220 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
+
+/// An internal reference found while walking the tree, pending verification
+/// against the emitted page set. `page_dir` is the referencing page's
+/// directory ("" at the root) — the base the browser resolves relative
+/// hrefs against.
+struct LinkRef {
+    lang: String,
+    page: String,
+    page_dir: String,
+    href: String,
+}
+
+/// Collect `[text](url)` link URLs from parsed blocks (recursing through
+/// containers and inline nests). Image URLs are skipped: they reference
+/// assets, not pages.
+fn collect_inline_link_urls(blocks: &[markdown::SpannedBlock]) -> Vec<String> {
+    fn from_inlines(inlines: &[markdown::Inline], out: &mut Vec<String>) {
+        for i in inlines {
+            match i {
+                markdown::Inline::Link { text, url } => {
+                    out.push(url.clone());
+                    from_inlines(text, out);
+                }
+                markdown::Inline::Strong(inner) | markdown::Inline::Emphasis(inner) => {
+                    from_inlines(inner, out);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for sb in blocks {
+        match &sb.block {
+            crate::markdown::Block::Paragraph(inlines) => from_inlines(inlines, &mut out),
+            crate::markdown::Block::Heading { text, .. } => from_inlines(text, &mut out),
+            crate::markdown::Block::List { items, .. } => {
+                for item in items {
+                    from_inlines(item, &mut out);
+                }
+            }
+            crate::markdown::Block::Table { headers, rows } => {
+                for cell in headers {
+                    from_inlines(cell, &mut out);
+                }
+                for row in rows {
+                    for cell in row {
+                        from_inlines(cell, &mut out);
+                    }
+                }
+            }
+            crate::markdown::Block::Blockquote(inner) | crate::markdown::Block::Center(inner) => {
+                out.extend(collect_inline_link_urls(inner));
+            }
+            crate::markdown::Block::Div { children, .. } => {
+                out.extend(collect_inline_link_urls(children));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Collect hrefs from a parsed SUMMARY nav tree (recursively; section nodes
+/// carry no href).
+fn collect_nav_hrefs(nodes: &[NavNode]) -> Vec<String> {
+    let mut out = Vec::new();
+    for n in nodes {
+        if !n.href.is_empty() {
+            out.push(n.href.clone());
+        }
+        out.extend(collect_nav_hrefs(&n.children));
+    }
+    out
+}
+
+/// Normalize an internal reference to a flat-site page path, resolved
+/// against the referencing page's directory — the same resolution the
+/// browser performs on the emitted href.
+///
+/// Returns `None` for references outside the check's scope: external URLs,
+/// `mailto:`/`data:`, pure fragments (`#anchor`), protocol-relative URLs,
+/// and non-page targets (anything not `.md` or `.html`). Only page-shaped
+/// refs are verifiable against the emitted page set; checking anything else
+/// would report assets as broken.
+fn normalize_page_ref(href: &str, page_dir: &str) -> Option<String> {
+    let href = href.trim();
+    if href.is_empty() {
+        return None;
+    }
+    let lower = href.to_ascii_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:")
+        || lower.starts_with("data:")
+        || href.starts_with("//")
+    {
+        return None;
+    }
+    let path = match href.split_once('#') {
+        Some((p, _)) => p,
+        None => href,
+    };
+    if path.is_empty() {
+        return None; // pure in-page fragment
+    }
+    let path_lower = path.to_ascii_lowercase();
+    if !path_lower.ends_with(".md") && !path_lower.ends_with(".html") {
+        return None; // asset or unknown extension — not a page ref
+    }
+    let absolute = path.starts_with('/');
+    let mut parts: Vec<&str> = Vec::new();
+    let base_iter: Vec<&str> = if absolute {
+        Vec::new()
+    } else {
+        page_dir.split('/').filter(|s| !s.is_empty()).collect()
+    };
+    for seg in base_iter
+        .into_iter()
+        .chain(path.trim_start_matches('/').split('/'))
+    {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop(); // lexical clamp at the root, like the browser
+            }
+            s => parts.push(s),
+        }
+    }
+    let joined = parts.join("/");
+    // Apply the emitter's page-shape rules via the one folding helper
+    // (`.md`/`.html` → `.html`, README/index leaf → parent index).
+    let normalized = page_path_of(&joined);
+    if normalized.is_empty() {
+        Some("index.html".to_string())
+    } else {
+        Some(normalized)
+    }
+}
+
+/// Map a language-relative markdown path to its flat-site page path:
+/// `.md` (or an already-`.html` ref) → `.html`, with a README/index leaf
+/// folding into its parent directory's `index.html` (the root folds to
+/// `index.html`). This is the single folding rule; the page loop, the
+/// broken-link check and the MCP URL builder all go through it.
+pub(crate) fn page_path_of(rel: &str) -> String {
+    let p = rel.replace('\\', "/");
+    let stem = p
+        .strip_suffix(".md")
+        .or_else(|| p.strip_suffix(".html"))
+        .unwrap_or(&p);
+    let lower = stem.to_ascii_lowercase();
+    if stem.is_empty()
+        || lower == "readme"
+        || lower == "index"
+        || lower.ends_with("/readme")
+        || lower.ends_with("/index")
+    {
+        match stem.rsplit_once('/') {
+            Some((parent, _)) if !parent.is_empty() => format!("{parent}/index.html"),
+            _ => "index.html".to_string(),
+        }
+    } else {
+        format!("{stem}.html")
+    }
+}
+
+/// RFC 3339 local timestamp for build records.
+fn timestamp_now() -> String {
+    chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// Write `build_status.json` into the output directory.
+pub fn write_build_status(out: &Path, status: &BuildStatus) -> Result<()> {
+    let path = out.join("build_status.json");
+    let json =
+        serde_json::to_string_pretty(status).with_context(|| "serialize build_status.json")?;
+    fs::write(&path, json).with_context(|| format!("write {}", path.display()))
+}
+
+/// Build, and persist the build record on BOTH outcomes.
+///
+/// [`build`] itself writes the success record (it owns the counts and
+/// diagnostics); this wrapper catches the failure path — the output dir has
+/// already been cleared at that point, so without the wrapper a failed
+/// rebuild would leave NO record and `docs.status` would keep reporting the
+/// last successful build forever.
+pub fn build_with_status(opts: &BuildOptions) -> Result<()> {
+    let started = Instant::now();
+    match build(opts) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let status = BuildStatus {
+                built_at: timestamp_now(),
+                duration_ms: started.elapsed().as_millis() as u64,
+                ok: false,
+                error: Some(format!("{e:?}")),
+                pages: 0,
+                documents: 0,
+                chunks: 0,
+                langs: Vec::new(),
+                missing_translations: Vec::new(),
+                broken_links: Vec::new(),
+            };
+            // The build may have bailed before even creating the output
+            // dir (e.g. "no language directories"); the record must land
+            // regardless — create the dir on demand.
+            let _ = fs::create_dir_all(&opts.out);
+            if let Err(write_err) = write_build_status(&opts.out, &status) {
+                warn!("cannot persist failed-build record: {write_err:#}");
+            }
+            Err(e)
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 fn write_multi_page(
@@ -827,7 +1177,7 @@ impl From<&FrontMatter> for PageMeta {
 /// `/docs/` on that host; every root-relative link lagrange emits must carry
 /// this prefix or it escapes the deployment (404 into the hosting SPA's
 /// fallback). Only the URL's path participates — scheme and host never do.
-fn site_base(site_url: &Option<String>) -> String {
+pub(crate) fn site_base(site_url: &Option<String>) -> String {
     let url = site_url.as_deref().unwrap_or("");
     let rest = url
         .strip_prefix("https://")
@@ -1101,7 +1451,7 @@ fn walk_md(dir: &Path) -> Result<Vec<PathBuf>> {
 /// Real symlink targets (on Unix or Windows with symlinks enabled) are
 /// resolved by the OS and work without this logic; this is a fallback
 /// for the broken-symlink-as-text-file case.
-fn read_md_or_follow(path: &Path) -> Result<String> {
+pub(crate) fn read_md_or_follow(path: &Path) -> Result<String> {
     let raw = fs::read_to_string(path)?;
 
     // Heuristic: the file is a broken symlink if its trimmed content is a
@@ -1339,5 +1689,212 @@ mod tests {
         );
         // A page at the site root keeps an empty prefix.
         assert!(lagrange_js("").contains("var LR='';"));
+    }
+
+    // ── page-shape folding (the one rule every URL builder shares) ──────
+
+    #[test]
+    fn page_path_folds_readme_index_and_keeps_subdirs() {
+        assert_eq!(
+            page_path_of("guides/quickstart.md"),
+            "guides/quickstart.html"
+        );
+        assert_eq!(page_path_of("README.md"), "index.html");
+        assert_eq!(page_path_of("guides/README.md"), "guides/index.html");
+        assert_eq!(page_path_of("guides/index.md"), "guides/index.html");
+        assert_eq!(page_path_of("index.md"), "index.html");
+        // Already-html refs fold the same way (broken-link normalization
+        // feeds them through this helper).
+        assert_eq!(page_path_of("guides/README.html"), "guides/index.html");
+        assert_eq!(page_path_of("a\\b.md"), "a/b.html", "backslashes fold");
+    }
+
+    // ── internal-link normalization (broken-link check scope) ───────────
+
+    #[test]
+    fn page_ref_normalization_matches_browser_resolution() {
+        // Page-relative, same dir.
+        assert_eq!(
+            normalize_page_ref("other.md", "guides"),
+            Some("guides/other.html".to_string())
+        );
+        // Explicit ./ and ../ resolution relative to the page dir.
+        assert_eq!(
+            normalize_page_ref("./sibling.md", "guides"),
+            Some("guides/sibling.html".to_string())
+        );
+        assert_eq!(
+            normalize_page_ref("../up.md", "guides"),
+            Some("up.html".to_string())
+        );
+        // Absolute site paths ignore the page dir.
+        assert_eq!(
+            normalize_page_ref("/guides/x.md", "other/deep"),
+            Some("guides/x.html".to_string())
+        );
+        // Fragments are stripped; pure fragments are not page refs.
+        assert_eq!(
+            normalize_page_ref("other.md#section", "guides"),
+            Some("guides/other.html".to_string())
+        );
+        assert_eq!(normalize_page_ref("#anchor", "guides"), None);
+        // README folding applies to links too.
+        assert_eq!(
+            normalize_page_ref("./README.md", "guides"),
+            Some("guides/index.html".to_string())
+        );
+    }
+
+    #[test]
+    fn page_ref_normalization_skips_non_page_targets() {
+        for href in [
+            "https://example.com/x.md",
+            "http://example.com/y.html",
+            "mailto:a@b.c",
+            "data:text/plain,no",
+            "//cdn.example.com/z.md",
+            "assets/logo.png",
+            "files/manual.pdf",
+            "",
+        ] {
+            assert_eq!(
+                normalize_page_ref(href, "guides"),
+                None,
+                "{href} must be outside the broken-link check scope"
+            );
+        }
+    }
+
+    #[test]
+    fn page_ref_dotdot_clamps_at_the_site_root() {
+        // A page at the root linking up beyond the site root clamps to the
+        // root (what the browser does with /..), never escapes the namespace.
+        assert_eq!(
+            normalize_page_ref("../../escape.md", ""),
+            Some("escape.html".to_string())
+        );
+    }
+
+    // ── build record round trip ─────────────────────────────────────────
+
+    #[test]
+    fn build_status_round_trips_through_json() {
+        let status = BuildStatus {
+            built_at: "2026-11-21T00:00:00+08:00".to_string(),
+            duration_ms: 1234,
+            ok: true,
+            error: None,
+            pages: 3,
+            documents: 2,
+            chunks: 7,
+            langs: vec!["en".to_string()],
+            missing_translations: vec![MissingTranslation {
+                document_id: "index".to_string(),
+                missing: vec!["zh-Hans".to_string()],
+            }],
+            broken_links: vec![BrokenLink {
+                lang: "en".to_string(),
+                page: "SUMMARY".to_string(),
+                href: "guides/missing.md".to_string(),
+                target: "guides/missing.html".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let back: BuildStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, status);
+        // The failure shape keeps its error chain.
+        let failed = BuildStatus {
+            ok: false,
+            error: Some("outer\n\nCaused by:\n  inner".to_string()),
+            ..status
+        };
+        let back: BuildStatus =
+            serde_json::from_str(&serde_json::to_string(&failed).unwrap()).unwrap();
+        assert_eq!(back.error.as_deref(), Some("outer\n\nCaused by:\n  inner"));
+    }
+
+    /// The build-level wiring, not just the helpers: a tree with one broken
+    /// internal link and one missing translation must report both in
+    /// build_status.json, and a clean tree must report neither.
+    #[test]
+    fn build_records_broken_links_and_missing_translations() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("docs");
+        std::fs::create_dir_all(src.join("en/guides")).unwrap();
+        std::fs::create_dir_all(src.join("zh-Hans/guides")).unwrap();
+        std::fs::write(
+            src.join("en/guides/a.md"),
+            "# A\n\nSee [the missing one](missing.md) and [the good one](b.md).\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("en/guides/b.md"), "# B\n\nFine.\n").unwrap();
+        // zh-Hans has b only → a is untranslated; en/SUMMARY links to a
+        // broken target.
+        std::fs::write(src.join("zh-Hans/guides/b.md"), "# B\n\n好。\n").unwrap();
+        std::fs::write(
+            src.join("en/SUMMARY.md"),
+            "- [A](guides/a.md)\n- [Nowhere](guides/nope.md)\n",
+        )
+        .unwrap();
+        let out = dir.path().join("dist");
+        build(&BuildOptions {
+            src: src.clone(),
+            out: out.clone(),
+            site_url: None,
+            default_lang: None,
+        })
+        .unwrap();
+
+        let raw = std::fs::read_to_string(out.join("build_status.json")).unwrap();
+        let status: BuildStatus = serde_json::from_str(&raw).unwrap();
+        assert!(status.ok);
+        // Broken: the body link guides/missing.md and the SUMMARY link
+        // guides/nope.md. The good link must NOT appear.
+        let targets: Vec<&str> = status
+            .broken_links
+            .iter()
+            .map(|b| b.target.as_str())
+            .collect();
+        assert!(
+            targets.contains(&"guides/missing.html"),
+            "targets: {targets:?}"
+        );
+        assert!(
+            targets.contains(&"guides/nope.html"),
+            "targets: {targets:?}"
+        );
+        assert!(!targets.contains(&"guides/b.html"), "targets: {targets:?}");
+        assert_eq!(status.broken_links.len(), 2, "targets: {targets:?}");
+        // Missing translations: document `guides/a` lacks zh-Hans.
+        assert!(status
+            .missing_translations
+            .iter()
+            .any(|m| { m.document_id == "guides/a" && m.missing == vec!["zh-Hans".to_string()] }));
+        // Counts are real.
+        assert_eq!(status.documents, 2);
+        assert!(status.chunks >= 2);
+    }
+
+    /// A failed build must still leave a record (the out dir is cleared at
+    /// build start, so the wrapper has to write the failure itself).
+    #[test]
+    fn failed_build_persists_a_failure_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("docs");
+        std::fs::create_dir_all(&src).unwrap(); // no language dirs at all
+        let out = dir.path().join("dist");
+        let opts = BuildOptions {
+            src: src.clone(),
+            out: out.clone(),
+            site_url: None,
+            default_lang: None,
+        };
+        let err = build_with_status(&opts).unwrap_err();
+        assert!(err.to_string().contains("language"));
+        let raw = std::fs::read_to_string(out.join("build_status.json"))
+            .expect("failure record must exist");
+        let status: BuildStatus = serde_json::from_str(&raw).unwrap();
+        assert!(!status.ok);
+        assert!(status.error.as_deref().unwrap().contains("language"));
     }
 }
