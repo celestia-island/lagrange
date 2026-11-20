@@ -232,7 +232,14 @@ mod tool_tests {
         .unwrap();
         std::fs::write(
             src.join("en/index.md"),
-            "---\ntitle: Home\n---\n# Home\n\nWelcome to the docs.\n",
+            "---\ntitle: Home\n---\nIntro paragraph before the heading.\n\n# Home\n\nWelcome to the docs.\n",
+        )
+        .unwrap();
+        // An id-less page: its identity is path-derived ("plain"), which is
+        // what the ADD-direction identity guard protects.
+        std::fs::write(
+            src.join("en/plain.md"),
+            "# Plain page\n\nNo explicit id here.\n",
         )
         .unwrap();
         std::fs::write(
@@ -674,6 +681,138 @@ mod tool_tests {
         assert_ne!(std::fs::read_to_string(&p).unwrap(), original);
     }
 
+    /// Review R2 S1: the ADD direction. `en/plain.md` has no explicit id,
+    /// so its identity is path-derived (`plain`). Writing content that ADDS
+    /// `id: evil/moved` would re-key the document under a different id —
+    /// `plain` vanishes from the knowledge base, `evil/moved` appears, and
+    /// every existing citation to `plain` strands. Must be refused with the
+    /// rule named.
+    #[test]
+    fn write_refuses_adding_a_rekeying_id() {
+        let (_dir, st) = fixture();
+        let w = call(
+            &st,
+            "docs.write",
+            json!({
+                "path": "en/plain.md",
+                "content": "---\nid: evil/moved\n---\n# Plain page\n\nRe-keyed.\n"
+            }),
+        );
+        assert_eq!(w["isError"], true, "re-keying ADD must be refused");
+        let msg = w["content"][0]["text"].as_str().unwrap();
+        assert!(msg.contains("re-key"), "message must name the rule: {msg}");
+        assert!(msg.contains("`plain`"), "must name the derived id: {msg}");
+        // The file is untouched.
+        let on_disk = std::fs::read_to_string(st.src.join("en/plain.md")).unwrap();
+        assert!(on_disk.contains("No explicit id here."));
+        // End-to-end proof of the harm the guard prevents: with the write
+        // REFUSED, the built knowledge still knows `plain` (and NOT
+        // `evil/moved`).
+        let kb = st.knowledge().unwrap();
+        assert!(kb.documents.iter().any(|d| d.document_id == "plain"));
+        assert!(!kb.documents.iter().any(|d| d.document_id == "evil/moved"));
+    }
+
+    /// The idempotent half of the ADD ruling: adding `id:` with EXACTLY
+    /// the path-derived value changes nothing (it makes the implicit
+    /// identity explicit) and is allowed. Rationale: forbidding it would
+    /// block the legitimate "pin my derived identity down before a future
+    /// rename" move, and identity-wise `plain` == `plain`.
+    #[test]
+    fn write_allows_adding_the_idempotent_derived_id() {
+        let (_dir, st) = fixture();
+        let w = call(
+            &st,
+            "docs.write",
+            json!({
+                "path": "en/plain.md",
+                "content": "---\nid: plain\n---\n# Plain page\n\nNow explicit, same identity.\n"
+            }),
+        );
+        assert_eq!(w["isError"], false, "raw: {w}");
+        // Identity is unchanged: after a rebuild the knowledge base still
+        // has exactly one `plain` document with the en translation.
+        let t = call(&st, "build.trigger", json!({}));
+        assert_eq!(t["isError"], false, "raw: {t}");
+        let kb = st.knowledge().unwrap();
+        let doc = kb
+            .documents
+            .iter()
+            .find(|d| d.document_id == "plain")
+            .expect("plain survives");
+        assert!(doc.translations.contains_key("en"));
+    }
+
+    /// Review R2 S3-1: a symlinked DIRECTORY component must be caught
+    /// BEFORE any directory creation runs — otherwise create_dir_all
+    /// happily builds the missing tail components inside whatever the
+    /// link points at (outside the docs root).
+    #[cfg(unix)]
+    #[test]
+    fn write_refuses_symlink_dir_components_before_creating_anything() {
+        let (dir, st) = fixture();
+        // docs/en/agent → outside-tree (pre-existing symlink DIRECTORY).
+        let outside_root = dir.path().join("outside-tree");
+        std::fs::create_dir_all(&outside_root).unwrap();
+        std::os::unix::fs::symlink(&outside_root, st.src.join("en/agent")).unwrap();
+        let w = call(
+            &st,
+            "docs.write",
+            json!({
+                // Nested: the pre-creation check is the ONLY thing standing
+                // between create_dir_all and building `sub/` inside the
+                // symlink target (a single-level path would no-op in
+                // create_dir_all and hide the ordering bug).
+                "path": "en/agent/sub/new-notes.md",
+                "content": "# x\n"
+            }),
+        );
+        assert_eq!(
+            w["isError"], true,
+            "write through symlink dir must be refused"
+        );
+        let msg = w["content"][0]["text"].as_str().unwrap();
+        assert!(msg.contains("outside the docs root"), "msg: {msg}");
+        // And nothing was created on the other side of the link.
+        assert!(
+            std::fs::read_dir(&outside_root).unwrap().count() == 0,
+            "no directories may be created outside the docs root"
+        );
+    }
+
+    /// Review R2 S3-2: span pins must also cover a chunk that starts with
+    /// BODY text (not a `#` heading marker) — a start+1 offset on a
+    /// heading chunk is masked by the plain-text projection (the marker is
+    /// stripped anyway), so this pin is what makes that mutation visible.
+    #[test]
+    fn search_snippet_pin_covers_a_body_starting_chunk() {
+        let (_dir, st) = fixture();
+        // index.md's prologue ("Intro paragraph before the heading.")
+        // starts with body text, before any heading.
+        let r = call(&st, "docs.search", json!({"query": "intro", "lang": "en"}));
+        let hits = r["structuredContent"]["results"].as_array().unwrap();
+        assert!(!hits.is_empty(), "raw: {r}");
+        let top = &hits[0];
+        assert_eq!(top["anchor"], "prologue");
+        assert_eq!(top["document_id"], "index");
+        let span = &top["span"];
+        let source = std::fs::read_to_string(st.src.join("en/index.md")).unwrap();
+        let sliced = &source[span["start_byte"].as_u64().unwrap() as usize
+            ..span["end_byte"].as_u64().unwrap() as usize];
+        assert!(
+            sliced.starts_with('I'),
+            "this fixture chunk must start with body text, not a heading marker"
+        );
+        assert_eq!(
+            top["snippet"].as_str().unwrap(),
+            crate::search::truncate_chars(
+                &crate::search::plain_text(sliced),
+                crate::search::SNIPPET_CHARS
+            ),
+            "snippet must be the projection of the span's own bytes"
+        );
+    }
+
     #[test]
     fn status_reports_build_diagnostics() {
         let (_dir, st) = fixture();
@@ -694,9 +833,9 @@ mod tool_tests {
         let missing = sc["missing_translations"].as_array().unwrap();
         assert!(missing.iter().any(|m| m["document_id"] == "index"
             && m["missing"].as_array().unwrap().contains(&json!("zh-Hans"))));
-        // Freshness tallies: 3 translations (en+zh quickstart, en index),
-        // all fresh right after the build.
-        assert_eq!(sc["freshness"]["fresh"].as_u64().unwrap(), 3);
+        // Freshness tallies: 4 translations (en+zh quickstart, en index,
+        // en plain), all fresh right after the build.
+        assert_eq!(sc["freshness"]["fresh"].as_u64().unwrap(), 4);
     }
 
     #[test]
@@ -731,7 +870,7 @@ mod tool_tests {
         let t = call(&st, "build.trigger", json!({}));
         assert_eq!(t["isError"], false, "raw: {t}");
         assert_eq!(t["structuredContent"]["ok"], true);
-        assert_eq!(t["structuredContent"]["documents"].as_u64().unwrap(), 2);
+        assert_eq!(t["structuredContent"]["documents"].as_u64().unwrap(), 3);
 
         // Failure path: empty the docs root so the build fails ("no
         // language directories"); the failure must be recorded and surface

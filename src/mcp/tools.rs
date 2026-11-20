@@ -71,7 +71,7 @@ pub fn descriptors() -> Value {
         },
         {
             "name": "docs.write",
-            "description": "Write a full markdown file into the docs tree. `path` is tree-relative INCLUDING the language segment (e.g. `en/guides/quickstart.md`); the first segment must be a configured language directory. Scope: the docs root, narrowed by `[mcp] write_paths` prefixes in lagrange.toml when configured — paths outside the scope are rejected. Guards: refuses to drop or change an explicit frontmatter `id:` on an existing file (that would silently move the document's identity); a file without `id:` keeps its path-derived identity because the path is unchanged. The write lands as a plain file edit (visible in git diff); rebuild via build.trigger.",
+            "description": "Write a full markdown file into the docs tree. `path` is tree-relative INCLUDING the language segment (e.g. `en/guides/quickstart.md`); the first segment must be a configured language directory. Scope: the docs root, narrowed by `[mcp] write_paths` prefixes in lagrange.toml when configured — paths outside the scope are rejected, as are path escapes and symlink targets. Identity guards (on overwrite): refuses to DROP or CHANGE an explicit frontmatter `id:`, and refuses to ADD an `id:` that differs from the file's path-derived id (that would silently re-key the document and strand citations; adding the idempotent derived value is allowed). A file without `id:` keeps its path-derived identity because the path is unchanged. The write lands as a plain file edit (visible in git diff); rebuild via build.trigger.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

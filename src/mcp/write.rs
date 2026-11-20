@@ -69,12 +69,38 @@ pub fn write(state: &McpState, args: &Value) -> Result<Value, String> {
     }
     let existed = target.is_file();
     if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        // Containment BEFORE creation: walk up to the deepest already-
+        // existing ancestor and canonicalize THAT first. If a path
+        // component is a symlink pointing outside the docs root, creating
+        // directories first would build (empty) directories outside the
+        // tree before the containment check ever ran (review R2, S3).
         let root = state
             .src
             .canonicalize()
             .map_err(|e| format!("cannot resolve docs root: {e}"))?;
+        let mut ancestor = parent;
+        while !ancestor.exists() {
+            match ancestor.parent() {
+                Some(p) => ancestor = p,
+                None => break,
+            }
+        }
+        let resolved_ancestor = ancestor
+            .canonicalize()
+            .map_err(|e| format!("cannot resolve {}: {e}", ancestor.display()))?;
+        if !resolved_ancestor.starts_with(&root) {
+            return Err(format!(
+                "path `{normalized}` passes through `{}`, which resolves to `{}`, \
+                 outside the docs root `{}`",
+                normalized,
+                resolved_ancestor.display(),
+                root.display()
+            ));
+        }
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        // Defense in depth: the fully created parent must still be inside
+        // (a component could have been swapped between the two checks).
         let resolved = parent
             .canonicalize()
             .map_err(|e| format!("cannot resolve {}: {e}", parent.display()))?;
@@ -89,15 +115,25 @@ pub fn write(state: &McpState, args: &Value) -> Result<Value, String> {
 
     // 5. Identity guards (only when overwriting an existing file): an
     //    explicit frontmatter `id:` is the document's stable identity —
-    //    dropping or changing it on rewrite would silently re-key every
-    //    existing citation. A file without `id:` keeps its path-derived
-    //    identity precisely because the path does not change (that is the
-    //    "derived semantics survive unchanged paths" rule).
+    //    dropping, changing, or freshly ADDING one that differs from the
+    //    path-derived id would silently re-key every existing citation.
+    //    A file without `id:` keeps its path-derived identity precisely
+    //    because the path does not change; adding `id:` with EXACTLY the
+    //    derived value is allowed (idempotent — making the implicit
+    //    identity explicit changes nothing).
     if existed {
         let existing = std::fs::read_to_string(&target)
             .map_err(|e| format!("cannot read current {}: {e}", target.display()))?;
         let (_, existing_fm, _) = crate::frontmatter::strip(&existing);
         let (_, new_fm, _) = crate::frontmatter::strip(&content);
+        // The path-derived id the document has been known by: the language
+        // segment is stripped (same input the build's knowledge collection
+        // feeds derive_document_id).
+        let lang_rel = normalized
+            .split_once('/')
+            .map(|(_, rest)| rest)
+            .unwrap_or(&normalized);
+        let derived = crate::derive_document_id(None, lang_rel);
         match (&existing_fm.id, &new_fm.id) {
             (Some(old), None) => {
                 return Err(format!(
@@ -111,6 +147,14 @@ pub fn write(state: &McpState, args: &Value) -> Result<Value, String> {
                     "refusing to write: this would CHANGE the document id `{old}` → `{new}` — \
                      ids are stable identities; restore `id: {old}` or move the content to a \
                      new path"
+                ));
+            }
+            (None, Some(new)) if new != &derived => {
+                return Err(format!(
+                    "refusing to write: this file has no explicit id, so its identity is \
+                     path-derived (`{derived}`) — adding `id: {new}` would silently re-key the \
+                     document and strand every existing citation. Use `id: {derived}` (idempotent) \
+                     or move the content to a new path"
                 ));
             }
             _ => {}

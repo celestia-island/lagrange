@@ -88,10 +88,20 @@ impl DevProcess {
         self.stdin.flush().unwrap();
         loop {
             let raw = self.reader.next_line(method);
-            // Stdout purity: EVERY line must be a JSON object — a stray
-            // tracing line fails the parse here, not silently downstream.
+            // Stdout purity, two layers: EVERY line must parse as JSON
+            // (a stray tracing line fails here) AND be a well-formed
+            // JSON-RPC response (`jsonrpc: "2.0"` + a `result` or `error`
+            // member) — arbitrary JSON objects like `{"pollution":true}`
+            // must not slip through either (review R2, S3).
             let v: Value = serde_json::from_str(&raw)
                 .unwrap_or_else(|e| panic!("non-JSON on stdout: {raw:?} ({e})"));
+            let is_response = v.is_object()
+                && v.get("jsonrpc").and_then(|j| j.as_str()) == Some("2.0")
+                && (v.get("result").is_some() || v.get("error").is_some());
+            assert!(
+                is_response,
+                "non-response JSON on stdout: {raw:?} — stdout must carry only JSON-RPC responses"
+            );
             if v.get("id").and_then(|i| i.as_i64()) == Some(id) {
                 return v;
             }
