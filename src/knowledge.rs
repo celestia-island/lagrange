@@ -96,8 +96,11 @@ pub struct DocumentOut {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TranslationOut {
-    /// Tree-relative source path including the language segment
-    /// (e.g. `en/guides/quickstart.md`).
+    /// Language-RELATIVE path inside the source tree — the language segment
+    /// is the `translations` map key, not part of this value
+    /// (`"ar" -> "guides/architecture.md"`). A consumer resolving the file
+    /// joins `source.root` + language + this path; including the segment here
+    /// too would double it (review round 3, C-S2).
     pub path: String,
     pub title: String,
     /// `content_hash` of this translation's current bytes.

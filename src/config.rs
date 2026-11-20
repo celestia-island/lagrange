@@ -406,32 +406,53 @@ impl Config {
     /// `zh-Hans`/`zh-Hant` and two translations vanished from every build
     /// without a single warning (review round 2, S3).
     pub fn ordered_langs(&self, available: &[String]) -> Vec<String> {
+        let (ordered, dropped, missing) = self.plan_langs(available);
+        for lang in dropped {
+            tracing::warn!(
+                "language directory `{lang}` is not in `[languages] order` — it will NOT be built"
+            );
+        }
+        for lang in missing {
+            tracing::warn!(
+                "`[languages] order` lists `{lang}` but no such directory exists — ignored"
+            );
+        }
+        ordered
+    }
+
+    /// The pure half of [`Config::ordered_langs`]: the ordered list plus the
+    /// two mismatch sets the caller warns about.
+    ///
+    /// Split out so the mismatches are TESTABLE — the warning alone could be
+    /// deleted by any refactor with every config test still green, which is
+    /// exactly the silent-drop hole this replaced (review round 3, C-S3).
+    pub fn plan_langs(&self, available: &[String]) -> (Vec<String>, Vec<String>, Vec<String>) {
         if self.languages.order.is_empty() {
             let mut sorted = available.to_vec();
             sorted.sort();
-            return sorted;
+            return (sorted, Vec::new(), Vec::new());
         }
-        for lang in available {
-            if !self.languages.order.contains(lang) {
-                tracing::warn!(
-                    "language directory `{lang}` is not in `[languages] order` — it will NOT be built"
-                );
-            }
-        }
-        for lang in &self.languages.order {
-            if !available.contains(lang) {
-                tracing::warn!(
-                    "`[languages] order` lists `{lang}` but no such directory exists — ignored"
-                );
-            }
-        }
+        let dropped: Vec<String> = available
+            .iter()
+            .filter(|l| !self.languages.order.contains(l))
+            .cloned()
+            .collect();
+        let missing: Vec<String> = self
+            .languages
+            .order
+            .iter()
+            .filter(|l| !available.contains(l))
+            .cloned()
+            .collect();
         // Use config order, but only include languages that actually exist.
-        self.languages
+        let ordered = self
+            .languages
             .order
             .iter()
             .filter(|l| available.contains(l))
             .cloned()
-            .collect()
+            .collect();
+        (ordered, dropped, missing)
     }
 }
 
@@ -458,11 +479,17 @@ mod tests {
             "en".to_string(),
             "zht".to_string(),
         ];
+        let (ordered, dropped, missing) = cfg.plan_langs(&available);
         assert_eq!(
-            cfg.ordered_langs(&available),
+            ordered,
             vec!["en".to_string(), "zh-Hans".to_string()],
             "declared order wins and legacy zhs/zht directories are not built"
         );
+        // Both mismatch sets are what the warnings report — pin them so the
+        // loud half cannot be refactored away silently.
+        assert_eq!(dropped, vec!["zhs".to_string(), "zht".to_string()]);
+        assert_eq!(missing, vec!["zh-Hant".to_string()]);
+        assert_eq!(cfg.ordered_langs(&available), ordered);
     }
 
     #[test]

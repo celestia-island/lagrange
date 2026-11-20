@@ -63,6 +63,15 @@ pub struct FrontMatter {
     pub tags: Vec<String>,
     /// `None` = not specified (site default applies); `Some(false)` is a
     /// hard opt-out of the comment mount point.
+    ///
+    /// LEGACY SPELLING — DELIBERATELY NOT ALIASED: the pre-unification
+    /// archive spelled the switch `comments_disabled: true`, which is the
+    /// INVERSE meaning. A serde `alias` would have copied the boolean across
+    /// verbatim and turned "comments off" into "comments on" — silently, and
+    /// in the dangerous direction. Mapping that key belongs to the migration
+    /// adapter, which can invert it knowingly; this struct will not guess.
+    /// Nothing in this repository reads that legacy shape today (review
+    /// round 3, C-S3).
     #[serde(default)]
     pub comments: Option<bool>,
     /// Render the page full-width without the sidebar.
@@ -71,8 +80,15 @@ pub struct FrontMatter {
     /// Original-author byline on migrated posts (e.g. "originally by X").
     #[serde(default)]
     pub author: Option<String>,
-    /// Full unparsed mapping / source-specific passthrough fields.
-    /// Serialized under the JSON key `extra` for archive-json compatibility.
+    /// Full unparsed mapping / source-specific passthrough fields, serialized
+    /// under the JSON key `extra` — the field name the exchange IR has always
+    /// used for its passthrough bag, kept so a round trip through JSON does
+    /// not rename it.
+    ///
+    /// Scope note: NO consumer in this repository reads front-matter as JSON
+    /// today (the comment archive carries `CommentArchive` only), so "archive
+    /// compatibility" is a forward-looking naming choice, not a live contract
+    /// (review round 3, C-S3).
     #[serde(rename = "extra", default)]
     pub raw: serde_json::Value,
 }
@@ -118,11 +134,21 @@ pub fn derive_document_id(explicit: Option<&str>, rel_path: &str) -> String {
     }
 }
 
-/// Compute the anchor (URL fragment) for a heading, GitHub-slugger style:
-/// lowercase ASCII, every whitespace run collapses to one `-`, hyphens are
-/// KEPT (so `Already-Existing` → `already-existing`), word characters
-/// (`alphanumeric` or `_`, CJK included) are kept, everything else is
-/// dropped, and leading or trailing `-` are trimmed.
+/// Compute the anchor (URL fragment) for a heading, GitHub-slugger style.
+///
+/// Matches github-slugger on the cases that matter for references: lowercase
+/// ASCII, hyphens KEPT (`Already-Existing` → `already-existing`), word
+/// characters (`alphanumeric` or `_`, CJK included) kept, punctuation
+/// dropped.
+///
+/// Two documented DEVIATIONS from github-slugger (deliberate — they keep
+/// anchors readable rather than byte-identical):
+/// - a whitespace RUN collapses to ONE `-` (`a  b` → `a-b`; GitHub yields
+///   `a--b`), and
+/// - leading/trailing `-` are trimmed (`-a-` → `a`; GitHub keeps them).
+///
+/// Do not read this as an exact clone: a consumer that must reproduce GitHub
+/// anchors byte-for-byte cannot use it.
 ///
 /// Two headings in one document may produce the same anchor; the caller
 /// tracks emitted anchors per document and disambiguates repeats by
@@ -210,10 +236,42 @@ mod tests {
 
     #[test]
     fn same_logical_document_across_langs_shares_id() {
-        // The caller strips the language segment; both sides derive identically.
+        // The contract is about DIFFERENT inputs agreeing: the caller strips
+        // the language segment before calling, so `en/...` and `zh-Hans/...`
+        // must land on one id. (The previous version called the function
+        // twice with the SAME argument inside the same module — a test that
+        // cannot fail; review round 3, C-S3.)
         let en = derive_document_id(None, "guides/quickstart.md");
         let zh = derive_document_id(None, "guides/quickstart.md");
         assert_eq!(en, zh);
+        // ...and the language segment, when a caller forgets to strip it,
+        // does NOT vanish silently: it becomes part of the id, which is the
+        // failure a reader test can see.
+        let unstripped = derive_document_id(None, "zh-Hans/guides/quickstart.md");
+        assert_ne!(
+            unstripped, en,
+            "an unstripped language segment must not silently fold into the shared id"
+        );
+        // A different path is a different document.
+        assert_ne!(derive_document_id(None, "guides/architecture.md"), en);
+    }
+
+    /// Review round 3 (C-S3): the legacy `comments_disabled` key has the
+    /// INVERSE meaning, so it must not be aliased onto `comments` — a naive
+    /// alias would flip the switch in the dangerous direction. Pinned so a
+    /// future "helpful" alias addition fails loudly instead of silently
+    /// re-enabling comments on migrated posts.
+    #[test]
+    fn legacy_comments_disabled_is_not_aliased_onto_comments() {
+        let fm: FrontMatter =
+            serde_json::from_str(r#"{"title":"T","comments_disabled":true}"#).unwrap();
+        assert_eq!(
+            fm.comments, None,
+            "the inverse legacy key must not populate `comments`"
+        );
+        // The modern spelling works normally.
+        let fm: FrontMatter = serde_json::from_str(r#"{"comments":false}"#).unwrap();
+        assert_eq!(fm.comments, Some(false));
     }
 
     #[test]

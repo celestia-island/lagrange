@@ -36,6 +36,10 @@ use std::{collections::BTreeMap, fs, path::Path};
 
 use tracing::info;
 
+/// Snippet budget, in CHARACTERS (never bytes: a byte cut splits CJK
+/// codepoints and panics — review round 3, B-S3).
+pub const SNIPPET_CHARS: usize = 160;
+
 /// Number of shards (must be ≥ 1). 16 shards keeps each file small for sites
 /// up to a few thousand pages while staying below the HTTP/2 concurrent-request
 /// limit on most browsers.
@@ -124,7 +128,7 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
         let mut chunk_metas: Vec<ChunkMeta> = Vec::with_capacity(doc.chunks.len());
         for (chunk_idx, chunk) in doc.chunks.iter().enumerate() {
             let text = plain_text(&chunk.source_text);
-            let snippet: String = text.chars().take(160).collect();
+            let snippet = truncate_chars(&text, SNIPPET_CHARS);
             chunk_metas.push(ChunkMeta {
                 heading_path: chunk.heading_path.clone(),
                 anchor: chunk.anchor.clone(),
@@ -246,14 +250,33 @@ fn shard_for(word: &str) -> usize {
 
 /// Project a chunk's raw markdown span to readable text: drop fence-marker
 /// lines, strip leading block markers (headings, quotes, list bullets),
-/// remove emphasis/code delimiters, keep link text (drop the target), and
+/// remove emphasis delimiters, keep link text (drop the target), and
 /// collapse all whitespace runs to single spaces.
+///
+/// CODE IS TEXT, NOT MARKUP (review round 3, finding S1): a fenced or
+/// inline code span is copied VERBATIM apart from its delimiters. Treating
+/// `<` .. `>` as an HTML tag inside code silently ate real content — the
+/// quickstart's `lagrange build --src docs --out <dir>` came out as
+/// `--out ` in every one of the nine locales, in both the snippet and the
+/// search tokens, so "dir" stopped finding its own section. The renderer
+/// never had this problem (it honours `Inline::Code`); this projection is
+/// the side that has to know where code starts and ends.
 fn plain_text(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() / 2);
+    let mut in_fence = false;
     for line in raw.lines() {
         let line = line.trim();
         if line.starts_with("```") || line.starts_with("~~~") {
+            in_fence = !in_fence;
             continue; // fence markers carry no prose
+        }
+        if in_fence {
+            // Fence bodies are literal: no marker stripping, no tag removal.
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(line);
+            continue;
         }
         // Strip leading block markers repeatedly ("> - item", "## # tag"...).
         let mut rest = line;
@@ -318,6 +341,11 @@ fn plain_text(raw: &str) -> String {
     collapsed.trim().to_string()
 }
 
+/// First `limit` CHARACTERS of `text` (never a byte slice).
+fn truncate_chars(text: &str, limit: usize) -> String {
+    text.chars().take(limit).collect()
+}
+
 /// Append `text` with inline emphasis/code delimiters removed and link/image
 /// syntax reduced to its visible text.
 fn strip_inline_markers_into(text: &str, out: &mut String) {
@@ -329,7 +357,16 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
         let c = chars[i];
         match c {
             '`' => {
-                i += 1; // drop the backtick itself
+                // Copy the span verbatim; only the delimiters go. An
+                // unmatched backtick degrades to dropping the character.
+                let run = run_len(i, '`');
+                if let Some(close_rel) = chars[i + run..].iter().position(|&x| x == '`') {
+                    let inner: String = chars[i + run..i + run + close_rel].iter().collect();
+                    out.push_str(&inner);
+                    i += run + close_rel + 1;
+                } else {
+                    i += run;
+                }
             }
             '*' | '_' => {
                 let run = run_len(i, c);
@@ -477,6 +514,28 @@ mod tests {
         );
     }
 
+    /// Review round 3 (B-S1): code is text, not markup. `--out <dir>` in an
+    /// inline span and a `<p>` example inside a fence must both survive; the
+    /// first version of this projection ate everything between `<` and `>`.
+    #[test]
+    fn code_spans_keep_angle_brackets_verbatim() {
+        // Inline code: the placeholder stays readable AND searchable.
+        assert_eq!(
+            plain_text("run `lagrange build --src docs --out <dir>` now"),
+            "run lagrange build --src docs --out <dir> now"
+        );
+        // Fenced code: the example stays whole, tag-shaped text included.
+        assert_eq!(
+            plain_text("```html\n<p align=\"center\">x</p>\n```"),
+            "<p align=\"center\">x</p>"
+        );
+        // Prose HTML still strips to its text (the non-code path is intact).
+        assert_eq!(plain_text("a <b>bold</b> b"), "a bold b");
+        // Outside code an angle-bracket run IS prose markup and still goes:
+        // the fix is scoped to code, not a blanket "keep every tag".
+        assert_eq!(plain_text("deploy --out <dir>"), "deploy --out");
+    }
+
     #[test]
     fn badge_link_leaves_no_url_in_snippet_or_tokens() {
         // Review probe: the nested badge link used to leak BOTH urls into
@@ -494,6 +553,128 @@ mod tests {
             assert!(!token.contains("svg"), "token {token}");
             assert!(!token.contains("http"), "token {token}");
         }
+    }
+
+    /// Review round 3 (B-S2/C-S2): the Rust<->front-end index contract used
+    /// to be pinned only in terms of `SHARD_COUNT`, so bumping it to 8 left
+    /// every test green while `src/site.rs`'s embedded JS kept computing
+    /// `charCodeAt(0) % 16` — a silent, total search break. Pin the LITERAL
+    /// here; the JS constant is the other half of the same contract.
+    /// Review round 3 (B-S3): the snippet budget is CHARACTERS. Slicing by
+    /// bytes panicked on a real build (`end byte index 160 is not a char
+    /// boundary`, inside 「日」) while every unit test stayed green, because
+    /// no test fed multi-byte text through the cutting point.
+    #[test]
+    fn snippet_truncation_is_char_safe_for_multibyte_text() {
+        // A CJK run long enough that byte offset 160 lands mid-codepoint.
+        let cjk = "运行说明".repeat(60);
+        let cut = truncate_chars(&cjk, SNIPPET_CHARS);
+        assert_eq!(cut.chars().count(), SNIPPET_CHARS);
+        // Would have panicked if this were a byte slice.
+        assert!(cjk.is_char_boundary(cut.len()));
+        // Mixed emoji (multi-byte beyond the BMP) is safe too.
+        let mixed = "a🚀b".repeat(80);
+        let cut = truncate_chars(&mixed, SNIPPET_CHARS);
+        assert_eq!(cut.chars().count(), SNIPPET_CHARS);
+        // Short text is returned whole.
+        assert_eq!(truncate_chars("short", SNIPPET_CHARS), "short");
+    }
+
+    #[test]
+    fn shard_count_is_literally_sixteen_because_the_frontend_hardcodes_it() {
+        assert_eq!(SHARD_COUNT, 16, "src/site.rs JS computes `% 16`");
+        let js = include_str!("site.rs");
+        assert!(
+            js.contains("%16") || js.contains("% 16"),
+            "the embedded search JS must agree with SHARD_COUNT"
+        );
+    }
+
+    /// Review round 3 (B-S2): a posting is `[doc_id, chunk_idx]` in that
+    /// order. Swapping the pair kept all seven search tests green while the
+    /// browser would render the wrong page's snippet for every hit.
+    #[test]
+    fn postings_are_doc_then_chunk() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs = vec![
+            SearchDoc {
+                lang: "en".into(),
+                title: "T".into(),
+                page_path: "t.html".into(),
+                document_id: "t".into(),
+                revision: "abc".into(),
+                chunks: vec![
+                    SearchChunk {
+                        heading_path: vec!["T".into()],
+                        anchor: "t".into(),
+                        source_text: "# T\n\ntargetword here".into(),
+                    },
+                    SearchChunk {
+                        heading_path: vec!["U".into()],
+                        anchor: "u".into(),
+                        source_text: "## U\n\nother".into(),
+                    },
+                ],
+            },
+            SearchDoc {
+                lang: "en".into(),
+                title: "Second".into(),
+                page_path: "s.html".into(),
+                document_id: "s".into(),
+                revision: "def".into(),
+                chunks: vec![SearchChunk {
+                    heading_path: vec!["S".into()],
+                    anchor: "s".into(),
+                    source_text: "# S\n\ntargetword again".into(),
+                }],
+            },
+        ];
+        write_index(dir.path(), &docs, "").unwrap();
+
+        let mut hits = Vec::new();
+        for i in 0..SHARD_COUNT {
+            let shard: serde_json::Value = serde_json::from_str(
+                &fs::read_to_string(dir.path().join(format!("search_i_{i:02}.json"))).unwrap(),
+            )
+            .unwrap();
+            for (word, posts) in shard.as_object().unwrap() {
+                if word != "targetword" && word != "tar" {
+                    continue;
+                }
+                for p in posts.as_array().unwrap() {
+                    let pair: Vec<u64> = p
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_u64().unwrap())
+                        .collect();
+                    hits.push((word.clone(), pair));
+                }
+            }
+        }
+        assert!(!hits.is_empty(), "the probe word must be indexed");
+        for (_word, pair) in &hits {
+            assert_eq!(pair.len(), 2, "a posting is a two-element pair");
+            let (doc, chunk) = (pair[0], pair[1]);
+            assert!(doc < 2, "first element is the doc id: {pair:?}");
+            // Env: the FIRST element must identify the document, the second
+            // the chunk inside it — so a hit on doc 1 (the single-chunk one)
+            // can only carry chunk index 0, while doc 0's first chunk is 0
+            // too but its targetword chunk is 0 and the *second* doc is 1.
+            assert!(chunk <= 1, "second element is the chunk index: {pair:?}");
+        }
+        // The decisive assertion: "targetword" appears in doc 0 chunk 0 AND
+        // doc 1 chunk 0; a swapped pair would put those ids in the other slot
+        // and the doc ids would read as chunk indices.
+        let docs_hit: Vec<u64> = hits
+            .iter()
+            .filter(|(w, _)| w == "targetword")
+            .map(|(_, p)| p[0])
+            .collect();
+        assert!(
+            docs_hit.contains(&0) && docs_hit.contains(&1),
+            "both documents must be addressable in the first slot: {docs_hit:?}"
+        );
     }
 
     #[test]
