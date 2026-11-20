@@ -24,7 +24,7 @@ use crate::{
     comments::{self, MountInput},
     config::CommentsConfig,
     frontmatter::{self, FrontMatter},
-    markdown, render, theme,
+    knowledge, markdown, render, theme,
 };
 
 /// Options for [`build`].
@@ -126,8 +126,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         let lang_dir = opts.src.join(lang);
         for md_path in walk_md(&lang_dir).unwrap_or_default() {
             let source = std::fs::read_to_string(&md_path).unwrap_or_default();
-            let (_, _, body_src) = frontmatter::strip(&source);
-            let blocks = markdown::parse(body_src);
+            let blocks = markdown::parse_doc(&source);
             all_live_sources.extend(crate::live::collect_sources(&blocks));
         }
     }
@@ -149,6 +148,9 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
+    // Knowledge collection: one entry per (document, language) translation,
+    // folded into knowledge.json after the page loop.
+    let mut collected: Vec<knowledge::CollectedDoc> = Vec::new();
     // Site-wide union of diagram-runtime needs — one vendor asset emission
     // for the whole build when any page in any language has a diagram fence.
     let mut site_diagram_needs = crate::diagram::DiagramNeeds::default();
@@ -189,9 +191,12 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             let source = read_md_or_follow(&md_path)
                 .with_context(|| format!("read {}", md_path.display()))?;
 
-            // Peel frontmatter off before parsing — the grammar never sees it.
-            let (_fm_kind, fm, body_src) = frontmatter::strip(&source);
-            let blocks = markdown::parse(body_src);
+            // Peel frontmatter off before parsing — the grammar never sees
+            // it. Blocks carry full-file source spans (frontmatter offset
+            // compensated), which knowledge.json and the search index
+            // reference.
+            let (_fm_kind, fm, _body_src) = frontmatter::strip(&source);
+            let blocks = markdown::parse_doc(&source);
             // Render with live component HTML if any were pre-compiled.
             let body_raw =
                 render::render_to_html_with_live(&blocks, &live_html, &config.live, &opts.out);
@@ -296,6 +301,21 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             let comments_mount =
                 build_comments_mount(&config.comments, &fm, &page_path, fm.canonical.as_deref());
 
+            // Collect the knowledge view of this translation. `rel` is the
+            // language-relative source path — the document-id derivation
+            // strips the language, so translations of one document share id.
+            let tree_path = rel.to_string_lossy().replace('\\', "/");
+            collected.push(knowledge::collect_from_blocks(knowledge::DocInput {
+                lang,
+                tree_path: &tree_path,
+                page_path: &page_path,
+                title: &title,
+                source: &source,
+                fm_id: fm.id.as_deref(),
+                tags: &fm.tags,
+                blocks: &blocks,
+            }));
+
             let entry = multi.entry(page_path.clone()).or_insert_with(|| MultiPage {
                 pages: BTreeMap::new(),
                 page_path: page_path.clone(),
@@ -361,8 +381,20 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         copy_crate_assets(&opts.out)?;
     }
 
-    // ── 4. Build the search index.
-    crate::search::write_index(&opts.out, &multi, &base)?;
+    // ── 4. Write knowledge.json (static site + future MCP read the same
+    //      file) and build the chunk-level search index from the collected
+    //      knowledge.
+    let source_commit = knowledge::source_commit_of(&opts.src);
+    let kb = knowledge::assemble(
+        &collected,
+        &opts.src.to_string_lossy(),
+        &langs,
+        &default_lang,
+        source_commit,
+    );
+    knowledge::write_json(&opts.out, &kb)?;
+    let search_docs = build_search_docs(&collected);
+    crate::search::write_index(&opts.out, &search_docs, &base)?;
 
     // 4b. BBS projection: when enabled, emit a boards index per language that
     //     groups pages by their frontmatter `category`. Pure static — the board
@@ -683,14 +715,18 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
    var loaded=0;var all={};
    function check(){
     loaded++;if(loaded<names.length)return;
-    var sets=[];
+    var sets=[];var hits={};
     for(var i=0;i<tokens.length;i++){
-     var s={};for(var j=0;j<names.length;j++){var idx=all[names[j]]||{};if(idx[tokens[i]])for(var k=0;k<idx[tokens[i]].length;k++)s[idx[tokens[i]][k]]=true}
+     var s={};for(var j=0;j<names.length;j++){var idx=all[names[j]]||{};var ps=idx[tokens[i]]||[];for(var k=0;k<ps.length;k++){var p=ps[k];s[p[0]]=true;(hits[p[0]]=hits[p[0]]||{})[p[1]]=true}}
      sets.push(s)
     }
     var ids=sets[0];for(var i=1;i<sets.length;i++){var n={};for(var k in ids)if(sets[i][k])n[k]=true;ids=n}
     var result=[];
-    for(var k in ids){var d=meta.docs[k];if(d&&d.lang===L)result.push(d)}
+    for(var k in ids){var d=meta.docs[k];if(d&&d.lang===L){
+     var view={url:d.url,title:d.title,snippet:d.snippet};
+     var hc=hits[k];
+     if(hc&&d.chunks){for(var ck in hc){if(d.chunks[ck]){view.snippet=d.chunks[ck].snippet;break}}}
+     result.push(view)}}
     result=result.slice(0,10);
     if(!result.length){sr.innerHTML='<div class="lg-no">'+he(lgUI.t('noResults'))+'</div>';sp.open();return}
     var h='';
@@ -853,6 +889,31 @@ fn rewrite_asset_paths(html: &str, page_path: &str) -> String {
         .replace("href=\"docs/", &format!("href=\"{up}"))
 }
 
+/// Project collected knowledge into the search layer's input: one
+/// translation with its chunks (source span text rides along so snippets
+/// come straight from the markdown file).
+fn build_search_docs(collected: &[knowledge::CollectedDoc]) -> Vec<crate::search::SearchDoc> {
+    collected
+        .iter()
+        .map(|d| crate::search::SearchDoc {
+            lang: d.lang.clone(),
+            title: d.title.clone(),
+            page_path: d.page_path.clone(),
+            document_id: d.document_id.clone(),
+            revision: d.revision.clone(),
+            chunks: d
+                .chunks
+                .iter()
+                .map(|c| crate::search::SearchChunk {
+                    heading_path: c.heading_path.clone(),
+                    anchor: c.anchor.clone(),
+                    source_text: c.source_text.clone(),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 // ── markdown helpers ──────────────────────────────────────────────────────
 
 /// Build the per-page comment mount-point HTML. Thin wrapper around
@@ -873,9 +934,9 @@ fn build_comments_mount(
     comments::mount_html(&input)
 }
 
-fn first_heading(blocks: &[markdown::Block]) -> Option<String> {
+fn first_heading(blocks: &[markdown::SpannedBlock]) -> Option<String> {
     for b in blocks {
-        if let markdown::Block::Heading { text, .. } = b {
+        if let markdown::Block::Heading { text, .. } = &b.block {
             return Some(collect_text(text));
         }
     }

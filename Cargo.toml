@@ -52,6 +52,11 @@ serde_json = "^1"
 toml = "^1.1"
 # Frontmatter parsing (YAML `---` blocks). TOML frontmatter reuses `toml`.
 serde_yaml = "^0.9"
+# Shared content contract: frontmatter struct, document-id derivation,
+# anchor slugs, parser version. Leaf crate — no rendering dependencies.
+lagrange-content = { path = "packages/content", version = "^0.2" }
+# Content addressing for block ids / revision & chunk content hashes.
+sha2 = "^0.10"
 
 # Dev server: axum + tower-http ServeDir for static file serving.
 axum = "^0.8"
@@ -90,6 +95,7 @@ tempfile = "^3"
 # and are published independently.
 [workspace]
 members = [
+    "packages/content",
     "packages/protocol",
     "packages/adapter",
     "packages/exchange",

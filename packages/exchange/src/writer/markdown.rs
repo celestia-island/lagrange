@@ -99,11 +99,12 @@ fn render_frontmatter(doc: &ExchangeDoc) -> String {
     }
     // Pin the node id so the comment archive and the article stay linked.
     lines.push(format!("node_id: {}", yaml_quote(&doc.node_id)));
-    if fm.comments_disabled {
+    if fm.comments == Some(false) {
         lines.push("comments: false".to_string());
     }
-    // Pass through known extra fields (e.g. wordpress_post_id) for traceability.
-    if let Some(obj) = fm.extra.as_object() {
+    // Pass through source-specific passthrough fields (e.g. wordpress_post_id)
+    // for traceability.
+    if let Some(obj) = fm.raw.as_object() {
         for (k, v) in obj {
             lines.push(format!("# source {k}: {v}"));
         }

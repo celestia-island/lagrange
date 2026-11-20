@@ -17,10 +17,10 @@ use std::process::Command;
 
 use tracing::{info, warn};
 
-use crate::markdown::Block;
+use crate::markdown::{Block, SpannedBlock};
 
 /// Collect all unique live component sources from a list of parsed blocks.
-pub fn collect_sources(blocks: &[Block]) -> Vec<String> {
+pub fn collect_sources(blocks: &[SpannedBlock]) -> Vec<String> {
     let mut sources = Vec::new();
     collect_sources_inner(blocks, &mut sources);
     sources.sort();
@@ -28,9 +28,9 @@ pub fn collect_sources(blocks: &[Block]) -> Vec<String> {
     sources
 }
 
-fn collect_sources_inner(blocks: &[Block], out: &mut Vec<String>) {
-    for block in blocks {
-        match block {
+fn collect_sources_inner(blocks: &[SpannedBlock], out: &mut Vec<String>) {
+    for sb in blocks {
+        match &sb.block {
             Block::LiveComponent { source, .. } => out.push(source.clone()),
             Block::Blockquote(inner) => collect_sources_inner(inner, out),
             Block::Center(inner) => collect_sources_inner(inner, out),

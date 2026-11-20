@@ -6,7 +6,10 @@
 //! (b) the remaining body, so the markdown parser never sees the frontmatter
 //! and the existing grammar stays untouched.
 //!
-//! The recognised fields mirror what the site builder and the comment/migration
+//! [`FrontMatter`] is the shared content contract from the
+//! `lagrange-content` crate — the same struct `lagrange-exchange` emits for
+//! migration round-trips, so the two vocabularies cannot drift. The
+//! recognised fields mirror what the site builder and the comment/migration
 //! pipeline consume. Unknown fields are tolerated (and exposed via
 //! [`FrontMatter::raw`]) so a WordPress or Hexo dump carrying exotic keys does
 //! not break the build — it just won't all be surfaced.
@@ -17,28 +20,7 @@
 
 use serde::Deserialize;
 
-/// Parsed frontmatter. Every field is optional; missing fields are `None`.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct FrontMatter {
-    pub title: Option<String>,
-    pub date: Option<String>,
-    pub slug: Option<String>,
-    pub description: Option<String>,
-    pub category: Option<String>,
-    pub canonical: Option<String>,
-    pub node_id: Option<String>,
-    /// `tags: [a, b]` — flattened to owned strings.
-    pub tags: Vec<String>,
-    /// Per-page comment override (`comments: false` disables the mount point).
-    /// `None` means "not specified" (use the site default); `Some(false)` is a
-    /// hard opt-out.
-    pub comments: Option<bool>,
-    /// `hero: true` renders the page full-width without the sidebar.
-    pub hero: Option<bool>,
-    /// The full, unparsed mapping as a JSON object, for fields this struct does
-    /// not surface (migration round-trips, ad-hoc tooling). Empty when absent.
-    pub raw: serde_json::Value,
-}
+pub use lagrange_content::FrontMatter;
 
 /// Delimiter and body returned by [`strip`].
 #[derive(Debug, Clone, PartialEq)]
@@ -64,21 +46,33 @@ impl FrontMatterKind {
 /// tolerated only up to the delimiter itself (matching Jekyll/Zola, which
 /// require the fence at column 0).
 pub fn strip(input: &str) -> (FrontMatterKind, FrontMatter, &str) {
-    let (kind, fm_raw, body) = split_delim(input);
+    let (kind, fm, body, _offset) = strip_with_offset(input);
+    (kind, fm, body)
+}
+
+/// [`strip`] plus the byte offset of the returned body inside `input`
+/// (0 when no frontmatter was present, or when a BOM preceded the fence).
+/// The markdown layer adds this to every block byte coordinate so spans
+/// index the full file.
+pub fn strip_with_offset(input: &str) -> (FrontMatterKind, FrontMatter, &str, usize) {
+    let (kind, fm_raw, body, offset) = split_delim(input);
     let fm = match (&kind, fm_raw) {
         (FrontMatterKind::Yaml, Some(raw)) => parse_yaml(raw).unwrap_or_default(),
         (FrontMatterKind::Toml, Some(raw)) => parse_toml(raw).unwrap_or_default(),
         _ => FrontMatter::default(),
     };
-    (kind, fm, body)
+    (kind, fm, body, offset)
 }
 
 // ── delimiter splitting ───────────────────────────────────────────────────
 
-/// Peel off the leading fenced block. Returns `(kind, frontmatter_text, body)`
-/// where `frontmatter_text` excludes the fences.
-fn split_delim(input: &str) -> (FrontMatterKind, Option<&str>, &str) {
+/// Peel off the leading fenced block. Returns
+/// `(kind, frontmatter_text, body, body_byte_offset)` where
+/// `frontmatter_text` excludes the fences and the offset is relative to
+/// `input` (BOM included in the count).
+fn split_delim(input: &str) -> (FrontMatterKind, Option<&str>, &str, usize) {
     // Only inspect the very first line. Tolerate a leading BOM.
+    let bom_len = if input.starts_with('\u{feff}') { 3 } else { 0 };
     let trimmed_start = input.strip_prefix('\u{feff}').unwrap_or(input);
     let first_newline = trimmed_start.find('\n').map(|i| i + 1);
     let first_line = match first_newline {
@@ -87,12 +81,12 @@ fn split_delim(input: &str) -> (FrontMatterKind, Option<&str>, &str) {
     };
     let trimmed_line = first_line.trim_end_matches(['\n', '\r']);
 
-    let (open, close, kind) = if trimmed_line == "---" {
-        ("---", "---", FrontMatterKind::Yaml)
+    let (close_fence, kind) = if trimmed_line == "---" {
+        ("---", FrontMatterKind::Yaml)
     } else if trimmed_line == "+++" {
-        ("+++", "+++", FrontMatterKind::Toml)
+        ("+++", FrontMatterKind::Toml)
     } else {
-        return (FrontMatterKind::None, None, input);
+        return (FrontMatterKind::None, None, input, 0);
     };
 
     let body_start = first_newline.unwrap_or(trimmed_start.len());
@@ -102,7 +96,7 @@ fn split_delim(input: &str) -> (FrontMatterKind, Option<&str>, &str) {
     let mut close_pos = None;
     for (idx, line) in rest.split_inclusive('\n').enumerate() {
         let bare = line.trim_end_matches(['\n', '\r']);
-        if bare == close {
+        if bare == close_fence {
             // The frontmatter text is everything up to (not including) this
             // closing line; the body starts after it.
             let line_start_byte: usize =
@@ -116,19 +110,20 @@ fn split_delim(input: &str) -> (FrontMatterKind, Option<&str>, &str) {
         // Opening fence with no closing fence — treat the whole thing as body
         // rather than silently swallowing the document (safer for hand-edited
         // files that happen to start with `---`).
-        return (FrontMatterKind::None, None, input);
+        return (FrontMatterKind::None, None, input, 0);
     };
 
     let fm_text = &rest[..close_byte];
     // Body begins after the closing fence line (include its trailing newline).
     let after_fence = &rest[close_byte..];
-    let body = after_fence
+    let body_offset_rel = after_fence
         .find('\n')
-        .map(|i| &after_fence[i + 1..])
-        .unwrap_or("");
+        .map(|i| i + 1)
+        .unwrap_or(after_fence.len());
+    let body = &after_fence[body_offset_rel..];
+    let body_offset = bom_len + body_start + close_byte + body_offset_rel;
 
-    let _ = open; // open only disambiguates; unused beyond selection above
-    (kind, Some(fm_text), body)
+    (kind, Some(fm_text), body, body_offset)
 }
 
 // ── parsers ───────────────────────────────────────────────────────────────
@@ -141,6 +136,8 @@ struct YamlFront {
     date: Option<serde_yaml::Value>,
     #[serde(default)]
     slug: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
@@ -170,6 +167,7 @@ fn parse_yaml(text: &str) -> Option<FrontMatter> {
         title: typed.title,
         date: typed.date.as_ref().map(date_value_to_string),
         slug: typed.slug,
+        id: typed.id,
         description: typed.description,
         category: typed.category,
         canonical: typed.canonical,
@@ -178,6 +176,7 @@ fn parse_yaml(text: &str) -> Option<FrontMatter> {
         comments: typed.comments,
         hero: typed.hero,
         raw,
+        ..Default::default()
     })
 }
 
@@ -189,6 +188,8 @@ struct TomlFront {
     date: Option<String>,
     #[serde(default)]
     slug: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
@@ -214,6 +215,7 @@ fn parse_toml(text: &str) -> Option<FrontMatter> {
         title: typed.title,
         date: typed.date,
         slug: typed.slug,
+        id: typed.id,
         description: typed.description,
         category: typed.category,
         canonical: typed.canonical,
@@ -222,6 +224,7 @@ fn parse_toml(text: &str) -> Option<FrontMatter> {
         comments: typed.comments,
         hero: typed.hero,
         raw: raw_json,
+        ..Default::default()
     })
 }
 
@@ -257,14 +260,6 @@ fn toml_to_json(v: &toml::Value) -> serde_json::Value {
             }
             serde_json::Value::Object(obj)
         }
-    }
-}
-
-impl FrontMatter {
-    /// Derive the comment-mount node id, preferring an explicit `node_id`,
-    /// then `slug`, then `None` (the caller falls back to the page path).
-    pub fn effective_node_id(&self) -> Option<&str> {
-        self.node_id.as_deref().or(self.slug.as_deref())
     }
 }
 
@@ -362,5 +357,49 @@ mod tests {
         assert_eq!(kind, FrontMatterKind::Yaml);
         assert_eq!(fm.title.as_deref(), Some("Hi"));
         assert!(body.starts_with("# Body"));
+    }
+
+    // ── contract additions ────────────────────────────────────────────────
+
+    #[test]
+    fn yaml_id_field_parsed() {
+        let doc = "---\ntitle: X\nid: guides/quickstart\n---\nbody\n";
+        let (_, fm, _) = strip(doc);
+        assert_eq!(fm.id.as_deref(), Some("guides/quickstart"));
+    }
+
+    #[test]
+    fn toml_id_field_parsed() {
+        let doc = "+++\nid = \"my-doc\"\n+++\nbody\n";
+        let (_, fm, _) = strip(doc);
+        assert_eq!(fm.id.as_deref(), Some("my-doc"));
+    }
+
+    #[test]
+    fn strip_with_offset_reports_body_offset() {
+        let doc = "---\ntitle: T\n---\n# Body\n";
+        let (kind, fm, body, offset) = strip_with_offset(doc);
+        assert_eq!(kind, FrontMatterKind::Yaml);
+        assert_eq!(fm.title.as_deref(), Some("T"));
+        assert_eq!(body, "# Body\n");
+        assert_eq!(offset, 17);
+        assert_eq!(&doc[offset..], body);
+    }
+
+    #[test]
+    fn strip_with_offset_without_frontmatter_is_zero() {
+        let doc = "# Just markdown\n";
+        let (_, _, body, offset) = strip_with_offset(doc);
+        assert_eq!(offset, 0);
+        assert_eq!(body, doc);
+    }
+
+    #[test]
+    fn strip_with_offset_handles_bom() {
+        let doc = "\u{feff}---\ntitle: T\n---\nbody\n";
+        let (kind, _, body, offset) = strip_with_offset(doc);
+        assert_eq!(kind, FrontMatterKind::Yaml);
+        assert_eq!(body, "body\n");
+        assert_eq!(&doc[offset..], body);
     }
 }

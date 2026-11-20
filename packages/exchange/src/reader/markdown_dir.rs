@@ -266,8 +266,9 @@ impl From<YamlFm> for FrontMatter {
             canonical: None,
             tags,
             author,
-            comments_disabled: false,
-            extra: serde_json::Value::Null,
+            comments: None,
+            raw: serde_json::Value::Null,
+            ..Default::default()
         }
     }
 }
@@ -283,8 +284,9 @@ impl From<TomlFm> for FrontMatter {
             canonical: None,
             tags: t.tags.unwrap_or_default(),
             author: t.author,
-            comments_disabled: false,
-            extra: serde_json::Value::Null,
+            comments: None,
+            raw: serde_json::Value::Null,
+            ..Default::default()
         }
     }
 }

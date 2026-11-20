@@ -1,0 +1,18 @@
+[package]
+name = "lagrange-content"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared content contract for the lagrange ecosystem: frontmatter, document ids, anchors"
+keywords = ["documentation", "markdown", "frontmatter", "lagrange"]
+categories = ["text-processing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"

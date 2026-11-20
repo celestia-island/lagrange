@@ -9,7 +9,7 @@
 //! as `<script defer>` / `<link>` only on pages that need them, so ordinary
 //! pages never pay the 3.6 MB.
 
-use crate::markdown::{Block, DiagramKind};
+use crate::markdown::{Block, DiagramKind, SpannedBlock};
 
 /// Which diagram runtimes a set of parsed pages requires.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -32,15 +32,15 @@ impl DiagramNeeds {
 }
 
 /// Scan parsed blocks (recursing into containers) for diagram fences.
-pub fn collect_needs(blocks: &[Block]) -> DiagramNeeds {
+pub fn collect_needs(blocks: &[SpannedBlock]) -> DiagramNeeds {
     let mut needs = DiagramNeeds::default();
     collect_needs_inner(blocks, &mut needs);
     needs
 }
 
-fn collect_needs_inner(blocks: &[Block], out: &mut DiagramNeeds) {
-    for block in blocks {
-        match block {
+fn collect_needs_inner(blocks: &[SpannedBlock], out: &mut DiagramNeeds) {
+    for sb in blocks {
+        match &sb.block {
             Block::Diagram { kind, .. } => match kind {
                 DiagramKind::Mermaid => out.mermaid = true,
                 DiagramKind::Math => out.math = true,
@@ -183,17 +183,18 @@ pub fn vendor_tags(needs: DiagramNeeds) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::markdown::parse;
+    use crate::markdown::parse_doc;
 
     #[test]
     fn mermaid_fence_is_a_diagram_not_a_code_block() {
-        let blocks = parse("```mermaid\ngraph TD;\n  A-->B;\n```\n");
+        let blocks = parse_doc("```mermaid\ngraph TD;\n  A-->B;\n```\n");
+        assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks,
-            vec![Block::Diagram {
+            blocks[0].block,
+            Block::Diagram {
                 kind: DiagramKind::Mermaid,
                 source: "graph TD;\n  A-->B;".to_string(),
-            }]
+            }
         );
         let needs = collect_needs(&blocks);
         assert!(needs.mermaid && !needs.math);
@@ -203,23 +204,24 @@ mod tests {
     fn math_aliases_all_route_to_katex() {
         for info in ["math", "latex", "katex"] {
             let src = format!("```{info}\nE = mc^2\n```\n");
-            let blocks = parse(&src);
+            let blocks = parse_doc(&src);
             assert!(
                 matches!(
-                    &blocks[0],
+                    &blocks[0].block,
                     Block::Diagram {
                         kind: DiagramKind::Math,
                         source,
                     } if source == "E = mc^2"
                 ),
-                "fence '{info}' did not produce a math diagram: {blocks:?}"
+                "fence '{info}' did not produce a math diagram: {:?}",
+                blocks[0].block
             );
         }
     }
 
     #[test]
     fn nested_diagrams_are_found_and_flags_merge() {
-        let blocks = parse("> ```math\n> x^2\n>\n\n<div class=\"note\">\n\n```mermaid\ngraph LR;A-->B\n```\n\n</div>\n");
+        let blocks = parse_doc("> ```math\n> x^2\n>\n\n<div class=\"note\">\n\n```mermaid\ngraph LR;A-->B\n```\n\n</div>\n");
         let needs = collect_needs(&blocks);
         assert!(needs.mermaid && needs.math, "needs: {needs:?}");
         let mut page = DiagramNeeds::default();

@@ -16,6 +16,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use lagrange_content::FrontMatter;
+
 /// One imported article (post / page / thread) plus its detached comments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExchangeDoc {
@@ -51,29 +53,6 @@ pub enum DocKind {
     /// A forum thread (Discuz / Flarum). Treated as a post with a category =
     /// board, and typically richer comments.
     Thread,
-}
-
-/// Frontmatter carried in the IR. Mirrors lagrange's own frontmatter but kept
-/// independent so this crate does not depend on the SSG.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct FrontMatter {
-    pub title: Option<String>,
-    pub date: Option<String>,
-    pub slug: Option<String>,
-    pub description: Option<String>,
-    pub category: Option<String>,
-    pub canonical: Option<String>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    /// Original-author byline for migrated posts (e.g. "originally by X").
-    pub author: Option<String>,
-    /// When true, the markdown writer emits `comments: false`.
-    #[serde(default)]
-    pub comments_disabled: bool,
-    /// Free-form bag for source-specific fields the writer should pass through
-    /// verbatim (e.g. WordPress post_id for traceability).
-    #[serde(default)]
-    pub extra: serde_json::Value,
 }
 
 /// A detached comment. Carries only the data the archive-json writer needs.

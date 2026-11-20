@@ -117,8 +117,9 @@ fn parse_wxr(xml: &str) -> Result<Vec<ExchangeDoc>> {
                 canonical: if link.is_empty() { None } else { Some(link) },
                 tags,
                 author: None,
-                comments_disabled: false,
-                extra: serde_json::json!({ "wordpress_post_id": post_id }),
+                comments: None,
+                raw: serde_json::json!({ "wordpress_post_id": post_id }),
+                ..Default::default()
             },
             body_md,
             comments,
