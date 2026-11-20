@@ -61,8 +61,11 @@ function onRailStyleChange(v: "expanded" | "rail") {
   railStyle.value = v;
   localStorage.setItem("lagrange-sidebar-style", v);
 }
-railStyle.value =
-  (localStorage.getItem("lagrange-sidebar-style") as "expanded" | "rail") ?? "expanded";
+// SSR guard: localStorage only exists in the browser
+if (typeof window !== "undefined") {
+  railStyle.value =
+    (localStorage.getItem("lagrange-sidebar-style") as "expanded" | "rail") ?? "expanded";
+}
 </script>
 
 <template>

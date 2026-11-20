@@ -6,10 +6,12 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "vue-tsc --noEmit --pretty false 2>&1 | grep -v node_modules || true",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:ssr": "node scripts/ssr-render.mjs"
   },
   "dependencies": {
     "@celestia-island/hikari": "^0.55.451",
+    "@vue/server-renderer": "^3.5.45",
     "dompurify": "^3.4.18",
     "marked": "^18.2.1",
     "vue": "^3.5"
