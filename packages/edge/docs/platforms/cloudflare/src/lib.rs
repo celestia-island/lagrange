@@ -1,3 +1,8 @@
+// REFERENCE ONLY — illustrative code for the Cloudflare Workers platform.
+// This file is NOT part of the workspace build. It demonstrates the
+// architecture for an edge deployment of the comment system but has
+// known limitations (MemoryStore, AnonymousResolver) and is not
+// production-ready.
 //! Cloudflare Worker binding for lagrange-edge.
 //!
 //! This is a *reference* binding, not a workspace member. Copy it into a
