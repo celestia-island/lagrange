@@ -1,6 +1,10 @@
 //! Command-line interface.
 
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use clap::{Parser, Subcommand};
 use tracing::info;
@@ -38,6 +42,9 @@ pub enum Command {
     /// Build once, then watch for changes and rebuild automatically.
     /// When `--port` is set, also starts a lightweight HTTP server that
     /// serves the output directory — no external dependency needed.
+    /// With `--mcp`, additionally serves the MCP tool surface on stdio
+    /// (docs.search / docs.fetch / docs.tree / docs.write / docs.status /
+    /// build.trigger).
     Dev {
         /// Source docs root. Defaults to `docs`.
         #[arg(long, default_value = "docs")]
@@ -69,6 +76,11 @@ pub enum Command {
         /// Port for the local comment backend when `--comments` is set.
         #[arg(long, default_value = "18099")]
         comments_port: u16,
+        /// Serve the MCP tool surface on stdio (newline-delimited
+        /// JSON-RPC 2.0). stdout belongs to the protocol from here on —
+        /// all logging has already moved to stderr.
+        #[arg(long)]
+        mcp: bool,
     },
     /// Scaffold a new lagrange documentation site.
     Init {
@@ -114,7 +126,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 site_url,
                 default_lang: Some(default_lang),
             };
-            site::build(&opts)
+            site::build_with_status(&opts)
         }
         Command::Dev {
             src,
@@ -126,6 +138,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             default_lang,
             comments,
             comments_port,
+            mcp,
         } => {
             info!("lagrange dev — build + watch ({interval}s poll)");
             let opts = BuildOptions {
@@ -134,7 +147,12 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 site_url: site_url.clone(),
                 default_lang: Some(default_lang.clone()),
             };
-            site::build(&opts)?;
+            site::build_with_status(&opts)?;
+
+            // Builds are serialized between the watch loop and the MCP
+            // build.trigger tool: both clear and repopulate the output
+            // directory, so two concurrent builds would corrupt it.
+            let build_lock = Arc::new(Mutex::new(()));
 
             // Spawn the axum + tower-http static-file server on a tokio
             // runtime.  The runtime is kept alive for the lifetime of this
@@ -182,13 +200,42 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 info!("comment backend on http://127.0.0.1:{comments_port} (in-memory)");
             }
 
+            // MCP stdio surface: one session thread over stdin/stdout; it
+            // lives exactly as long as the dev server (stdin EOF just ends
+            // the session, not the server). stdout is protocol-only — every
+            // log line already goes to stderr (see main.rs).
+            if mcp {
+                let config = crate::config::Config::load(&src);
+                let state = Arc::new(crate::mcp::McpState {
+                    src: src.clone(),
+                    out: out.clone(),
+                    build_opts: BuildOptions {
+                        src: src.clone(),
+                        out: out.clone(),
+                        site_url: site_url.clone(),
+                        default_lang: Some(default_lang.clone()),
+                    },
+                    write_paths: config.mcp.write_paths,
+                    build_lock: build_lock.clone(),
+                });
+                std::thread::spawn(move || {
+                    if let Err(e) = crate::mcp::run_stdio(state) {
+                        tracing::error!("MCP session ended with error: {e:?}");
+                    }
+                });
+                info!(
+                    "MCP stdio surface ready: {}",
+                    crate::mcp::tool_names().join(", ")
+                );
+            }
+
             info!(
                 "watching {} …  open http://{bind_addr}/index.html?lang={dl}",
                 src.display(),
                 dl = default_lang,
             );
             // watch_loop blocks forever; rt stays alive in this scope.
-            watch_loop(src, out, site_url, default_lang, interval)?;
+            watch_loop(src, out, site_url, default_lang, interval, build_lock)?;
             Ok(())
         }
         Command::Init {
@@ -210,6 +257,7 @@ fn watch_loop(
     site_url: Option<String>,
     default_lang: String,
     interval: f64,
+    build_lock: Arc<Mutex<()>>,
 ) -> anyhow::Result<()> {
     let interval = Duration::from_secs_f64(interval.max(0.2));
     // Snapshot all files under `src` with their modification times.
@@ -231,7 +279,11 @@ fn watch_loop(
                 site_url: site_url.clone(),
                 default_lang: Some(default_lang.clone()),
             };
-            if let Err(e) = site::build(&opts) {
+            // Serialized against MCP build.trigger via the shared lock.
+            let _guard = build_lock
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Err(e) = site::build_with_status(&opts) {
                 tracing::error!("rebuild failed: {e:?}");
             }
             last_mtimes = current;

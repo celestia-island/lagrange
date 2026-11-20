@@ -192,7 +192,7 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
 
 // ── tokenisation ──────────────────────────────────────────────────────────
 
-fn tokenize(text: &str) -> Vec<String> {
+pub(crate) fn tokenize(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
@@ -514,7 +514,7 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
 /// with three or more backticks or tildes, closes only with the SAME
 /// character at least as long, can sit behind a blockquote marker, and a
 /// longer fence can contain a shorter one (```` ```` ```` around ``` ``` ```).
-fn plain_text(raw: &str) -> String {
+pub(crate) fn plain_text(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() / 2);
     let mut fence: Option<FenceState> = None;
     for raw_line in raw.lines() {
@@ -662,7 +662,7 @@ fn plain_text(raw: &str) -> String {
 }
 
 /// First `limit` CHARACTERS of `text` (never a byte slice).
-fn truncate_chars(text: &str, limit: usize) -> String {
+pub(crate) fn truncate_chars(text: &str, limit: usize) -> String {
     text.chars().take(limit).collect()
 }
 

@@ -36,7 +36,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
@@ -57,10 +57,16 @@ pub const PROLOGUE_ANCHOR: &str = "prologue";
 // ── serialised contract ───────────────────────────────────────────────────
 
 /// The whole-build knowledge payload written as `knowledge.json`.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+///
+/// `Deserialize` is derived alongside `Serialize` on purpose: the file is
+/// the one contract between producers (the build) and consumers (the static
+/// site today, the dev-server MCP surface) — reading it back through the
+/// same structs is what keeps the two sides from drifting into two
+/// hand-rolled parsers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KnowledgeBase {
     pub schema_version: u64,
-    pub parser_version: &'static str,
+    pub parser_version: String,
     /// Tool that produced this file (name + version).
     pub generator: String,
     pub source: SourceOut,
@@ -73,7 +79,7 @@ pub struct KnowledgeBase {
     pub chunks: Vec<ChunkOut>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SourceOut {
     /// The docs tree root as passed to the build (`--src`).
     pub root: String,
@@ -82,7 +88,7 @@ pub struct SourceOut {
     pub source_commit: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DocumentOut {
     pub document_id: String,
     pub kind: String,
@@ -94,7 +100,7 @@ pub struct DocumentOut {
     pub translations: BTreeMap<String, TranslationOut>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TranslationOut {
     /// Language-RELATIVE path inside the source tree — the language segment
     /// is the `translations` map key, not part of this value
@@ -107,15 +113,15 @@ pub struct TranslationOut {
     pub revision: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RevisionOut {
     /// SHA-256 (hex) of the translation's file bytes.
     pub content_hash: String,
     pub source_commit: Option<String>,
-    pub parser_version: &'static str,
+    pub parser_version: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChunkOut {
     pub document_id: String,
     pub lang: String,
@@ -382,7 +388,7 @@ pub fn assemble(
             .or_insert_with(|| RevisionOut {
                 content_hash: doc.revision.clone(),
                 source_commit: source_commit.clone(),
-                parser_version: PARSER_VERSION,
+                parser_version: PARSER_VERSION.to_string(),
             });
         for chunk in &doc.chunks {
             chunks.push(ChunkOut {
@@ -424,7 +430,7 @@ pub fn assemble(
 
     KnowledgeBase {
         schema_version: SCHEMA_VERSION,
-        parser_version: PARSER_VERSION,
+        parser_version: PARSER_VERSION.to_string(),
         generator: format!("lagrange {}", env!("CARGO_PKG_VERSION")),
         source: SourceOut {
             root: root.to_string(),
@@ -448,6 +454,29 @@ pub fn write_json(out_dir: &Path, kb: &KnowledgeBase) -> Result<()> {
         kb.chunks.len()
     );
     Ok(())
+}
+
+/// Read `knowledge.json` back from an output directory.
+///
+/// Consumers (the dev-server MCP surface) go through this instead of
+/// hand-parsing the JSON so the on-disk contract and the read side stay one
+/// type. The parser version is checked against [`PARSER_VERSION`]: a file
+/// produced by a different parser generation has different span semantics,
+/// and pretending otherwise would silently mis-slice sources.
+pub fn read_json(out_dir: &Path) -> Result<KnowledgeBase> {
+    let path = out_dir.join("knowledge.json");
+    let raw = std::fs::read_to_string(&path)
+        .with_context(|| format!("read {} (has a build run?)", path.display()))?;
+    let kb: KnowledgeBase =
+        serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+    if kb.schema_version != SCHEMA_VERSION {
+        anyhow::bail!(
+            "knowledge.json schema version {} does not match this build's {} — rebuild required",
+            kb.schema_version,
+            SCHEMA_VERSION
+        );
+    }
+    Ok(kb)
 }
 
 #[cfg(test)]
@@ -677,11 +706,35 @@ mod golden_tests {
         let docs = vec![collect("en", "t.md", "t.html", src)];
         let kb = assemble(&docs, "docs", &["en".to_string()], "en", None);
         write_json(dir.path(), &kb).unwrap();
+        // The written file reads back through the SAME contract types —
+        // read_json is the load path the MCP surface uses, not a hand
+        //-rolled Value walk.
+        let back = read_json(dir.path()).unwrap();
+        assert_eq!(back, kb);
+        assert_eq!(back.documents.len(), 1);
+        assert_eq!(back.chunks.len(), 1);
+    }
+
+    /// The schema gate: a knowledge.json from a different schema generation
+    /// must be rejected loudly, not read with mismatched span semantics.
+    #[test]
+    fn read_json_rejects_foreign_schema_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = "# T\n";
+        let docs = vec![collect("en", "t.md", "t.html", src)];
+        let kb = assemble(&docs, "docs", &["en".to_string()], "en", None);
+        write_json(dir.path(), &kb).unwrap();
+        // Tamper the schema version and re-serialize via Value surgery.
         let raw = std::fs::read_to_string(dir.path().join("knowledge.json")).unwrap();
-        let back: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(back["schema_version"], 1);
-        assert_eq!(back["documents"].as_array().unwrap().len(), 1);
-        assert_eq!(back["chunks"].as_array().unwrap().len(), 1);
+        let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        v["schema_version"] = serde_json::json!(9999);
+        std::fs::write(
+            dir.path().join("knowledge.json"),
+            serde_json::to_string(&v).unwrap(),
+        )
+        .unwrap();
+        let err = read_json(dir.path()).unwrap_err();
+        assert!(format!("{err:#}").contains("schema version"));
     }
 
     #[test]

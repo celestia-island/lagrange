@@ -29,6 +29,30 @@ pub struct Config {
     /// Rust blocks continue to use compile-time rendering.
     #[serde(default)]
     pub live: LiveConfig,
+    /// Dev-server MCP surface configuration (`[mcp]` in `lagrange.toml`),
+    /// consumed by `lagrange dev --mcp`.
+    #[serde(default)]
+    pub mcp: McpConfig,
+}
+
+/// Dev-server MCP configuration (`[mcp]` in `lagrange.toml`).
+///
+/// The MCP surface itself is enabled by the `--mcp` flag on `lagrange dev`
+/// (it only exists inside the dev-server lifetime — there is no standalone
+/// MCP service). This block configures the write side of that surface.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct McpConfig {
+    /// Tree-relative path prefixes the `docs.write` tool may touch, e.g.
+    /// `["zh-Hans/agent-notes", "en/agent-notes"]`. A write is in scope when
+    /// its normalized tree path equals a prefix or lives under it on a
+    /// component boundary.
+    ///
+    /// Empty (the default) = the whole docs root is writable. That is the
+    /// intended single-agent local-dev posture: `lagrange dev --mcp` is
+    /// started deliberately by whoever owns the checkout. Sites shared with
+    /// other agents should narrow this to the caller's own namespace.
+    #[serde(default)]
+    pub write_paths: Vec<String>,
 }
 
 /// Live preview server configuration (`[live]` in `lagrange.toml`).
@@ -661,5 +685,23 @@ default = "en"
         assert_eq!(cfg.site.title.as_deref(), Some("Old"));
         assert!(!cfg.comments.is_active());
         assert!(!cfg.bbs.enabled);
+        // …and the MCP block defaults to a fully writable docs root.
+        assert!(cfg.mcp.write_paths.is_empty());
+    }
+
+    #[test]
+    fn parses_mcp_write_paths() {
+        let toml = r#"
+[mcp]
+write_paths = ["zh-Hans/agent-notes", "en/agent-notes"]
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert_eq!(
+            cfg.mcp.write_paths,
+            vec![
+                "zh-Hans/agent-notes".to_string(),
+                "en/agent-notes".to_string()
+            ]
+        );
     }
 }

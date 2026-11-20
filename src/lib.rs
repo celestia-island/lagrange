@@ -16,6 +16,7 @@ pub mod icons;
 pub mod knowledge;
 pub mod live;
 pub mod markdown;
+pub mod mcp;
 pub mod render;
 pub mod scaffold;
 pub mod search;
