@@ -13,6 +13,7 @@ pub mod config;
 pub mod diagram;
 pub mod frontmatter;
 pub mod icons;
+pub mod knowledge;
 pub mod live;
 pub mod markdown;
 pub mod render;
@@ -22,4 +23,5 @@ pub mod site;
 pub mod theme;
 
 pub use frontmatter::{strip as strip_frontmatter, FrontMatter, FrontMatterKind};
-pub use markdown::{parse, Block, Inline};
+pub use lagrange_content::{derive_document_id, slugify_anchor, PARSER_VERSION};
+pub use markdown::{parse, parse_doc, Block, Inline, SourceSpan, SpannedBlock};

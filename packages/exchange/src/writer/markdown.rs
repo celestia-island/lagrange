@@ -89,6 +89,9 @@ fn render_frontmatter(doc: &ExchangeDoc) -> String {
     push_opt(&mut lines, "title", &fm.title);
     push_opt(&mut lines, "date", &fm.date);
     push_opt(&mut lines, "slug", &fm.slug);
+    // The logical document id round-trips: renaming a migrated file keeps
+    // its identity only when this field survives.
+    push_opt(&mut lines, "id", &fm.id);
     push_opt(&mut lines, "description", &fm.description);
     push_opt(&mut lines, "category", &fm.category);
     push_opt(&mut lines, "canonical", &fm.canonical);
@@ -99,11 +102,12 @@ fn render_frontmatter(doc: &ExchangeDoc) -> String {
     }
     // Pin the node id so the comment archive and the article stay linked.
     lines.push(format!("node_id: {}", yaml_quote(&doc.node_id)));
-    if fm.comments_disabled {
+    if fm.comments == Some(false) {
         lines.push("comments: false".to_string());
     }
-    // Pass through known extra fields (e.g. wordpress_post_id) for traceability.
-    if let Some(obj) = fm.extra.as_object() {
+    // Pass through source-specific passthrough fields (e.g. wordpress_post_id)
+    // for traceability.
+    if let Some(obj) = fm.raw.as_object() {
         for (k, v) in obj {
             lines.push(format!("# source {k}: {v}"));
         }
@@ -187,6 +191,170 @@ mod tests {
         // Comments must NOT appear in the markdown file.
         assert!(!content.contains("Alice"));
         assert!(!content.contains("Nice!"));
+    }
+
+    /// The logical document id must survive BOTH directions: the writer has
+    /// to emit `id:` and the reader has to parse it back. Without this pin a
+    /// one-line deletion of the writer's `push_opt(… "id" …)` silently
+    /// re-breaks rename-stable identity — every migrated document falls back
+    /// to path derivation and a rename mints a new `document_id` (review
+    /// round 2, S1: the fix had no test and the deletion survived the whole
+    /// exchange suite).
+    #[test]
+    fn document_id_round_trips_through_the_markdown_writer() {
+        use crate::reader::markdown_dir::{hexo, strip_frontmatter, FmStyle};
+        use crate::reader::Reader;
+
+        let dir = tempdir().unwrap();
+        let mut doc = sample_doc();
+        doc.frontmatter.id = Some("stable-doc-id".into());
+        MarkdownWriter::new(dir.path())
+            .layout(Layout::Nested)
+            .write(&doc)
+            .unwrap();
+
+        let content = fs::read_to_string(dir.path().join("en/posts/hello-world.md")).unwrap();
+        assert!(
+            content.contains("id: stable-doc-id"),
+            "the writer must emit the document id:\n{content}"
+        );
+
+        // YAML direction: the reader parses the emitted block back.
+        let (fm, _body) = strip_frontmatter(&content, FmStyle::Yaml);
+        assert_eq!(
+            fm.and_then(|f| f.id).as_deref(),
+            Some("stable-doc-id"),
+            "the YAML frontmatter reader must parse id"
+        );
+
+        // Full reader walk: a written tree must read back with the same id.
+        let docs = hexo(dir.path()).read().unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(
+            docs[0].frontmatter.id.as_deref(),
+            Some("stable-doc-id"),
+            "writer -> reader must preserve the document id"
+        );
+
+        // TOML direction: the same field through the `+++` frontmatter form.
+        let toml_src = "+++\ntitle = \"T\"\nid = \"toml-doc-id\"\n+++\n\nbody\n";
+        let (fm, _) = strip_frontmatter(toml_src, FmStyle::Toml);
+        assert_eq!(
+            fm.and_then(|f| f.id).as_deref(),
+            Some("toml-doc-id"),
+            "the TOML frontmatter reader must parse id"
+        );
+    }
+
+    /// Review round 4 (C-S2): the writer emitted `comments: false` but the
+    /// reader never parsed it, so an explicit opt-out silently became "not
+    /// specified" and the site default (comments ON) took over — the same
+    /// dangerous direction the `comments_disabled` decision guards against.
+    #[test]
+    fn comments_opt_out_round_trips_through_the_writer() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        let dir = tempdir().unwrap();
+        let mut doc = sample_doc();
+        doc.frontmatter.comments = Some(false);
+        MarkdownWriter::new(dir.path())
+            .layout(Layout::Nested)
+            .write(&doc)
+            .unwrap();
+        let content = fs::read_to_string(dir.path().join("en/posts/hello-world.md")).unwrap();
+        assert!(content.contains("comments: false"), "{content}");
+        let (fm, _) = strip_frontmatter(&content, FmStyle::Yaml);
+        assert_eq!(
+            fm.and_then(|f| f.comments),
+            Some(false),
+            "the opt-out must survive the round trip"
+        );
+        // TOML arm carries the same field.
+        let toml_src = "+++\ntitle = \"T\"\ncomments = false\n+++\n\nbody\n";
+        let (fm, _) = strip_frontmatter(toml_src, FmStyle::Toml);
+        assert_eq!(fm.and_then(|f| f.comments), Some(false));
+    }
+
+    /// Review R5 S2-2 (a regression this PR introduced): the strict
+    /// `Option<bool>` made a hand-written `comments: no` fail the WHOLE
+    /// front matter block, and the caller's `.ok()` then reported "no front
+    /// matter" — dropping title, tags and id along with it. Every spelling
+    /// must read, and nothing else may die on the way.
+    #[test]
+    fn comments_accepts_every_hand_written_boolean_spelling() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        for (spelling, expected) in [
+            ("false", Some(false)),
+            ("no", Some(false)),
+            ("off", Some(false)),
+            ("0", Some(false)),
+            ("\"false\"", Some(false)),
+            ("true", Some(true)),
+            ("yes", Some(true)),
+            ("null", None),
+        ] {
+            let src = format!(
+                "---\ntitle: Keep me\ntags: [a, b]\nid: stable\ncomments: {spelling}\n---\n\nbody\n"
+            );
+            let (fm, _) = strip_frontmatter(&src, FmStyle::Yaml);
+            let fm = fm.expect("front matter must still parse");
+
+            assert_eq!(fm.comments, expected, "comments: {spelling}");
+            // The rest of the block survives regardless of the spelling.
+            assert_eq!(fm.title.as_deref(), Some("Keep me"));
+            assert_eq!(fm.tags, vec!["a".to_string(), "b".to_string()]);
+            assert_eq!(fm.id.as_deref(), Some("stable"));
+        }
+    }
+
+    /// The TOML arm of the same lenient parser: dropping it left the suite
+    /// green (review R6, S2). Only TOML-expressible spellings are exercised —
+    /// a bare `no`/`off` is not valid TOML at all, so it cannot appear here.
+    #[test]
+    fn toml_comments_accepts_its_own_spellings() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        for (literal, expected) in [
+            ("false", Some(false)),
+            ("true", Some(true)),
+            ("0", Some(false)),
+            ("1", Some(true)),
+            ("\"false\"", Some(false)),
+            ("\"no\"", Some(false)),
+            ("\"off\"", Some(false)),
+            ("\"yes\"", Some(true)),
+        ] {
+            let src = format!(
+                "+++\ntitle = \"Keep me\"\nid = \"stable\"\ncomments = {literal}\n+++\n\nbody\n"
+            );
+            let (fm, _) = strip_frontmatter(&src, FmStyle::Toml);
+            let fm = fm.expect("TOML front matter must still parse");
+            assert_eq!(fm.comments, expected, "TOML comments = {literal}");
+            assert_eq!(fm.title.as_deref(), Some("Keep me"), "{literal}");
+        }
+    }
+
+    /// Review R8 S2-B: the scalar-tags / categories cells of the lenient
+    /// wiring had no pin — removing their `deserialize_with` left the suite
+    /// green (probe-proven real wiring, unproven regression protection).
+    #[test]
+    fn yaml_scalar_tags_and_categories_survive() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        let src =
+            "---\ntitle: T\nid: stable\ntags: rust\ncategories: news\ncomments: no\n---\n\nbody\n";
+        let (fm, _) = strip_frontmatter(src, FmStyle::Yaml);
+        let fm = fm.expect("front matter must still parse");
+        assert_eq!(fm.tags, vec!["rust".to_string()]);
+        assert_eq!(fm.category.as_deref(), Some("news"));
+        assert_eq!(fm.comments, Some(false));
+    }
+
+    /// Same for the TOML arm's scalar tags.
+    #[test]
+    fn toml_scalar_tags_survive() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        let src = "+++\ntitle = \"T\"\nid = \"stable\"\ntags = \"rust\"\n+++\n\nbody\n";
+        let (fm, _) = strip_frontmatter(src, FmStyle::Toml);
+        let fm = fm.expect("front matter must still parse");
+        assert_eq!(fm.tags, vec!["rust".to_string()]);
     }
 
     #[test]

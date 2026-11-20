@@ -38,16 +38,20 @@ use hikari_components::navigation::{
 };
 use tairitsu_vdom::{el, txt, VNode};
 
-use crate::markdown::{Block, Inline};
+use crate::markdown::{Block, Inline, SpannedBlock};
 
 // ── public API ────────────────────────────────────────────────────────────
 
 pub fn render_to_html(blocks: &[Block]) -> String {
-    render_blocks(blocks).render_to_html()
+    // Test/direct-use entry: wrap bare blocks into spanned nodes (identity
+    // ids, empty heading paths) and run the same spanned renderer the site
+    // build uses.
+    let wrapped = wrap_unspanned(blocks);
+    render_blocks(&wrapped).render_to_html()
 }
 
 pub fn render_to_html_with_live(
-    blocks: &[Block],
+    blocks: &[SpannedBlock],
     live_html: &std::collections::HashMap<String, String>,
     live_config: &crate::config::LiveConfig,
     out_dir: &Path,
@@ -61,14 +65,31 @@ pub fn render_to_html_with_live(
     inner.render_to_html()
 }
 
-pub fn render_blocks(blocks: &[Block]) -> VNode {
+/// Wrap bare blocks (tests, direct library use) into spanned nodes with
+/// sequential ids and no heading context. Rendering only reads `.block`.
+/// Container children already carry the [`SpannedBlock`] wrapper by type,
+/// so no recursion is needed.
+fn wrap_unspanned(blocks: &[Block]) -> Vec<SpannedBlock> {
+    blocks
+        .iter()
+        .enumerate()
+        .map(|(i, b)| SpannedBlock {
+            block: b.clone(),
+            span: Default::default(),
+            id: format!("wrap-{}", i + 1),
+            heading_path: Vec::new(),
+        })
+        .collect()
+}
+
+pub fn render_blocks(blocks: &[SpannedBlock]) -> VNode {
     VNode::Fragment(blocks.iter().map(render_block).collect())
 }
 
 // ── block rendering ───────────────────────────────────────────────────────
 
 fn render_blocks_with_live(
-    blocks: &[Block],
+    blocks: &[SpannedBlock],
     live_html: &std::collections::HashMap<String, String>,
     live_config: &crate::config::LiveConfig,
     out_dir: &Path,
@@ -76,7 +97,7 @@ fn render_blocks_with_live(
     let mut out: Vec<VNode> = Vec::new();
     let mut i = 0;
     while i < blocks.len() {
-        let Block::LiveComponent { source, lang } = &blocks[i] else {
+        let Block::LiveComponent { source, lang } = &blocks[i].block else {
             out.push(render_block_with_live(&blocks[i], live_html));
             i += 1;
             continue;
@@ -97,7 +118,7 @@ fn render_blocks_with_live(
             if let Block::LiveComponent {
                 source: next_src,
                 lang: next_lang,
-            } = &blocks[i + 1]
+            } = &blocks[i + 1].block
             {
                 if next_lang.as_deref() == Some("tsx") && tsx_src.is_none() {
                     tsx_src = Some(next_src.as_str());
@@ -120,14 +141,15 @@ fn render_blocks_with_live(
     VNode::Fragment(out)
 }
 
-fn render_block(b: &Block) -> VNode {
-    render_block_with_live(b, &std::collections::HashMap::new())
+fn render_block(sb: &SpannedBlock) -> VNode {
+    render_block_with_live(sb, &std::collections::HashMap::new())
 }
 
 fn render_block_with_live(
-    b: &Block,
+    sb: &SpannedBlock,
     live_html: &std::collections::HashMap<String, String>,
 ) -> VNode {
+    let b = &sb.block;
     match b {
         Block::Heading { level, text } => {
             // Use plain heading tags (h1-h6) — hikari Typography renders

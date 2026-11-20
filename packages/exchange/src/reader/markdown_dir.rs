@@ -196,12 +196,20 @@ struct YamlFm {
     #[serde(default)]
     slug: Option<String>,
     #[serde(default)]
+    id: Option<String>,
+    /// The writer emits `comments: false` for an explicit opt-out; without
+    /// this field the reader dropped it and the migrated post silently fell
+    /// back to the site default (review round 4, C-S2). Parsed leniently so
+    /// `no` / `off` cannot take the rest of the block down with them.
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
+    comments: Option<bool>,
+    #[serde(default)]
     description: Option<String>,
     #[serde(default)]
     category: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     categories: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     tags: Option<Vec<String>>,
     #[serde(default)]
     author: Option<String>,
@@ -216,10 +224,18 @@ struct TomlFm {
     #[serde(default)]
     slug: Option<String>,
     #[serde(default)]
+    id: Option<String>,
+    /// The writer emits `comments: false` for an explicit opt-out; without
+    /// this field the reader dropped it and the migrated post silently fell
+    /// back to the site default (review round 4, C-S2). Parsed leniently so
+    /// `no` / `off` cannot take the rest of the block down with them.
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
+    comments: Option<bool>,
+    #[serde(default)]
     description: Option<String>,
     #[serde(default)]
     category: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     tags: Option<Vec<String>>,
     #[serde(default)]
     author: Option<String>,
@@ -233,6 +249,8 @@ impl From<YamlFm> for FrontMatter {
             title,
             date,
             slug,
+            id,
+            comments,
             description,
             category,
             categories,
@@ -261,13 +279,15 @@ impl From<YamlFm> for FrontMatter {
             title,
             date,
             slug,
+            id,
             description,
             category,
             canonical: None,
             tags,
             author,
-            comments_disabled: false,
-            extra: serde_json::Value::Null,
+            comments,
+            raw: serde_json::Value::Null,
+            ..Default::default()
         }
     }
 }
@@ -278,13 +298,15 @@ impl From<TomlFm> for FrontMatter {
             title: t.title,
             date: t.date,
             slug: t.slug,
+            id: t.id,
             description: t.description,
             category: t.category,
             canonical: None,
             tags: t.tags.unwrap_or_default(),
             author: t.author,
-            comments_disabled: false,
-            extra: serde_json::Value::Null,
+            comments: t.comments,
+            raw: serde_json::Value::Null,
+            ..Default::default()
         }
     }
 }

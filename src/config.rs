@@ -398,25 +398,102 @@ impl Config {
 
     /// Return the ordered language list. If `languages.order` is empty,
     /// falls back to alphabetical sorting of the provided directory names.
+    ///
+    /// Both directions of a mismatch are LOUD: a directory that exists but is
+    /// absent from `order` (and a configured code with no directory) is
+    /// dropped from the build, and that used to happen silently — the reason
+    /// this repo's own docs listed `zhs`/`zht` while the directories were
+    /// `zh-Hans`/`zh-Hant` and two translations vanished from every build
+    /// without a single warning (review round 2, S3).
     pub fn ordered_langs(&self, available: &[String]) -> Vec<String> {
+        let (ordered, dropped, missing) = self.plan_langs(available);
+        for lang in dropped {
+            tracing::warn!(
+                "language directory `{lang}` is not in `[languages] order` — it will NOT be built"
+            );
+        }
+        for lang in missing {
+            tracing::warn!(
+                "`[languages] order` lists `{lang}` but no such directory exists — ignored"
+            );
+        }
+        ordered
+    }
+
+    /// The pure half of [`Config::ordered_langs`]: the ordered list plus the
+    /// two mismatch sets the caller warns about.
+    ///
+    /// Split out so the mismatches are TESTABLE — the warning alone could be
+    /// deleted by any refactor with every config test still green, which is
+    /// exactly the silent-drop hole this replaced (review round 3, C-S3).
+    pub fn plan_langs(&self, available: &[String]) -> (Vec<String>, Vec<String>, Vec<String>) {
         if self.languages.order.is_empty() {
             let mut sorted = available.to_vec();
             sorted.sort();
-            return sorted;
+            return (sorted, Vec::new(), Vec::new());
         }
+        let dropped: Vec<String> = available
+            .iter()
+            .filter(|l| !self.languages.order.contains(l))
+            .cloned()
+            .collect();
+        let missing: Vec<String> = self
+            .languages
+            .order
+            .iter()
+            .filter(|l| !available.contains(l))
+            .cloned()
+            .collect();
         // Use config order, but only include languages that actually exist.
-        self.languages
+        let ordered = self
+            .languages
             .order
             .iter()
             .filter(|l| available.contains(l))
             .cloned()
-            .collect()
+            .collect();
+        (ordered, dropped, missing)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Review round 2 (S3): an existing directory missing from `order` used
+    /// to be dropped without a word. The list still drops it (that IS the
+    /// contract), but the test pins which languages survive so a silent
+    /// naming drift like `zhs` vs `zh-Hans` cannot change the build again
+    /// unnoticed — the warn beside it is the loud half.
+    #[test]
+    fn ordered_langs_drops_unlisted_directories_and_keeps_the_declared_order() {
+        let mut cfg = Config::default();
+        // Deliberately NON-alphabetical: with a sorted fixture an
+        // "alphabetise instead of honouring order" mutant passed every
+        // assertion (review round 4, B-S3-2).
+        cfg.languages.order = vec!["zh-Hant".to_string(), "en".to_string(), "ja".to_string()];
+        let available = vec![
+            "zhs".to_string(),
+            "zh-Hans".to_string(),
+            "zh-Hant".to_string(),
+            "en".to_string(),
+            "zht".to_string(),
+        ];
+        let (ordered, dropped, missing) = cfg.plan_langs(&available);
+        assert_eq!(
+            ordered,
+            vec!["zh-Hant".to_string(), "en".to_string()],
+            "declared order wins (alphabetical would give [en, zh-Hant])"
+        );
+        // Both mismatch sets are what the warnings report — pin them so the
+        // loud half cannot be refactored away silently.
+        assert_eq!(
+            dropped,
+            vec!["zhs".to_string(), "zh-Hans".to_string(), "zht".to_string()]
+        );
+        assert_eq!(missing, vec!["ja".to_string()]);
+        assert_eq!(cfg.ordered_langs(&available), ordered);
+    }
 
     #[test]
     fn defaults_to_pure_static() {
