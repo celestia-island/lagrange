@@ -146,11 +146,11 @@ struct YamlFront {
     canonical: Option<String>,
     #[serde(default)]
     node_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     tags: Option<Vec<String>>,
     #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     comments: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     hero: Option<bool>,
 }
 
@@ -198,11 +198,11 @@ struct TomlFront {
     canonical: Option<String>,
     #[serde(default)]
     node_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     tags: Option<Vec<String>>,
     #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     comments: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     hero: Option<bool>,
 }
 
@@ -401,5 +401,32 @@ mod tests {
         assert_eq!(kind, FrontMatterKind::Yaml);
         assert_eq!(body, "body\n");
         assert_eq!(&doc[offset..], body);
+    }
+}
+
+#[cfg(test)]
+mod sibling_lenient_tests {
+    use super::*;
+
+    /// Review R7 S2: the sibling fields of `comments` had the same strict
+    /// failure shape — `hero: no` or a scalar `tags:` took the WHOLE block
+    /// down (title gone, id gone). Every hand-written spelling must read.
+    #[test]
+    fn sibling_bool_and_list_fields_survive_loose_spelling() {
+        let raw = "---\ntitle: Keep\nid: stable\nhero: no\ntags: rust\n---\n\nbody\n";
+        let (_, fm, _, _) = strip_with_offset(raw);
+        assert_eq!(fm.title.as_deref(), Some("Keep"), "title must survive");
+        assert_eq!(fm.id.as_deref(), Some("stable"));
+        assert_eq!(fm.hero, Some(false), "hero: no");
+        assert_eq!(
+            fm.tags,
+            vec!["rust".to_string()],
+            "scalar tags becomes a list"
+        );
+        // Canonical spellings still work.
+        let raw = "---\ntitle: Keep\nhero: true\ntags: [a, b]\n---\n\nbody\n";
+        let (_, fm, _, _) = strip_with_offset(raw);
+        assert_eq!(fm.hero, Some(true));
+        assert_eq!(fm.tags, vec!["a".to_string(), "b".to_string()]);
     }
 }

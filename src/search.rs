@@ -355,18 +355,27 @@ fn is_markdown_info(info: &str) -> bool {
 /// form (`> [a]: url`, `- [a]: url`) slipped through too (review R6, S1).
 fn is_reference_definition(line: &str) -> bool {
     let s = line.trim_start();
-    if s.len() != line.trim_end().len().max(s.len()) && false {
-        // (kept simple: callers pass an already-trimmed slice)
-    }
     let mut chars = s.chars().peekable();
     if chars.next() != Some('[') {
         return false;
     }
-    // Balanced label: nested `[` are allowed, `]` only closes at depth 0.
+    // Balanced label: nested `[` are allowed, `]` only closes at depth 0, a
+    // backslash escapes the NEXT character (so `[a\]b]: u` is one label, not
+    // a close at the fake bracket — review R7 S2), and the label must be
+    // NON-EMPTY (`[]: url` is not a definition; its line is visible prose and
+    // the first cut deleted it — review R7 S2).
     let mut depth = 1usize;
     let mut saw_close = false;
+    let mut label_len = 0usize;
+    let mut escaped = false;
     for c in chars.by_ref() {
+        if escaped {
+            escaped = false;
+            label_len += 1;
+            continue;
+        }
         match c {
+            '\\' => escaped = true,
             '[' => depth += 1,
             ']' => {
                 depth -= 1;
@@ -375,13 +384,13 @@ fn is_reference_definition(line: &str) -> bool {
                     break;
                 }
             }
-            _ => {}
+            _ => label_len += 1,
         }
         if depth > 8 {
             return false; // pathological nesting is prose, not a label
         }
     }
-    if !saw_close || depth != 0 {
+    if !saw_close || depth != 0 || label_len == 0 {
         return false;
     }
     let rest: String = chars.collect();
@@ -438,6 +447,22 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
                         let inner: String = chars[open + 1..close].iter().collect();
                         strip_link_targets_into(&inner, out);
                         i = paren + 1;
+                        // After the target: a reference label is a name —
+                        // drop it with a boundary (sequential, see the prose
+                        // arm; review R7 S2).
+                        if chars.get(i) == Some(&'[') {
+                            if let Some(label) = find_close_bracket(&chars, i) {
+                                out.push(' ');
+                                i = label + 1;
+                            }
+                        }
+                        continue;
+                    }
+                } else if chars.get(close + 1) == Some(&'[') {
+                    // Reference form without an inline target: same drop.
+                    if let Some(label) = find_close_bracket(&chars, close + 1) {
+                        out.push(' ');
+                        i = label + 1;
                         continue;
                     }
                 }
@@ -475,9 +500,35 @@ fn plain_text(raw: &str) -> String {
     let mut fence: Option<FenceState> = None;
     for raw_line in raw.lines() {
         let line = raw_line.trim();
-        let indent = raw_line.chars().take_while(|c| *c == ' ').count();
-        let (depth, body) = leading_quotes(line);
-        let body = strip_list_marker(body);
+        // A leading tab advances the indent to the next multiple of four
+        // (CommonMark), so `\t[a]: url` is an indented code block, not a
+        // definition to be deleted.
+        let mut indent = 0usize;
+        for c in raw_line.chars() {
+            match c {
+                ' ' => indent += 1,
+                '\t' => indent = (indent / 4 + 1) * 4,
+                _ => break,
+            }
+        }
+        let (depth, mut body) = leading_quotes(line);
+        // Quote and list markers may NEST in either order (`> - [a]: url` and
+        // `- > [a]: url` are both definitions); strip until neither applies.
+        loop {
+            let before = body;
+            let (q, stripped) = leading_quotes(body);
+            if q > 0 {
+                body = stripped;
+                continue;
+            }
+            let stripped = strip_list_marker(body);
+            if stripped != body {
+                body = stripped;
+                continue;
+            }
+            let _ = before;
+            break;
+        }
         // A definition can sit behind a blockquote/list marker (`> [a]: url`),
         // so the match happens on the CONTAINER-STRIPPED text — the first cut
         // checked the raw line and let prefixed definitions leak their URLs
@@ -495,7 +546,12 @@ fn plain_text(raw: &str) -> String {
             // deeper-quoted marker line is the author's literal content, not
             // this fence's closer (review R6, S2). `>=` is CommonMark: the
             // closer may be longer than the opener.
-            let candidate = strip_n_quotes(line, state.depth);
+            // Symmetric with openers: a fence may open behind a list marker
+            // (`- ```rust`), so the closer may too. A SHALLOWER-quoted marker
+            // line closing a deeper fence is a deliberate projection choice
+            // (CommonMark would end the container and open a new fence) —
+            // recorded here: no content is lost, only the fence runs longer.
+            let candidate = strip_list_marker(strip_n_quotes(line, state.depth));
             if let Some((ch, run, info)) = fence_opener(candidate) {
                 if ch == state.ch && run >= state.len && info.is_empty() {
                     fence = None;
@@ -628,10 +684,24 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                     let inner: String = chars[i + 2..close].iter().collect();
                     strip_inline_markers_into(&inner, out);
                     i = close + 1;
-                    // Drop the (url) tail.
+                    // Inline form: drop the (url) tail. Reference form
+                    // `![alt][ref]`: the ref is a NAME, not text — drop it
+                    // with a boundary, else `badge` + `img` glue into the
+                    // invented token `badgeimg` (review R7 S2).
                     if i < chars.len() && chars[i] == '(' {
                         if let Some(parens) = find_close_paren(&chars, i) {
                             i = parens + 1;
+                        }
+                    }
+                    // AFTER the target: a following reference label is a
+                    // name, not text — drop it with a boundary. This must be
+                    // a SEQUENTIAL if: chained to the (url) arm as else-if it
+                    // could never fire, and `badge` + `img` glued into the
+                    // invented token `badgeimg` (review R7 S2).
+                    if i < chars.len() && chars[i] == '[' {
+                        if let Some(label) = find_close_bracket(&chars, i) {
+                            out.push(' ');
+                            i = label + 1;
                         }
                     }
                     continue;
@@ -642,6 +712,13 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
             '[' => {
                 if let Some(close) = find_close_bracket(&chars, i) {
                     let inner: String = chars[i + 1..close].iter().collect();
+                    if inner.is_empty() {
+                        // `[]` carries nothing to project — emit it literally
+                        // (`[]: url` is visible prose, review R7 S2).
+                        out.push(c);
+                        i += 1;
+                        continue;
+                    }
                     strip_inline_markers_into(&inner, out);
                     i = close + 1;
                     if i < chars.len() && chars[i] == '(' {
@@ -1010,6 +1087,86 @@ mod tests {
         let tokens = tokenize(&plain_text("see [text][ref] end"));
         assert!(tokens.iter().any(|t| t == "text"));
         assert!(!tokens.iter().any(|t| t == "textref"));
+    }
+
+    /// Review R7 S2: the reference form applies to IMAGES too, and its label
+    /// is a name — without the boundary `alt` + `img` glued into a token that
+    /// exists in no source.
+    #[test]
+    fn reference_images_drop_the_label_with_a_boundary() {
+        // The label is a NAME, not visible text: dropped entirely (a trailing
+        // boundary is trimmed with the line).
+        assert_eq!(plain_text("![badge](badge.svg)[img]"), "badge");
+        // WITH following text the boundary is observable: without it the
+        // projection glued `badge` + `done` into `badgedone`.
+        assert_eq!(plain_text("![badge](badge.svg)[img] done"), "badge done");
+        assert_eq!(plain_text("shot ![alt][ref] done"), "shot alt done");
+        let tokens = tokenize(&plain_text("shot ![alt][ref] done"));
+        assert!(!tokens.iter().any(|t| t.contains("altref")));
+    }
+
+    /// Review R7 S2: `[]: url` has an EMPTY label — it is not a definition,
+    /// and the first cut deleted the whole visible line.
+    #[test]
+    fn an_empty_label_is_not_a_definition() {
+        assert_eq!(
+            plain_text("[]: https://x.y/visible"),
+            "[]: https://x.y/visible"
+        );
+    }
+
+    /// Review R7 S2: a backslash-escaped bracket does not close the label, so
+    /// `[a\]b]: url` IS a definition and its target must still be dropped.
+    #[test]
+    fn an_escaped_bracket_does_not_end_the_label() {
+        let raw = "[a\\]b]: https://x.y/leaky-escaped";
+        assert_eq!(
+            plain_text(raw),
+            "",
+            "escaped label is one definition: {raw}"
+        );
+    }
+
+    /// Review R7 S3: quote and list markers nest in EITHER order for
+    /// definitions — `- > [a]: url` used to leak because only quotes were
+    /// stripped before the match.
+    #[test]
+    fn definition_detection_peels_containers_in_any_order() {
+        for raw in [
+            "> - [a]: https://x.y/secret-path",
+            "- > [a]: https://x.y/secret-path",
+            "* > [a]: https://x.y/secret-path",
+            "1. [a]: https://x.y/secret-path",
+        ] {
+            assert!(
+                !plain_text(raw).contains("secret-path"),
+                "target leaked for {raw:?}: {}",
+                plain_text(raw)
+            );
+        }
+    }
+
+    /// Review R7 S3: a leading TAB advances the indent to the next multiple
+    /// of four, so a tab-indented line is an indented CODE block — the first
+    /// cut counted only spaces and deleted the line.
+    #[test]
+    fn a_tab_indented_definition_is_code_and_stays() {
+        assert!(
+            plain_text("\t[a]: https://x.y/kept").contains("kept"),
+            "tab indent is a code block: {}",
+            plain_text("\t[a]: https://x.y/kept")
+        );
+    }
+
+    /// Review R7 S3: a fence may open behind a list marker, so its closer is
+    /// recognised there too (the first cut was asymmetric: opener seen,
+    /// closer missed, and the fence ran to the end of the chunk).
+    #[test]
+    fn a_list_prefixed_fence_closes_behind_a_list_marker() {
+        let raw = "- ```rust\nlet v = arr[0](1);\n- ```\ndone";
+        let text = plain_text(raw);
+        assert!(text.contains("let v = arr[0](1);"), "{text}");
+        assert!(text.contains("done"), "{text}");
     }
 
     #[test]

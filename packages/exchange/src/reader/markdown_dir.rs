@@ -207,9 +207,9 @@ struct YamlFm {
     description: Option<String>,
     #[serde(default)]
     category: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     categories: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     tags: Option<Vec<String>>,
     #[serde(default)]
     author: Option<String>,
@@ -235,7 +235,7 @@ struct TomlFm {
     description: Option<String>,
     #[serde(default)]
     category: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_string_list")]
     tags: Option<Vec<String>>,
     #[serde(default)]
     author: Option<String>,

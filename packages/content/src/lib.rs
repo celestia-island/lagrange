@@ -59,6 +59,33 @@ where
     })
 }
 
+/// Lenient string list for hand-written front matter: a proper array reads,
+/// a single scalar becomes a one-element list (`tags: rust` → `["rust"]`),
+/// and anything else (null, a mapping) is "unspecified" rather than a parse
+/// failure — a stray `tags:` line must not take the title and id down with
+/// it (review R7, S2: same failure shape as the `comments` boolean).
+pub fn lenient_string_list<'de, D>(de: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize as _;
+    let raw = Option::<serde_json::Value>::deserialize(de)?;
+    Ok(match raw {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Array(items)) => Some(
+            items
+                .into_iter()
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s,
+                    other => other.to_string(),
+                })
+                .collect(),
+        ),
+        Some(serde_json::Value::String(s)) => Some(vec![s]),
+        Some(_) => None,
+    })
+}
+
 /// The unified frontmatter contract.
 ///
 /// Every field is optional; missing fields deserialize to their default.
@@ -106,7 +133,7 @@ pub struct FrontMatter {
     #[serde(default, deserialize_with = "lenient_bool")]
     pub comments: Option<bool>,
     /// Render the page full-width without the sidebar.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_bool")]
     pub hero: Option<bool>,
     /// Original-author byline on migrated posts (e.g. "originally by X").
     #[serde(default)]
