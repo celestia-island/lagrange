@@ -430,3 +430,24 @@ mod sibling_lenient_tests {
         assert_eq!(fm.tags, vec!["a".to_string(), "b".to_string()]);
     }
 }
+
+/// Same matrix through the TOML arm: `TomlFront` wears the same lenient
+/// parsers, and a cell without a pin gets deleted by the next refactor
+/// silently (review R8 S2-B — seven of eleven wiring cells had no test that
+/// turned red when the wiring was removed).
+#[test]
+fn sibling_fields_survive_loose_spelling_in_toml_front_matter() {
+    let raw = "+++\ntitle = \"Keep\"\nid = \"stable\"\nhero = \"no\"\ntags = \"rust\"\ncomments = \"no\"\n+++\n\nbody\n";
+    let (_, fm, _, _) = strip_with_offset(raw);
+    assert_eq!(fm.title.as_deref(), Some("Keep"), "title must survive");
+    assert_eq!(fm.id.as_deref(), Some("stable"));
+    assert_eq!(fm.hero, Some(false), "hero: \"no\"");
+    assert_eq!(fm.tags, vec!["rust".to_string()], "scalar tags");
+    assert_eq!(fm.comments, Some(false), "comments: \"no\"");
+    // Strict canonical spellings keep working too.
+    let raw = "+++\ntitle = \"Keep\"\nhero = true\ntags = [\"a\", \"b\"]\ncomments = false\n+++\n\nbody\n";
+    let (_, fm, _, _) = strip_with_offset(raw);
+    assert_eq!(fm.hero, Some(true));
+    assert_eq!(fm.tags, vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(fm.comments, Some(false));
+}

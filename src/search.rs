@@ -438,7 +438,8 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
     while i < chars.len() {
         let image = chars[i] == '!' && i + 1 < chars.len() && chars[i + 1] == '[';
         let link = chars[i] == '[';
-        if (image || link) && !(image && i + 1 >= chars.len()) {
+        // (`image` already implies the `[` exists, so no extra length guard.)
+        if image || link {
             let open = if image { i + 1 } else { i };
             if let Some(close) = find_close_bracket(&chars, open) {
                 if chars.get(close + 1) == Some(&'(') {
@@ -459,12 +460,19 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
                         continue;
                     }
                 } else if chars.get(close + 1) == Some(&'[') {
-                    // Reference form without an inline target: same drop.
+                    // Reference form without an inline target: the visible
+                    // text survives and only the label goes. (Review R8 S2-A:
+                    // the first cut pushed ONLY the boundary, so `see [t][r]`
+                    // came out as `see` — the text is the contract, the label
+                    // is not.)
+                    let inner: String = chars[open + 1..close].iter().collect();
+                    strip_link_targets_into(&inner, out);
                     if let Some(label) = find_close_bracket(&chars, close + 1) {
                         out.push(' ');
                         i = label + 1;
                         continue;
                     }
+                    i = close + 1;
                 }
             }
         }
@@ -515,19 +523,16 @@ fn plain_text(raw: &str) -> String {
         // Quote and list markers may NEST in either order (`> - [a]: url` and
         // `- > [a]: url` are both definitions); strip until neither applies.
         loop {
-            let before = body;
             let (q, stripped) = leading_quotes(body);
             if q > 0 {
                 body = stripped;
                 continue;
             }
             let stripped = strip_list_marker(body);
-            if stripped != body {
-                body = stripped;
-                continue;
+            if stripped == body {
+                break;
             }
-            let _ = before;
-            break;
+            body = stripped;
         }
         // A definition can sit behind a blockquote/list marker (`> [a]: url`),
         // so the match happens on the CONTAINER-STRIPPED text — the first cut
@@ -924,6 +929,19 @@ mod tests {
     /// fences. The first cut toggled on any line starting with three marks,
     /// which let a nested/shorter fence close the outer one and then ate the
     /// following content as prose.
+    /// Review R8 S2-A: inside a labeled-markdown fence the REFERENCE form
+    /// used to drop the visible text too (`see [t][r] end` came out as
+    /// `see end`) — the arm pushed only the boundary and skipped the text.
+    /// The text is the contract; the label is not.
+    #[test]
+    fn markdown_fenced_reference_links_keep_their_text() {
+        let raw = "```markdown\nsee [t][r] end\n```";
+        assert_eq!(plain_text(raw), "see t end");
+        let raw = "```markdown\nshot ![a][b] done\n```";
+        // `b` is a reference NAME — dropped; the boundary keeps a/done apart.
+        assert_eq!(plain_text(raw), "shot a done");
+    }
+
     #[test]
     fn fence_state_machine_handles_nesting_and_mixing() {
         // A four-backtick fence contains a three-backtick line without closing.
@@ -1163,10 +1181,18 @@ mod tests {
     /// closer missed, and the fence ran to the end of the chunk).
     #[test]
     fn a_list_prefixed_fence_closes_behind_a_list_marker() {
-        let raw = "- ```rust\nlet v = arr[0](1);\n- ```\ndone";
+        // After a REAL closer the next line is prose (its link target is
+        // stripped). If the `- ``` ` closer is not recognised the fence runs
+        // on and that line stays literal — the observable that bites the
+        // mutant which deletes the closer's list-marker strip (review R8
+        // S2-C: the round-7 assertions held either way).
+        let raw = "- ```rust\nlet v = arr[0](1);\n- ```\nsee [t](https://leak.test)";
         let text = plain_text(raw);
         assert!(text.contains("let v = arr[0](1);"), "{text}");
-        assert!(text.contains("done"), "{text}");
+        assert!(
+            !text.contains("leak.test"),
+            "the fence must have closed at `- ``` `: {text}"
+        );
     }
 
     #[test]

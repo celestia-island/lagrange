@@ -332,6 +332,31 @@ mod tests {
         }
     }
 
+    /// Review R8 S2-B: the scalar-tags / categories cells of the lenient
+    /// wiring had no pin — removing their `deserialize_with` left the suite
+    /// green (probe-proven real wiring, unproven regression protection).
+    #[test]
+    fn yaml_scalar_tags_and_categories_survive() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        let src =
+            "---\ntitle: T\nid: stable\ntags: rust\ncategories: news\ncomments: no\n---\n\nbody\n";
+        let (fm, _) = strip_frontmatter(src, FmStyle::Yaml);
+        let fm = fm.expect("front matter must still parse");
+        assert_eq!(fm.tags, vec!["rust".to_string()]);
+        assert_eq!(fm.category.as_deref(), Some("news"));
+        assert_eq!(fm.comments, Some(false));
+    }
+
+    /// Same for the TOML arm's scalar tags.
+    #[test]
+    fn toml_scalar_tags_survive() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        let src = "+++\ntitle = \"T\"\nid = \"stable\"\ntags = \"rust\"\n+++\n\nbody\n";
+        let (fm, _) = strip_frontmatter(src, FmStyle::Toml);
+        let fm = fm.expect("front matter must still parse");
+        assert_eq!(fm.tags, vec!["rust".to_string()]);
+    }
+
     #[test]
     fn nested_layout_uses_subdirs() {
         let dir = tempdir().unwrap();

@@ -81,9 +81,27 @@ where
                 })
                 .collect(),
         ),
-        Some(serde_json::Value::String(s)) => Some(vec![s]),
+        // A single scalar of ANY kind becomes a one-element list — same rule
+        // as array elements, so `tags: 7` and `tags: [7]` agree (review R8
+        // S3: the first cut stringified array numbers but dropped top-level
+        // ones, contradicting its own doc).
+        Some(scalar @ (serde_json::Value::String(_) | serde_json::Value::Number(_))) => {
+            Some(vec![match scalar {
+                serde_json::Value::String(s) => s,
+                other => other.to_string(),
+            }])
+        }
         Some(_) => None,
     })
+}
+
+/// [`lenient_string_list`] for a plain `Vec<String>` field: every
+/// "unspecified" outcome reads as an empty list.
+pub fn lenient_string_list_vec<'de, D>(de: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(lenient_string_list(de)?.unwrap_or_default())
 }
 
 /// The unified frontmatter contract.
@@ -117,7 +135,7 @@ pub struct FrontMatter {
     /// Comment-mount node id (comment archive ↔ article join key).
     #[serde(default)]
     pub node_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_string_list_vec")]
     pub tags: Vec<String>,
     /// `None` = not specified (site default applies); `Some(false)` is a
     /// hard opt-out of the comment mount point.
@@ -332,6 +350,16 @@ mod tests {
         // The modern spelling works normally.
         let fm: FrontMatter = serde_json::from_str(r#"{"comments":false}"#).unwrap();
         assert_eq!(fm.comments, Some(false));
+    }
+
+    /// Review R8 S3: a top-level NUMBER scalar must follow the same rule as
+    /// array elements and string scalars — one-element list, not silent drop.
+    #[test]
+    fn scalar_number_tags_become_a_list_like_arrays_do() {
+        let fm: FrontMatter = serde_json::from_str(r#"{"tags":7}"#).unwrap();
+        assert_eq!(fm.tags, vec!["7".to_string()], "`tags: 7` == `tags: [7]`");
+        let fm: FrontMatter = serde_json::from_str(r#"{"tags":[7]}"#).unwrap();
+        assert_eq!(fm.tags, vec!["7".to_string()]);
     }
 
     #[test]
