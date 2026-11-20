@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { KnowledgeBase } from "../composables/types";
+import DocTree from "./DocTree.vue";
 
 const props = defineProps<{ kb: KnowledgeBase }>();
 
@@ -51,6 +52,8 @@ const buildInfo = computed(() => ({
         <div class="stat-detail">v{{ buildInfo.parserVersion }} (schema v{{ buildInfo.schemaVersion }})</div>
       </div>
     </div>
+    <h2>Document Tree</h2>
+    <DocTree :kb="kb" />
   </div>
 </template>
 
