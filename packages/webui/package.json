@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@celestia-island/hikari": "^0.55",
+    "@celestia-island/hikari": "^0.55.451",
     "vue": "^3.5"
   },
   "devDependencies": {
