@@ -248,20 +248,32 @@ fn shard_for(word: &str) -> usize {
 
 // ── source-span text projection ───────────────────────────────────────────
 
-/// How many leading `>` blockquote markers `line` carries, plus the rest.
-fn leading_quotes(line: &str) -> (usize, &str) {
+/// Strip ONE container marker from the start of `line` — a blockquote `>`
+/// or a list item — returning the remainder, or None when neither is there.
+fn strip_one_container(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    if let Some(after) = trimmed.strip_prefix('>') {
+        return Some(after.trim_start());
+    }
+    let after = strip_list_marker(trimmed);
+    if after.len() < trimmed.len() {
+        return Some(after);
+    }
+    None
+}
+
+/// Strip exactly `depth` container markers. This is the fence-closer and
+/// fence-body projection: the fence opened behind THIS many markers, so its
+/// closer and its literal body hide behind the same shapes.
+fn strip_container_markers(line: &str, depth: usize) -> &str {
     let mut rest = line;
-    let mut depth = 0;
-    loop {
-        let trimmed = rest.trim_start();
-        match trimmed.strip_prefix('>') {
-            Some(after) => {
-                depth += 1;
-                rest = after;
-            }
-            None => return (depth, trimmed),
+    for _ in 0..depth {
+        match strip_one_container(rest) {
+            Some(after) => rest = after,
+            None => break,
         }
     }
+    rest
 }
 
 /// Strip a leading list marker (`-`, `*`, `+`, `1.`) so a definition nested
@@ -284,22 +296,6 @@ fn strip_list_marker(line: &str) -> &str {
         }
     }
     s
-}
-
-/// Strip exactly `depth` blockquote markers (used inside a fence, where the
-/// author's own `>` characters must survive — review R5 S1-1: the first cut
-/// dropped every leading `>`, so a quoted shell prompt or a `> **Note**`
-/// callout inside a fence lost its own markers).
-fn strip_n_quotes(line: &str, depth: usize) -> &str {
-    let mut rest = line;
-    for _ in 0..depth {
-        let trimmed = rest.trim_start();
-        match trimmed.strip_prefix('>') {
-            Some(after) => rest = after,
-            None => break,
-        }
-    }
-    rest.trim_start()
 }
 
 /// A fence opener at the start of `rest` (blockquote markers already
@@ -463,18 +459,31 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
                     }
                 } else if chars.get(close + 1) == Some(&'[') {
                     // Reference form without an inline target: the visible
-                    // text survives and only the label goes. (Review R8 S2-A:
-                    // the first cut pushed ONLY the boundary, so `see [t][r]`
-                    // came out as `see` — the text is the contract, the label
-                    // is not.)
+                    // text survives and only the labels go — ALL of them
+                    // (`[t][r][r2]` used to keep `r2` and invent a token;
+                    // review R10 S2-2, same while-loop shape as the prose
+                    // arms). (And R8 S2-A before that: the first cut pushed
+                    // ONLY the boundary, so `see [t][r]` came out as `see` —
+                    // the text is the contract.)
                     let inner: String = chars[open + 1..close].iter().collect();
                     strip_link_targets_into(&inner, out);
-                    if let Some(label) = find_close_bracket(&chars, close + 1) {
-                        out.push(' ');
-                        i = label + 1;
-                        continue;
-                    }
+                    // Advance PAST the construct before the label loop: the
+                    // loop starts at `chars[i]`, and for the IMAGE form `i`
+                    // still sits on the `!` — the loop would skip, `continue`
+                    // would re-enter this branch on the same construct, and
+                    // the alt text would be emitted forever (the hang review
+                    // R10's run caught). The link form only survived by luck:
+                    // its `i` happens to point at the opening `[`.
                     i = close + 1;
+                    while chars.get(i) == Some(&'[') {
+                        if let Some(label) = find_close_bracket(&chars, i) {
+                            out.push(' ');
+                            i = label + 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    continue;
                 }
             }
         }
@@ -521,20 +530,17 @@ fn plain_text(raw: &str) -> String {
                 _ => break,
             }
         }
-        let (depth, mut body) = leading_quotes(line);
-        // Quote and list markers may NEST in either order (`> - [a]: url` and
-        // `- > [a]: url` are both definitions); strip until neither applies.
-        loop {
-            let (q, stripped) = leading_quotes(body);
-            if q > 0 {
-                body = stripped;
-                continue;
-            }
-            let stripped = strip_list_marker(body);
-            if stripped == body {
-                break;
-            }
-            body = stripped;
+        // Peel container markers — quotes AND list items, in either order
+        // (`> - [a]: url`, `- > [a]: url`, `- - [a]: url` are all
+        // definitions) — counting how many. The count is the fence's own
+        // container depth, so its closer strips the same shapes it opened
+        // behind (review R10 S2-3: depth used to count quotes only, which
+        // made `- > ``` ` openers unclosable and swallowed the rest).
+        let mut depth = 0usize;
+        let mut body = line;
+        while let Some(after) = strip_one_container(body) {
+            depth += 1;
+            body = after;
         }
         // A definition can sit behind a blockquote/list marker (`> [a]: url`),
         // so the match happens on the CONTAINER-STRIPPED text — the first cut
@@ -558,7 +564,7 @@ fn plain_text(raw: &str) -> String {
             // line closing a deeper fence is a deliberate projection choice
             // (CommonMark would end the container and open a new fence) —
             // recorded here: no content is lost, only the fence runs longer.
-            let candidate = strip_list_marker(strip_n_quotes(line, state.depth));
+            let candidate = strip_container_markers(line, state.depth);
             if let Some((ch, run, info)) = fence_opener(candidate) {
                 if ch == state.ch && run >= state.len && info.is_empty() {
                     fence = None;
@@ -568,7 +574,7 @@ fn plain_text(raw: &str) -> String {
             if !out.is_empty() {
                 out.push(' ');
             }
-            let literal = strip_n_quotes(line, state.depth);
+            let literal = strip_container_markers(line, state.depth);
             if state.markdown {
                 // Markdown example: keep the text, drop the target.
                 strip_link_targets_into(literal, &mut out);
@@ -594,8 +600,13 @@ fn plain_text(raw: &str) -> String {
             let mut stripped = None;
             for prefix in ["-", "+", "*"] {
                 if let Some(after) = trimmed.strip_prefix(prefix) {
-                    stripped = Some(after);
-                    break;
+                    // A list marker needs a following whitespace: CommonMark
+                    // reads `-5 degrees` as paragraph text, and the first cut
+                    // silently ate the dash (review R10 S2-1).
+                    if after.starts_with(char::is_whitespace) {
+                        stripped = Some(after);
+                        break;
+                    }
                 }
             }
             if let Some(after) = stripped {
@@ -1218,6 +1229,64 @@ mod tests {
     #[test]
     fn adjacent_reference_labels_are_dropped_in_prose_images() {
         assert_eq!(plain_text("![a](b)[c][d] done"), "a done");
+    }
+
+    /// Review R10 S2-4: the fence arm's after-target label loop had no
+    /// pin — degrading it to a single `if` left the whole suite green
+    /// because no test fed `(u)[r]` INSIDE a fence.
+    #[test]
+    fn fence_after_target_reference_labels_are_dropped_in_fences() {
+        let raw = "```markdown\nsee [t](u)[r] end\n```";
+        assert_eq!(plain_text(raw), "see t end");
+        let raw = "```markdown\nsee [t](u)[r][r2] end\n```";
+        assert_eq!(plain_text(raw), "see t end");
+    }
+
+    /// Review R10 S2-6: the word-boundary pushes had no pin — the existing
+    /// tests all had a source space after the label, making the push
+    /// redundant there. These ABBUT forms are where the boundary earns its
+    /// keep: without the push, `text` and `end` glue into `textend`.
+    #[test]
+    fn abutting_reference_labels_keep_their_boundary() {
+        assert_eq!(plain_text("see [text][ref]end"), "see text end");
+        assert_eq!(plain_text("see [text](u)[ref]end"), "see text end");
+        assert_eq!(plain_text("![alt][ref]done"), "alt done");
+        let raw = "```markdown\nsee [text][ref]end\n```";
+        assert_eq!(plain_text(raw), "see text end");
+        let tokens = tokenize(&plain_text("see [text][ref]end"));
+        assert!(!tokens.iter().any(|t| t == "textend"));
+        assert!(tokens.iter().any(|t| t == "text"));
+    }
+
+    /// Review R10 S2-1: a list marker needs a following whitespace —
+    /// `-5 degrees` is paragraph text in CommonMark, and the marker loop
+    /// used to eat the dash.
+    #[test]
+    fn negative_numbers_are_not_list_items() {
+        assert_eq!(plain_text("-5 degrees"), "-5 degrees");
+        assert_eq!(plain_text("+7 items here"), "+7 items here");
+        assert_eq!(plain_text("-42 is the answer"), "-42 is the answer");
+        // Real list items still strip.
+        assert_eq!(plain_text("- 5 degrees"), "5 degrees");
+        assert_eq!(plain_text("+ item"), "item");
+        assert_eq!(plain_text("* star item"), "star item");
+    }
+
+    /// Review R10 S2-3: a fence opened behind `- > ` (list then quote) must
+    /// be closable by the same container shape — depth used to count quotes
+    /// only, so the closer never stripped enough and the fence swallowed the
+    /// rest of the chunk.
+    #[test]
+    fn a_list_then_quote_prefixed_fence_closes_behind_its_own_shape() {
+        // The observable: after a real closer, the next line is prose and
+        // its link target is stripped.
+        let raw = "- > ```rust\nlet v = arr[0](1);\n- > ```\nsee [t](https://leak.test)";
+        let text = plain_text(raw);
+        assert!(text.contains("let v = arr[0](1);"), "{text}");
+        assert!(
+            !text.contains("leak.test"),
+            "the fence must have closed at `- > ``` `: {text}"
+        );
     }
 
     #[test]

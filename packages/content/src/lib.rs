@@ -382,6 +382,19 @@ mod tests {
         assert_eq!(fm.tags, vec!["7".to_string()]);
     }
 
+    /// Review R10 S2-5: the `Bool(_)` arm of `lenient_string_list` had no
+    /// pin — deleting it left the content suite green while `tags: true`
+    /// silently degraded to an empty list.
+    #[test]
+    fn scalar_boolean_tags_pin_the_bool_arm() {
+        let fm: FrontMatter = serde_json::from_str(r#"{"tags":true}"#).unwrap();
+        assert_eq!(
+            fm.tags,
+            vec!["true".to_string()],
+            "`tags: true` must equal `tags: [true]`"
+        );
+    }
+
     #[test]
     fn slugify_ascii_words() {
         assert_eq!(slugify_anchor("Getting Started"), "getting-started");
