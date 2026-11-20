@@ -30,6 +30,35 @@ use serde::{Deserialize, Serialize};
 /// crate version tracks releases, not schema semantics.
 pub const PARSER_VERSION: &str = "1";
 
+/// Lenient boolean for hand-written front matter: `true/false`, `yes/no`,
+/// `on/off`, `1/0` and their quoted forms read as booleans; anything else is
+/// "unspecified" rather than a parse failure.
+///
+/// Why (review R5/R6): a strict `Option<bool>` made `comments: no` fail the
+/// WHOLE front-matter block. Both consumers then fell back to "no front
+/// matter at all" — title, date, slug, id and tags vanished while `comments`
+/// reverted to the site default, i.e. the opt-out flipped the switch back ON.
+/// Integers are truthy when non-zero; floats are unspecified (a fractional
+/// boolean is a typo, not a value).
+pub fn lenient_bool<'de, D>(de: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize as _;
+    let raw = Option::<serde_json::Value>::deserialize(de)?;
+    Ok(match raw {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Bool(b)) => Some(b),
+        Some(serde_json::Value::Number(n)) => n.as_i64().map(|v| v != 0),
+        Some(serde_json::Value::String(s)) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "yes" | "on" | "1" => Some(true),
+            "false" | "no" | "off" | "0" => Some(false),
+            _ => None,
+        },
+        Some(_) => None,
+    })
+}
+
 /// The unified frontmatter contract.
 ///
 /// Every field is optional; missing fields deserialize to their default.
@@ -74,7 +103,7 @@ pub struct FrontMatter {
     /// adapter, which can invert it knowingly; this struct will not guess.
     /// Nothing in this repository reads that legacy shape today (review
     /// round 3, C-S3).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_bool")]
     pub comments: Option<bool>,
     /// Render the page full-width without the sidebar.
     #[serde(default)]

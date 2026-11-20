@@ -148,7 +148,7 @@ struct YamlFront {
     node_id: Option<String>,
     #[serde(default)]
     tags: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     comments: Option<bool>,
     #[serde(default)]
     hero: Option<bool>,
@@ -200,7 +200,7 @@ struct TomlFront {
     node_id: Option<String>,
     #[serde(default)]
     tags: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     comments: Option<bool>,
     #[serde(default)]
     hero: Option<bool>,

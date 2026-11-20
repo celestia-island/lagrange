@@ -264,6 +264,28 @@ fn leading_quotes(line: &str) -> (usize, &str) {
     }
 }
 
+/// Strip a leading list marker (`-`, `*`, `+`, `1.`) so a definition nested
+/// in a list is still recognised as metadata.
+fn strip_list_marker(line: &str) -> &str {
+    let s = line.trim_start();
+    for marker in ["-", "*", "+"] {
+        if let Some(rest) = s.strip_prefix(marker) {
+            if rest.starts_with(char::is_whitespace) {
+                return rest.trim_start();
+            }
+        }
+    }
+    let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits > 0 {
+        if let Some(rest) = s[digits..].strip_prefix('.') {
+            if rest.starts_with(char::is_whitespace) {
+                return rest.trim_start();
+            }
+        }
+    }
+    s
+}
+
 /// Strip exactly `depth` blockquote markers (used inside a fence, where the
 /// author's own `>` characters must survive — review R5 S1-1: the first cut
 /// dropped every leading `>`, so a quoted shell prompt or a `> **Note**`
@@ -319,22 +341,73 @@ fn is_markdown_info(info: &str) -> bool {
     )
 }
 
-/// A reference-style link DEFINITION line (`[label]: https://…`). The whole
-/// line is metadata: its target must not reach the snippet or the index
-/// (review R5 S1-2 — the inline form was stripped, this form was not).
+/// A reference-style link DEFINITION line — `[label]: destination ["title"]`.
+///
+/// CommonMark shape, because a loose matcher DELETES visible prose: the label
+/// may contain balanced brackets, the colon follows `]` directly, the
+/// destination is a `<...>` span or one whitespace-delimited token, an
+/// optional title may follow, and NOTHING else may trail it. A line with more
+/// words after the target is prose, and an indented (4+ space) line is an
+/// indented code block — neither is a definition (review R6, S3).
+///
+/// Its target must not reach the snippet or the index; the reference form was
+/// leaking URLs after the inline form was fixed, and the container-prefixed
+/// form (`> [a]: url`, `- [a]: url`) slipped through too (review R6, S1).
 fn is_reference_definition(line: &str) -> bool {
-    let trimmed = line.trim();
-    let Some(rest) = trimmed.strip_prefix('[') else {
+    let s = line.trim_start();
+    if s.len() != line.trim_end().len().max(s.len()) && false {
+        // (kept simple: callers pass an already-trimmed slice)
+    }
+    let mut chars = s.chars().peekable();
+    if chars.next() != Some('[') {
+        return false;
+    }
+    // Balanced label: nested `[` are allowed, `]` only closes at depth 0.
+    let mut depth = 1usize;
+    let mut saw_close = false;
+    for c in chars.by_ref() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    saw_close = true;
+                    break;
+                }
+            }
+            _ => {}
+        }
+        if depth > 8 {
+            return false; // pathological nesting is prose, not a label
+        }
+    }
+    if !saw_close || depth != 0 {
+        return false;
+    }
+    let rest: String = chars.collect();
+    let Some(after_colon) = rest.strip_prefix(':') else {
         return false;
     };
-    let Some(close) = rest.find(']') else {
-        return false;
-    };
-    let after = &rest[close + 1..];
-    let Some(target) = after.trim_start().strip_prefix(':') else {
-        return false;
-    };
-    !target.trim().is_empty()
+    let mut dest = after_colon.trim_start();
+    // Destination: `<...>` or the first token.
+    if let Some(stripped) = dest.strip_prefix('<') {
+        let Some(end) = stripped.find('>') else {
+            return false;
+        };
+        dest = &stripped[end + 1..];
+    } else {
+        let token_len = dest.find(char::is_whitespace).unwrap_or(dest.len());
+        if token_len == 0 {
+            return false;
+        }
+        dest = &dest[token_len..];
+    }
+    let tail = dest.trim();
+    // Optional title, then end of line — anything else means this is prose.
+    tail.is_empty()
+        || (tail.starts_with('"') && tail.ends_with('"') && tail.len() >= 2)
+        || (tail.starts_with('\'') && tail.ends_with('\'') && tail.len() >= 2)
+        || (tail.starts_with('(') && tail.ends_with(')') && tail.len() >= 2)
 }
 
 /// Fence state carried between lines.
@@ -402,17 +475,29 @@ fn plain_text(raw: &str) -> String {
     let mut fence: Option<FenceState> = None;
     for raw_line in raw.lines() {
         let line = raw_line.trim();
-        if fence.is_none() && is_reference_definition(line) {
-            continue; // a link definition is metadata, not prose
-        }
+        let indent = raw_line.chars().take_while(|c| *c == ' ').count();
         let (depth, body) = leading_quotes(line);
+        let body = strip_list_marker(body);
+        // A definition can sit behind a blockquote/list marker (`> [a]: url`),
+        // so the match happens on the CONTAINER-STRIPPED text — the first cut
+        // checked the raw line and let prefixed definitions leak their URLs
+        // into the snippet and the index (review R6, S1). An indented line is
+        // an indented code block, not a definition.
+        if fence.is_none() && indent < 4 && is_reference_definition(body) {
+            continue;
+        }
         let opener = fence_opener(body);
         if let Some(state) = &fence {
             // A closing fence is the same character, at least as long, with
             // NOTHING after it — ` ```rust ` inside a fence is content, not a
             // closer (CommonMark; review R5 S3).
-            if let Some((ch, run, info)) = &opener {
-                if *ch == state.ch && *run >= state.len && info.is_empty() {
+            // Candidates are judged at the FENCE's own container depth: a
+            // deeper-quoted marker line is the author's literal content, not
+            // this fence's closer (review R6, S2). `>=` is CommonMark: the
+            // closer may be longer than the opener.
+            let candidate = strip_n_quotes(line, state.depth);
+            if let Some((ch, run, info)) = fence_opener(candidate) {
+                if ch == state.ch && run >= state.len && info.is_empty() {
                     fence = None;
                     continue; // closing marker carries no prose
                 }
@@ -560,8 +645,19 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                     strip_inline_markers_into(&inner, out);
                     i = close + 1;
                     if i < chars.len() && chars[i] == '(' {
+                        // Inline form: drop the target.
                         if let Some(parens) = find_close_paren(&chars, i) {
                             i = parens + 1;
+                        }
+                    } else if i < chars.len() && chars[i] == '[' {
+                        // Reference form `[text][ref]`: the label is a name,
+                        // not visible text — drop it, but leave a WORD
+                        // BOUNDARY so `[text][ref]` cannot become `textref`
+                        // (review R6, S3: that invented a token and made both
+                        // words unfindable).
+                        if let Some(label) = find_close_bracket(&chars, i) {
+                            out.push(' ');
+                            i = label + 1;
                         }
                     }
                     continue;
@@ -834,6 +930,86 @@ mod tests {
     fn a_fence_closes_only_on_a_bare_marker() {
         let raw = "```\nalpha\n```rust\nbeta\n```";
         assert_eq!(plain_text(raw), "alpha ```rust beta");
+    }
+
+    /// Review R6 S1: a definition can sit behind a container marker. The
+    /// first cut matched the raw line, so `> [a]: url` and `- [a]: url` fell
+    /// through to prose and leaked their targets into the snippet and index.
+    #[test]
+    fn container_prefixed_reference_definitions_are_metadata_too() {
+        for raw in [
+            "[a]: https://x.y/secret-path",
+            "> [a]: https://x.y/secret-path",
+            "> > [a]: https://x.y/secret-path",
+            "- [a]: https://x.y/secret-path",
+            "* [a]: https://x.y/secret-path",
+        ] {
+            let text = plain_text(raw);
+            assert!(
+                !text.contains("secret-path"),
+                "definition target leaked for {raw:?}: {text}"
+            );
+        }
+        // An INDENTED line is an indented code block, not a definition.
+        assert!(plain_text("    [a]: https://x.y/keep").contains("keep"));
+        // Trailing words mean prose, which must not be deleted.
+        let prose = "[a]: https://x.y/p and more words";
+        assert!(
+            plain_text(prose).contains("more words"),
+            "prose was deleted"
+        );
+        // Balanced (nested) labels are legal and must still match.
+        assert_eq!(plain_text("[a [b]]: https://x.y/p"), "");
+    }
+
+    /// Review R6 S2: a deeper-quoted marker line inside a quoted fence is the
+    /// author's literal content, not a closer — the closing candidate is
+    /// judged at the FENCE's own container depth.
+    #[test]
+    fn a_deeper_quote_marker_does_not_close_a_quoted_fence() {
+        let raw = "> ```\n> > ```\n> > inner\n> > ```\n> ```";
+        let text = plain_text(raw);
+        assert!(text.contains("inner"), "{text}");
+        assert!(
+            text.contains("```"),
+            "the inner ``` lines are literal content: {text}"
+        );
+    }
+
+    /// Review R6 S2: the closing fence may be LONGER than the opener. Only
+    /// the equal-length half was pinned, so `>=` -> `==` survived.
+    #[test]
+    fn a_longer_closing_fence_still_closes() {
+        // What proves closure is what follows: after a real closer the next
+        // line is PROSE (its link target is stripped). If the longer marker
+        // had been rejected, that line would still be literal code.
+        let raw = "```\nalpha\n````\nsee [x](https://leak.test)";
+        let text = plain_text(raw);
+        assert!(text.contains("alpha"), "{text}");
+        assert!(
+            !text.contains("leak.test"),
+            "the fence must have closed: {text}"
+        );
+        // And a SHORTER marker does NOT close: the line stays literal code.
+        let raw = "````\nalpha\n```\nkeep [x](https://kept.test)";
+        let text = plain_text(raw);
+        assert!(
+            text.contains("kept.test"),
+            "a shorter marker must not close: {text}"
+        );
+    }
+
+    /// Review R6 S3: `[text][ref]` must keep a word boundary — the reference
+    /// label used to be pasted onto the link text (`textref`), inventing a
+    /// token and making both words unfindable.
+    #[test]
+    fn reference_links_keep_a_word_boundary() {
+        // The reference label is a NAME, not visible text: it goes, and the
+        // link text keeps a clean boundary.
+        assert_eq!(plain_text("see [text][ref] end"), "see text end");
+        let tokens = tokenize(&plain_text("see [text][ref] end"));
+        assert!(tokens.iter().any(|t| t == "text"));
+        assert!(!tokens.iter().any(|t| t == "textref"));
     }
 
     #[test]

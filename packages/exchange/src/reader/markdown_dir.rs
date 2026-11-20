@@ -187,34 +187,6 @@ pub fn strip_frontmatter(source: &str, style: FmStyle) -> (Option<FrontMatter>, 
     (fm, body.to_string())
 }
 
-/// Lenient boolean for hand-written front matter: `true/false`, `yes/no`,
-/// `on/off`, `1/0` and their quoted forms all read; anything else is
-/// "unspecified" rather than a parse failure.
-///
-/// Why this matters (review R5 S2-2): the strict `Option<bool>` made
-/// `comments: no` fail the WHOLE block, and the caller's `.ok()` turned that
-/// into "no front matter at all" — title, date, slug, id and tags vanished
-/// and `comments` fell back to the site default, i.e. the opt-out the field
-/// exists to carry flipped the switch back ON.
-fn lenient_bool<'de, D>(de: D) -> Result<Option<bool>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::Deserialize as _;
-    let raw = Option::<serde_json::Value>::deserialize(de)?;
-    Ok(match raw {
-        None | Some(serde_json::Value::Null) => None,
-        Some(serde_json::Value::Bool(b)) => Some(b),
-        Some(serde_json::Value::Number(n)) => n.as_i64().map(|v| v != 0),
-        Some(serde_json::Value::String(s)) => match s.trim().to_ascii_lowercase().as_str() {
-            "true" | "yes" | "on" | "1" => Some(true),
-            "false" | "no" | "off" | "0" => Some(false),
-            _ => None,
-        },
-        Some(_) => None,
-    })
-}
-
 #[derive(Debug, Deserialize)]
 struct YamlFm {
     #[serde(default)]
@@ -229,7 +201,7 @@ struct YamlFm {
     /// this field the reader dropped it and the migrated post silently fell
     /// back to the site default (review round 4, C-S2). Parsed leniently so
     /// `no` / `off` cannot take the rest of the block down with them.
-    #[serde(default, deserialize_with = "lenient_bool")]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     comments: Option<bool>,
     #[serde(default)]
     description: Option<String>,
@@ -257,7 +229,7 @@ struct TomlFm {
     /// this field the reader dropped it and the migrated post silently fell
     /// back to the site default (review round 4, C-S2). Parsed leniently so
     /// `no` / `off` cannot take the rest of the block down with them.
-    #[serde(default, deserialize_with = "lenient_bool")]
+    #[serde(default, deserialize_with = "lagrange_content::lenient_bool")]
     comments: Option<bool>,
     #[serde(default)]
     description: Option<String>,

@@ -297,11 +297,38 @@ mod tests {
             );
             let (fm, _) = strip_frontmatter(&src, FmStyle::Yaml);
             let fm = fm.expect("front matter must still parse");
+
             assert_eq!(fm.comments, expected, "comments: {spelling}");
             // The rest of the block survives regardless of the spelling.
             assert_eq!(fm.title.as_deref(), Some("Keep me"));
             assert_eq!(fm.tags, vec!["a".to_string(), "b".to_string()]);
             assert_eq!(fm.id.as_deref(), Some("stable"));
+        }
+    }
+
+    /// The TOML arm of the same lenient parser: dropping it left the suite
+    /// green (review R6, S2). Only TOML-expressible spellings are exercised —
+    /// a bare `no`/`off` is not valid TOML at all, so it cannot appear here.
+    #[test]
+    fn toml_comments_accepts_its_own_spellings() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        for (literal, expected) in [
+            ("false", Some(false)),
+            ("true", Some(true)),
+            ("0", Some(false)),
+            ("1", Some(true)),
+            ("\"false\"", Some(false)),
+            ("\"no\"", Some(false)),
+            ("\"off\"", Some(false)),
+            ("\"yes\"", Some(true)),
+        ] {
+            let src = format!(
+                "+++\ntitle = \"Keep me\"\nid = \"stable\"\ncomments = {literal}\n+++\n\nbody\n"
+            );
+            let (fm, _) = strip_frontmatter(&src, FmStyle::Toml);
+            let fm = fm.expect("TOML front matter must still parse");
+            assert_eq!(fm.comments, expected, "TOML comments = {literal}");
+            assert_eq!(fm.title.as_deref(), Some("Keep me"), "{literal}");
         }
     }
 
