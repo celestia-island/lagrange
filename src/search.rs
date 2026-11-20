@@ -248,35 +248,119 @@ fn shard_for(word: &str) -> usize {
 
 // ── source-span text projection ───────────────────────────────────────────
 
+/// CommonMark fence marker at the start of `line` (blockquote markers
+/// already stripped): `(char, run length)` when the line opens a fence.
+fn fence_marker(line: &str) -> (Option<char>, usize) {
+    let mut probe = line;
+    loop {
+        let trimmed = probe.trim_start();
+        match trimmed.strip_prefix('>') {
+            Some(rest) => probe = rest,
+            None => {
+                probe = trimmed;
+                break;
+            }
+        }
+    }
+    let Some(lead) = probe.chars().next() else {
+        return (None, 0);
+    };
+    if lead != '`' && lead != '~' {
+        return (None, 0);
+    }
+    let run = probe.chars().take_while(|&c| c == lead).count();
+    if run >= 3 {
+        (Some(lead), run)
+    } else {
+        (None, 0)
+    }
+}
+
+/// Drop leading `>` markers (and the space after each) from a fence body so
+/// a quoted fence reads the same as a bare one.
+fn strip_quote_markers(line: &str) -> &str {
+    let mut probe = line.trim_start();
+    loop {
+        match probe.strip_prefix('>') {
+            Some(rest) => probe = rest.trim_start(),
+            None => return probe,
+        }
+    }
+}
+
+/// Copy `text` verbatim EXCEPT markdown link/image targets: `[a](b)` → `a`,
+/// `![a](b)` → `a`. Everything else (indentation, tags, punctuation) is kept
+/// — this is the fence-body projection, not the prose one.
+fn strip_link_targets_into(text: &str, out: &mut String) {
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let image = chars[i] == '!' && i + 1 < chars.len() && chars[i + 1] == '[';
+        let link = chars[i] == '[';
+        if (image || link) && !(image && i + 1 >= chars.len()) {
+            let open = if image { i + 1 } else { i };
+            if let Some(close) = find_close_bracket(&chars, open) {
+                if chars.get(close + 1) == Some(&'(') {
+                    if let Some(paren) = find_close_paren(&chars, close + 1) {
+                        // Keep the visible part (alt or link text), drop the target.
+                        let inner: String = chars[open + 1..close].iter().collect();
+                        strip_link_targets_into(&inner, out);
+                        i = paren + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+}
+
 /// Project a chunk's raw markdown span to readable text: drop fence-marker
 /// lines, strip leading block markers (headings, quotes, list bullets),
 /// remove emphasis delimiters, keep link text (drop the target), and
 /// collapse all whitespace runs to single spaces.
 ///
-/// CODE IS TEXT, NOT MARKUP (review round 3, finding S1): a fenced or
-/// inline code span is copied VERBATIM apart from its delimiters. Treating
-/// `<` .. `>` as an HTML tag inside code silently ate real content — the
+/// CODE IS TEXT, NOT MARKUP (review round 3+4): a fenced or inline code
+/// span keeps its LITERAL text — tags, angle brackets, `&`, quotes, CJK.
+/// Treating `<` .. `>` as markup inside code silently ate real content: the
 /// quickstart's `lagrange build --src docs --out <dir>` came out as
-/// `--out ` in every one of the nine locales, in both the snippet and the
-/// search tokens, so "dir" stopped finding its own section. The renderer
-/// never had this problem (it honours `Inline::Code`); this projection is
-/// the side that has to know where code starts and ends.
+/// `--out ` in all nine locales, in both the snippet and the search tokens.
+///
+/// The one thing still projected inside a fence is a LINK/IMAGE TARGET, and
+/// only the target: the visible text survives, the URL does not. Markdown
+/// fences in this repo's own docs demonstrate image syntax, and once the
+/// body became fully verbatim those URLs reappeared in snippets and in the
+/// index (`dashboard`, `webp` became searchable words) — which contradicts
+/// the same "link targets dropped" contract the prose path enforces.
+///
+/// Fence detection follows CommonMark where it matters here: a fence opens
+/// with three or more backticks or tildes, closes only with the SAME
+/// character at least as long, can sit behind a blockquote marker, and a
+/// longer fence can contain a shorter one (```` ```` ```` around ``` ``` ```).
 fn plain_text(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() / 2);
-    let mut in_fence = false;
-    for line in raw.lines() {
-        let line = line.trim();
-        if line.starts_with("```") || line.starts_with("~~~") {
-            in_fence = !in_fence;
-            continue; // fence markers carry no prose
-        }
-        if in_fence {
-            // Fence bodies are literal: no marker stripping, no tag removal.
+    // (fence char, opening run length) while inside a fence.
+    let mut fence: Option<(char, usize)> = None;
+    for raw_line in raw.lines() {
+        let line = raw_line.trim();
+        let (fence_char, fence_run) = fence_marker(line);
+        if let Some((open_char, open_len)) = fence {
+            if fence_char == Some(open_char) && fence_run >= open_len {
+                fence = None;
+                continue; // closing marker carries no prose
+            }
+            // Fence body: literal text, minus blockquote markers and
+            // link/image targets only.
             if !out.is_empty() {
                 out.push(' ');
             }
-            out.push_str(line);
+            strip_link_targets_into(strip_quote_markers(line), &mut out);
             continue;
+        }
+        if let Some(open_char) = fence_char {
+            fence = Some((open_char, fence_run));
+            continue; // opening marker carries no prose
         }
         // Strip leading block markers repeatedly ("> - item", "## # tag"...).
         let mut rest = line;
@@ -488,11 +572,28 @@ mod tests {
         assert!(t.iter().any(|s| s == "网站"));
     }
 
+    /// Review round 4 (B-S2-1): the previous test called `shard_for` twice
+    /// with the same argument and checked the result was in range — it could
+    /// not fail. An off-by-one in the modulo (`+ 1`) left all 175 tests green
+    /// while every query missed, because the browser computes its own shard
+    /// from `charCodeAt(0) % 16`. Pin the CONCRETE mapping for known first
+    /// characters; that is the half the JS depends on.
     #[test]
-    fn shard_for_is_deterministic() {
-        let s = shard_for("lagrange");
-        assert!(s < SHARD_COUNT);
-        assert_eq!(shard_for("lagrange"), s);
+    fn shard_for_pins_the_concrete_mapping_the_frontend_uses() {
+        // 'l' = 108 -> 108 % 16 = 12; 'd' = 100 -> 4; 'a' = 97 -> 1.
+        assert_eq!(shard_for("lagrange"), 12);
+        assert_eq!(shard_for("dir"), 4);
+        assert_eq!(shard_for("anchor"), 1);
+        // Charged against the JS half: it must be charCodeAt(0) % 16.
+        let js = include_str!("site.rs");
+        assert!(
+            js.contains("charCodeAt(0)%16") || js.contains("charCodeAt(0) % 16"),
+            "the embedded JS must shard on the FIRST character modulo 16"
+        );
+        // Every shard index a real token can produce stays in range.
+        for probe in ["a", "z", "9", "_", "运"] {
+            assert!(shard_for(probe) < SHARD_COUNT);
+        }
     }
 
     #[test]
@@ -534,6 +635,68 @@ mod tests {
         // Outside code an angle-bracket run IS prose markup and still goes:
         // the fix is scoped to code, not a blanket "keep every tag".
         assert_eq!(plain_text("deploy --out <dir>"), "deploy --out");
+    }
+
+    /// Review round 4 (A-S1): making fence bodies verbatim re-leaked image
+    /// targets — the docs' own markdown examples put `![alt](x.webp)` inside
+    /// fences, and "dashboard"/"webp" became searchable words. A fence body
+    /// keeps its LITERAL text but still drops link/image TARGETS.
+    #[test]
+    fn fence_bodies_keep_text_but_drop_link_targets() {
+        let fenced = "```markdown\n![Dashboard shot](dashboard.webp)\n```";
+        let text = plain_text(fenced);
+        assert_eq!(text, "Dashboard shot", "alt text stays, URL does not");
+        assert!(!text.contains("webp"), "image target leaked: {text}");
+
+        let link = "```\nsee [the guide](https://x.y/guide) here\n```";
+        assert_eq!(plain_text(link), "see the guide here");
+
+        // Code stays literal: tags, angle brackets, quotes, indentation.
+        assert_eq!(
+            plain_text("```html\n<p align=\"center\">x</p>\n```"),
+            "<p align=\"center\">x</p>"
+        );
+        assert_eq!(
+            plain_text("```bash\nlagrange --out <dir>\n```"),
+            "lagrange --out <dir>"
+        );
+        // Tokens from that body carry the placeholder, never the URL.
+        let tokens = tokenize(&plain_text("```\n--out <dir> ![a](b.svg)\n```"));
+        assert!(tokens.iter().any(|t| t == "dir"));
+        assert!(!tokens.iter().any(|t| t == "svg"));
+    }
+
+    /// Review round 4 (A-S2): the fence state machine follows CommonMark on
+    /// the cases this tool actually meets — delimiter length nesting, the
+    /// two delimiter characters being independent, and blockquote-prefixed
+    /// fences. The first cut toggled on any line starting with three marks,
+    /// which let a nested/shorter fence close the outer one and then ate the
+    /// following content as prose.
+    #[test]
+    fn fence_state_machine_handles_nesting_and_mixing() {
+        // A four-backtick fence contains a three-backtick line without closing.
+        let nested = "````\n```bash\nlagrange --out <dir>\n```\n````";
+        // The inner ``` line is CONTENT (the outer fence is longer), so it
+        // survives in the text — that is the observable difference from the
+        // naive toggle, which would have closed on it and eaten the rest.
+        assert_eq!(plain_text(nested), "```bash lagrange --out <dir> ```");
+
+        // Tildes do not close a backtick fence (and vice versa).
+        let mixed = "```\n~~~\ncode <dir>\n~~~\n```";
+        assert!(
+            plain_text(mixed).contains("<dir>"),
+            "mixed delimiters: {}",
+            plain_text(mixed)
+        );
+
+        // Blockquote-prefixed fences are recognised as fences.
+        let quoted = "> ```bash\n> lagrange --out <dir>\n> ```";
+        let text = plain_text(quoted);
+        assert!(text.contains("--out <dir>"), "quoted fence: {text}");
+        assert!(
+            !text.contains("bash"),
+            "the fence language tag is not prose: {text}"
+        );
     }
 
     #[test]
@@ -663,17 +826,17 @@ mod tests {
             // too but its targetword chunk is 0 and the *second* doc is 1.
             assert!(chunk <= 1, "second element is the chunk index: {pair:?}");
         }
-        // The decisive assertion: "targetword" appears in doc 0 chunk 0 AND
-        // doc 1 chunk 0; a swapped pair would put those ids in the other slot
-        // and the doc ids would read as chunk indices.
-        let docs_hit: Vec<u64> = hits
-            .iter()
-            .filter(|(w, _)| w == "targetword")
-            .map(|(_, p)| p[0])
-            .collect();
-        assert!(
-            docs_hit.contains(&0) && docs_hit.contains(&1),
-            "both documents must be addressable in the first slot: {docs_hit:?}"
+        // The decisive assertion is the EXACT SET, not a range check: doc ids
+        // and chunk indices both live in {0,1} in this fixture, so a range
+        // assertion holds under a swapped pair too (review round 4, B-M12).
+        // Add a hit that lands in chunk 1 so the set cannot coincide.
+        let mut exact: Vec<[u64; 2]> = hits.iter().map(|(_, p)| [p[0], p[1]]).collect();
+        exact.sort();
+        exact.dedup();
+        assert_eq!(
+            exact,
+            vec![[0, 0], [1, 0]],
+            "postings must be exactly [doc, chunk] pairs for these hits"
         );
     }
 

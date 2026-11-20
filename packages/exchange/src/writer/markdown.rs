@@ -246,6 +246,34 @@ mod tests {
         );
     }
 
+    /// Review round 4 (C-S2): the writer emitted `comments: false` but the
+    /// reader never parsed it, so an explicit opt-out silently became "not
+    /// specified" and the site default (comments ON) took over — the same
+    /// dangerous direction the `comments_disabled` decision guards against.
+    #[test]
+    fn comments_opt_out_round_trips_through_the_writer() {
+        use crate::reader::markdown_dir::{strip_frontmatter, FmStyle};
+        let dir = tempdir().unwrap();
+        let mut doc = sample_doc();
+        doc.frontmatter.comments = Some(false);
+        MarkdownWriter::new(dir.path())
+            .layout(Layout::Nested)
+            .write(&doc)
+            .unwrap();
+        let content = fs::read_to_string(dir.path().join("en/posts/hello-world.md")).unwrap();
+        assert!(content.contains("comments: false"), "{content}");
+        let (fm, _) = strip_frontmatter(&content, FmStyle::Yaml);
+        assert_eq!(
+            fm.and_then(|f| f.comments),
+            Some(false),
+            "the opt-out must survive the round trip"
+        );
+        // TOML arm carries the same field.
+        let toml_src = "+++\ntitle = \"T\"\ncomments = false\n+++\n\nbody\n";
+        let (fm, _) = strip_frontmatter(toml_src, FmStyle::Toml);
+        assert_eq!(fm.and_then(|f| f.comments), Some(false));
+    }
+
     #[test]
     fn nested_layout_uses_subdirs() {
         let dir = tempdir().unwrap();

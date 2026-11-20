@@ -468,27 +468,30 @@ mod tests {
     #[test]
     fn ordered_langs_drops_unlisted_directories_and_keeps_the_declared_order() {
         let mut cfg = Config::default();
-        cfg.languages.order = vec![
-            "en".to_string(),
-            "zh-Hans".to_string(),
-            "zh-Hant".to_string(),
-        ];
+        // Deliberately NON-alphabetical: with a sorted fixture an
+        // "alphabetise instead of honouring order" mutant passed every
+        // assertion (review round 4, B-S3-2).
+        cfg.languages.order = vec!["zh-Hant".to_string(), "en".to_string(), "ja".to_string()];
         let available = vec![
             "zhs".to_string(),
             "zh-Hans".to_string(),
+            "zh-Hant".to_string(),
             "en".to_string(),
             "zht".to_string(),
         ];
         let (ordered, dropped, missing) = cfg.plan_langs(&available);
         assert_eq!(
             ordered,
-            vec!["en".to_string(), "zh-Hans".to_string()],
-            "declared order wins and legacy zhs/zht directories are not built"
+            vec!["zh-Hant".to_string(), "en".to_string()],
+            "declared order wins (alphabetical would give [en, zh-Hant])"
         );
         // Both mismatch sets are what the warnings report — pin them so the
         // loud half cannot be refactored away silently.
-        assert_eq!(dropped, vec!["zhs".to_string(), "zht".to_string()]);
-        assert_eq!(missing, vec!["zh-Hant".to_string()]);
+        assert_eq!(
+            dropped,
+            vec!["zhs".to_string(), "zh-Hans".to_string(), "zht".to_string()]
+        );
+        assert_eq!(missing, vec!["ja".to_string()]);
         assert_eq!(cfg.ordered_langs(&available), ordered);
     }
 

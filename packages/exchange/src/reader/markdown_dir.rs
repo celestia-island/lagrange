@@ -197,6 +197,11 @@ struct YamlFm {
     slug: Option<String>,
     #[serde(default)]
     id: Option<String>,
+    /// The writer emits `comments: false` for an explicit opt-out; without
+    /// this field the reader dropped it and the migrated post silently fell
+    /// back to the site default (review round 4, C-S2).
+    #[serde(default)]
+    comments: Option<bool>,
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
@@ -219,6 +224,11 @@ struct TomlFm {
     slug: Option<String>,
     #[serde(default)]
     id: Option<String>,
+    /// The writer emits `comments: false` for an explicit opt-out; without
+    /// this field the reader dropped it and the migrated post silently fell
+    /// back to the site default (review round 4, C-S2).
+    #[serde(default)]
+    comments: Option<bool>,
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
@@ -238,6 +248,7 @@ impl From<YamlFm> for FrontMatter {
             date,
             slug,
             id,
+            comments,
             description,
             category,
             categories,
@@ -272,7 +283,7 @@ impl From<YamlFm> for FrontMatter {
             canonical: None,
             tags,
             author,
-            comments: None,
+            comments,
             raw: serde_json::Value::Null,
             ..Default::default()
         }
@@ -291,7 +302,7 @@ impl From<TomlFm> for FrontMatter {
             canonical: None,
             tags: t.tags.unwrap_or_default(),
             author: t.author,
-            comments: None,
+            comments: t.comments,
             raw: serde_json::Value::Null,
             ..Default::default()
         }

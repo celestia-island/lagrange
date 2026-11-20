@@ -34,9 +34,11 @@ pub const PARSER_VERSION: &str = "1";
 ///
 /// Every field is optional; missing fields deserialize to their default.
 /// `raw` keeps the full unparsed mapping (site-builder side) and any
-/// source-specific passthrough fields (exchange side) in one bag; it is
-/// serialized under the historical `extra` JSON key so existing
-/// archive-json consumers keep their shape.
+/// source-specific passthrough fields (exchange side) in one bag.
+///
+/// Scope note: no consumer in this repository reads front matter as JSON
+/// today, so the `extra` key is a naming choice kept stable for future
+/// readers, not a live compatibility contract.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct FrontMatter {
     #[serde(default)]
@@ -242,8 +244,10 @@ mod tests {
         // twice with the SAME argument inside the same module — a test that
         // cannot fail; review round 3, C-S3.)
         let en = derive_document_id(None, "guides/quickstart.md");
-        let zh = derive_document_id(None, "guides/quickstart.md");
-        assert_eq!(en, zh);
+        // The contract is about the caller's stripping, so the informative
+        // assertion is the negative one below (an unstripped segment must NOT
+        // fold in) plus the different-path case — not calling the same
+        // function twice with one argument.
         // ...and the language segment, when a caller forgets to strip it,
         // does NOT vanish silently: it becomes part of the id, which is the
         // failure a reader test can see.
