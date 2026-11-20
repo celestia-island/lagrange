@@ -193,6 +193,59 @@ mod tests {
         assert!(!content.contains("Nice!"));
     }
 
+    /// The logical document id must survive BOTH directions: the writer has
+    /// to emit `id:` and the reader has to parse it back. Without this pin a
+    /// one-line deletion of the writer's `push_opt(… "id" …)` silently
+    /// re-breaks rename-stable identity — every migrated document falls back
+    /// to path derivation and a rename mints a new `document_id` (review
+    /// round 2, S1: the fix had no test and the deletion survived the whole
+    /// exchange suite).
+    #[test]
+    fn document_id_round_trips_through_the_markdown_writer() {
+        use crate::reader::markdown_dir::{hexo, strip_frontmatter, FmStyle};
+        use crate::reader::Reader;
+
+        let dir = tempdir().unwrap();
+        let mut doc = sample_doc();
+        doc.frontmatter.id = Some("stable-doc-id".into());
+        MarkdownWriter::new(dir.path())
+            .layout(Layout::Nested)
+            .write(&doc)
+            .unwrap();
+
+        let content = fs::read_to_string(dir.path().join("en/posts/hello-world.md")).unwrap();
+        assert!(
+            content.contains("id: stable-doc-id"),
+            "the writer must emit the document id:\n{content}"
+        );
+
+        // YAML direction: the reader parses the emitted block back.
+        let (fm, _body) = strip_frontmatter(&content, FmStyle::Yaml);
+        assert_eq!(
+            fm.and_then(|f| f.id).as_deref(),
+            Some("stable-doc-id"),
+            "the YAML frontmatter reader must parse id"
+        );
+
+        // Full reader walk: a written tree must read back with the same id.
+        let docs = hexo(dir.path()).read().unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(
+            docs[0].frontmatter.id.as_deref(),
+            Some("stable-doc-id"),
+            "writer -> reader must preserve the document id"
+        );
+
+        // TOML direction: the same field through the `+++` frontmatter form.
+        let toml_src = "+++\ntitle = \"T\"\nid = \"toml-doc-id\"\n+++\n\nbody\n";
+        let (fm, _) = strip_frontmatter(toml_src, FmStyle::Toml);
+        assert_eq!(
+            fm.and_then(|f| f.id).as_deref(),
+            Some("toml-doc-id"),
+            "the TOML frontmatter reader must parse id"
+        );
+    }
+
     #[test]
     fn nested_layout_uses_subdirs() {
         let dir = tempdir().unwrap();

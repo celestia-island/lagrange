@@ -94,8 +94,14 @@ fn line_tables(input: &str) -> (Vec<&str>, Vec<usize>, Vec<usize>) {
 
 /// How far the current line slice is shifted inside the enclosing file:
 /// every block's line numbers get `line_shift` added (turning 0-based loop
-/// indices into 1-based file lines). Byte tables are shifted in place before
-/// the scan starts, so they always carry full-file coordinates.
+/// indices into 1-based file lines).
+///
+/// Byte coordinates are NOT derived from this shift — the byte tables are
+/// built once for the whole file and sub-slices keep absolute offsets (the
+/// blockquote additionally points each inner line past its `>` prefix), so
+/// `starts`/`ends` are already file-absolute everywhere. Only line numbers
+/// need the running shift, and container recursion therefore adds its own
+/// slice offset instead of forwarding this value unchanged.
 #[derive(Clone, Copy)]
 struct TableShift {
     line_shift: usize,

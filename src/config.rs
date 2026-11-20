@@ -398,11 +398,32 @@ impl Config {
 
     /// Return the ordered language list. If `languages.order` is empty,
     /// falls back to alphabetical sorting of the provided directory names.
+    ///
+    /// Both directions of a mismatch are LOUD: a directory that exists but is
+    /// absent from `order` (and a configured code with no directory) is
+    /// dropped from the build, and that used to happen silently — the reason
+    /// this repo's own docs listed `zhs`/`zht` while the directories were
+    /// `zh-Hans`/`zh-Hant` and two translations vanished from every build
+    /// without a single warning (review round 2, S3).
     pub fn ordered_langs(&self, available: &[String]) -> Vec<String> {
         if self.languages.order.is_empty() {
             let mut sorted = available.to_vec();
             sorted.sort();
             return sorted;
+        }
+        for lang in available {
+            if !self.languages.order.contains(lang) {
+                tracing::warn!(
+                    "language directory `{lang}` is not in `[languages] order` — it will NOT be built"
+                );
+            }
+        }
+        for lang in &self.languages.order {
+            if !available.contains(lang) {
+                tracing::warn!(
+                    "`[languages] order` lists `{lang}` but no such directory exists — ignored"
+                );
+            }
         }
         // Use config order, but only include languages that actually exist.
         self.languages
@@ -417,6 +438,32 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Review round 2 (S3): an existing directory missing from `order` used
+    /// to be dropped without a word. The list still drops it (that IS the
+    /// contract), but the test pins which languages survive so a silent
+    /// naming drift like `zhs` vs `zh-Hans` cannot change the build again
+    /// unnoticed — the warn beside it is the loud half.
+    #[test]
+    fn ordered_langs_drops_unlisted_directories_and_keeps_the_declared_order() {
+        let mut cfg = Config::default();
+        cfg.languages.order = vec![
+            "en".to_string(),
+            "zh-Hans".to_string(),
+            "zh-Hant".to_string(),
+        ];
+        let available = vec![
+            "zhs".to_string(),
+            "zh-Hans".to_string(),
+            "en".to_string(),
+            "zht".to_string(),
+        ];
+        assert_eq!(
+            cfg.ordered_langs(&available),
+            vec!["en".to_string(), "zh-Hans".to_string()],
+            "declared order wins and legacy zhs/zht directories are not built"
+        );
+    }
 
     #[test]
     fn defaults_to_pure_static() {

@@ -372,8 +372,11 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                 i += 1;
             }
             '<' => {
-                // Inline HTML: drop through the closing '>'.
+                // Inline HTML: drop the tag but leave a WORD BOUNDARY —
+                // `a<br>b` must read `a b`, not `ab`. The whitespace
+                // collapser below normalizes the resulting runs.
                 if let Some(gt) = chars[i..].iter().position(|&x| x == '>') {
+                    out.push(' ');
                     i += gt + 1;
                 } else {
                     out.push(c);
@@ -463,6 +466,15 @@ mod tests {
         assert_eq!(plain_text("see [docs](https://x.y) now"), "see docs now");
         assert_eq!(plain_text("keep snake_case"), "keep snake_case");
         assert_eq!(plain_text("```\ncode line\n```"), "code line");
+        // Inline HTML is stripped to its text: this path was previously
+        // covered by `strip_html_removes_tags`, which the chunk-level rewrite
+        // replaced — keep an explicit case so tag stripping cannot regress.
+        assert_eq!(plain_text("<b>bold</b> and <i>it</i>"), "bold and it");
+        assert_eq!(
+            plain_text("a<br>b <span class=\"x\">c</span>"),
+            "a b c",
+            "a dropped tag leaves a word boundary, never glues the neighbours"
+        );
     }
 
     #[test]
@@ -602,14 +614,5 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("运行"));
-    }
-}
-
-#[cfg(test)]
-mod dbg_probe {
-    #[test]
-    fn probe_badge() {
-        let t = super::plain_text("[![License](badge.svg)](./LICENSE)");
-        eprintln!("PROBE-RESULT: {:?}", t);
     }
 }
