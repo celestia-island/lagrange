@@ -42,6 +42,12 @@ const navMenuItems = kb.documents.map((doc: import("./composables/types").Docume
   })),
 }));
 
+const previewPath = computed(() => {
+  if (!currentDocId.value) return "";
+  // Built-site pages live at <lang>/<slug>.html (site.rs output layout).
+  return `${currentLang.value}/${currentDocId.value}.html`;
+});
+
 const chunks = computed(() => {
   if (!currentDocId.value) return [];
   return kb.chunks.filter((c: import("./composables/types").Chunk) =>
