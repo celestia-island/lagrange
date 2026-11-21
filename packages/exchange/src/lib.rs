@@ -2,11 +2,11 @@
 //!
 //! This crate is the chokepoint of the migration pipeline:
 //!
-//! ```text
-//!   foreign source ──► Reader ──► ExchangeDoc ──► Writer ──► lagrange output
-//!                                   │
-//!                                   ├── body_md      ──► markdown writer ──► docs/<lang>/posts/*.md
-//!                                   └── comments[]   ──► archive-json writer ──► comments/*.json
+//! ```mermaid
+//! flowchart LR
+//!     src["foreign source"] --> rd["Reader"] --> ir["ExchangeDoc"] --> wr["Writer"] --> out["lagrange output"]
+//!     ir --> bm["body_md"] --> mw["markdown writer"] --> mdt["docs/<lang>/posts/*.md"]
+//!     ir --> cm["comments[]"] --> aw["archive-json writer"] --> cj["comments/*.json"]
 //! ```
 //!
 //! The [`ir::ExchangeDoc`] enforces the isolation rule: an article's body and
