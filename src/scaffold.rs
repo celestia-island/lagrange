@@ -333,7 +333,9 @@ fn dev_create_comment(
         .or_insert_with(|| format!("t_{}", ulid_lite()))
         .clone();
     let id = format!("c_{}", ulid_lite());
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let now = jiff::Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
     let comment = serde_json::json!({
         "id": id, "thread_id": tid, "parent_id": body.get("parent_id"),
         "node_id": node, "canonical_url": body.get("canonical_url"),

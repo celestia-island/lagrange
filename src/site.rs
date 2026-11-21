@@ -726,8 +726,16 @@ pub(crate) fn page_path_of(rel: &str) -> String {
 }
 
 /// RFC 3339 local timestamp for build records.
+///
+/// Replicates the previous `chrono` spelling exactly: `Z` at a zero offset,
+/// `±HH:MM` otherwise (`to_rfc3339_opts(Secs, use_z = true)`).
 fn timestamp_now() -> String {
-    chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    let now = jiff::ZonedDateTime::now();
+    if now.offset() == jiff::tz::Offset::UTC {
+        now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
+    } else {
+        now.strftime("%Y-%m-%dT%H:%M:%S%:z").to_string()
+    }
 }
 
 /// Write `build_status.json` into the output directory.

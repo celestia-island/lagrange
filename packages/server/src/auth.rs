@@ -10,7 +10,7 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use chrono::{Duration, Utc};
+use jiff::Timestamp;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use lagrange_protocol::{Author, Caller, IdentityKind};
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,10 @@ impl AuthState {
     }
 
     pub fn issue(&self, account: &Account) -> Result<String, ApiError> {
-        let exp = (Utc::now() + Duration::days(30)).timestamp() as usize;
+        // 30 days as an absolute duration: the token carries an epoch-second
+        // expiry, so calendar-day semantics are not observable here.
+        let exp =
+            (Timestamp::now() + jiff::SignedDuration::from_hours(30 * 24)).as_second() as usize;
         let claims = Claims {
             sub: account.id.clone(),
             name: account.name.clone(),
