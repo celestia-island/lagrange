@@ -12,6 +12,14 @@ const langs = computed(() => props.kb.source.langs);
 const sourceCommit = computed(() => props.kb.source.source_commit ?? "unknown");
 const parserVersion = computed(() => `v${props.kb.parser_version}`);
 const schemaVersion = computed(() => `v${props.kb.schema_version}`);
+
+const buildInfo = computed(() => ({
+  generator: props.kb.generator ?? "lagrange",
+  sourceCommit: (props.kb.source?.source_commit ?? "unknown").slice(0, 12),
+  parserVersion: `v${props.kb.parser_version}`,
+  schemaVersion: `v${props.kb.schema_version}`,
+  langs: props.kb.source?.langs?.join(", ") ?? "",
+}));
 </script>
 
 <template>
@@ -51,22 +59,6 @@ const schemaVersion = computed(() => `v${props.kb.schema_version}`);
   </div>
 </template>
 
-<script lang="ts">
-// Additional computed for build info (uses props.kb)
-export default {
-  computed: {
-    buildInfo() {
-      return {
-        generator: this.kb.generator ?? "lagrange",
-        sourceCommit: (this.kb.source?.source_commit ?? "unknown").slice(0, 12),
-        parserVersion: `v${this.kb.parser_version}`,
-        schemaVersion: `v${this.kb.schema_version}`,
-        langs: this.kb.source?.langs?.join(", ") ?? "",
-      };
-    },
-  },
-};
-</script>
 
 <style scoped>
 .settings-page { padding: 1rem; max-width: 600px; }
