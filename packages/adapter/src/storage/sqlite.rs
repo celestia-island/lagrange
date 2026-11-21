@@ -98,8 +98,8 @@ impl SqliteStore {
     }
 
     fn now() -> String {
-        use chrono::Utc;
-        Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        use jiff::Timestamp;
+        Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
     }
 }
 

@@ -5,7 +5,7 @@
 //! `GET /mcp-activity.json`; the webui console renders it. The buffer is
 //! capped so a long-running session cannot grow without bound.
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::Serialize;
 use std::sync::Mutex;
 
@@ -41,7 +41,7 @@ impl ActivityLog {
     /// Record one tool call; evicts the oldest entry when over capacity.
     pub fn record(&self, tool: &str, ok: bool, detail: impl Into<String>) {
         let entry = ActivityEntry {
-            ts: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            ts: Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
             tool: tool.to_string(),
             ok,
             detail: detail.into(),

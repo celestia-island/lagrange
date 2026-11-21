@@ -23,7 +23,7 @@ pulldown-cmark = { version = "^0.13", default-features = false, features = ["htm
 # Ids.
 ulid = { version = "^3", features = ["std"] }
 # Logging.
-chrono = { version = "^0.4", default-features = false, features = ["clock", "serde"] }
+jiff = { version = "^1", features = ["serde"] }
 
 # Optional storage backends. Each is feature-gated so a backend binary pulls
 # only what it needs (e.g. a CF Worker build never compiles rusqlite).
