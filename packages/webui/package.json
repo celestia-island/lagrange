@@ -7,7 +7,7 @@
     "build": "vite build",
     "lint": "vue-tsc --noEmit --pretty false 2>&1 | grep -v node_modules || true",
     "test": "vitest run",
-    "build:ssr": "node scripts/ssr-render.mjs"
+    "build:ssr": "vite build --ssr scripts/ssr-render.mjs --outDir dist/ssr --emptyOutDir && node dist/ssr/ssr-render.js"
   },
   "dependencies": {
     "@celestia-island/hikari": "^0.55.451",

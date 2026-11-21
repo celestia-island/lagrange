@@ -555,33 +555,6 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         t0.elapsed().as_secs_f64()
     );
 
-    // ── 5. SSR injection (progressive enhancement) ──────────────────────
-    // When Node.js is available and the webui is installed, pre-render the
-    // Vue app and inject the HTML into the index page. The client hydration
-    // picks up from the pre-rendered DOM for faster first paint. When Node
-    // is unavailable the build silently falls back to client-only rendering.
-    let webui_root = opts
-        .src
-        .parent()
-        .unwrap_or(Path::new("."))
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("packages/webui");
-    if webui_root.exists() {
-        if let Some(ssr_html) = crate::ssr::try_render_ssr() {
-            let index_path = opts.out.join("index.html");
-            if let Ok(existing) = std::fs::read_to_string(&index_path) {
-                let placeholder = "<div id=\"app\"></div>";
-                if existing.contains(placeholder) {
-                    let injected =
-                        existing.replace(placeholder, &format!("<div id=\"app\">{ssr_html}</div>"));
-                    std::fs::write(&index_path, &injected).ok();
-                    info!("SSR: injected pre-rendered HTML into index.html");
-                }
-            }
-        }
-    }
-
     Ok(())
 }
 
