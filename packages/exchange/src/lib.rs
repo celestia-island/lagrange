@@ -5,7 +5,7 @@
 //! ```mermaid
 //! flowchart LR
 //!     src["foreign source"] --> rd["Reader"] --> ir["ExchangeDoc"] --> wr["Writer"] --> out["lagrange output"]
-//!     ir --> bm["body_md"] --> mw["markdown writer"] --> mdt["docs/&lt;lang&gt;/posts/*.md"]
+//!     ir --> bm["body_md"] --> mw["markdown writer"] --> mdt["docs/<lang>/posts/*.md"]
 //!     ir --> cm["comments[]"] --> aw["archive-json writer"] --> cj["comments/*.json"]
 //! ```
 //!
