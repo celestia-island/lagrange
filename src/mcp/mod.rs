@@ -23,6 +23,7 @@
 //! a `build.trigger` cannot interleave with a watch-loop rebuild (both
 //! clear and repopulate the output directory).
 
+pub mod activity;
 mod ops;
 mod protocol;
 mod query;
@@ -59,6 +60,10 @@ pub struct McpState {
     /// repopulates the output directory, so two concurrent builds would
     /// corrupt it. Poisoning is tolerated (dev server resilience).
     pub build_lock: Arc<Mutex<()>>,
+    /// Agent activity telemetry, shared with the dev HTTP server for the
+    /// console's agent-activity view. Optional: absent when MCP runs
+    /// without an HTTP surface (unit tests).
+    pub activity: Option<Arc<activity::ActivityLog>>,
 }
 
 impl McpState {
@@ -100,7 +105,46 @@ fn dispatch(state: &McpState, method: &str, params: &Value) -> Result<Value, Rpc
         "initialize" => Ok(initialize_result(params)),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tools::descriptors() })),
-        "tools/call" => tools::call(state, params),
+        "tools/call" => {
+            let tool = params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let detail = params
+                .get("arguments")
+                .map(|a| {
+                    let a = a.clone();
+                    let q = a
+                        .get("query")
+                        .or_else(|| a.get("document_id"))
+                        .or_else(|| a.get("path"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if q.is_empty() {
+                        serde_json::to_string(&a).unwrap_or_default()
+                    } else {
+                        q
+                    }
+                })
+                .unwrap_or_default();
+            let result = tools::call(state, params);
+            let ok = !result
+                .as_ref()
+                .map(|v| {
+                    v.get("structuredContent")
+                        .and_then(|s| s.get("isError"))
+                        .and_then(|e| e.as_bool())
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            let truncated: String = detail.chars().take(120).collect();
+            if let Some(log) = &state.activity {
+                log.record(&tool, ok, truncated);
+            }
+            result
+        }
         // Notifications (initialized, cancelled, …) are observed here and
         // intentionally produce no output.
         _ if method.starts_with("notifications/") => Ok(Value::Null),
@@ -136,6 +180,7 @@ mod tests {
 
     fn state_fixture() -> McpState {
         McpState {
+            activity: None,
             src: PathBuf::from("/nonexistent"),
             out: PathBuf::from("/nonexistent"),
             build_opts: BuildOptions {
@@ -260,6 +305,7 @@ mod tool_tests {
         };
         crate::site::build_with_status(&opts).expect("fixture build");
         let state = McpState {
+            activity: Some(Arc::new(crate::mcp::activity::ActivityLog::default())),
             src,
             out,
             build_opts: opts,
@@ -553,6 +599,7 @@ mod tool_tests {
 
         // Narrowed scope rejects out-of-prefix writes with a clear message.
         let narrowed = McpState {
+            activity: st.activity.clone(),
             src: st.src.clone(),
             out: st.out.clone(),
             build_opts: st.build_opts.clone(),
@@ -844,6 +891,7 @@ mod tool_tests {
         std::fs::create_dir_all(dir.path().join("en")).unwrap();
         std::fs::write(dir.path().join("en/a.md"), "# A\n").unwrap();
         let st = McpState {
+            activity: Some(Arc::new(crate::mcp::activity::ActivityLog::default())),
             src: dir.path().join("docs"),
             out: dir.path().join("dist"),
             build_opts: BuildOptions {
@@ -890,5 +938,22 @@ mod tool_tests {
             .as_str()
             .unwrap()
             .contains("language"));
+    }
+
+    #[test]
+    fn tool_call_is_recorded_in_activity_log() {
+        let (_dir, state) = fixture();
+        let log = state.activity.as_ref().expect("fixture carries a log");
+        let params = serde_json::json!({
+            "name": "docs.tree",
+            "arguments": {}
+        });
+        let result = dispatch(&state, "tools/call", &params);
+        assert!(result.is_ok(), "docs.tree should succeed: {result:?}");
+        let snap = log.snapshot();
+        assert_eq!(snap.len(), 1, "one call recorded");
+        assert_eq!(snap[0].tool, "docs.tree");
+        assert!(snap[0].ok);
+        assert!(!snap[0].ts.is_empty());
     }
 }
