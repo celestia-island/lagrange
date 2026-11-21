@@ -154,6 +154,10 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             // directory, so two concurrent builds would corrupt it.
             let build_lock = Arc::new(Mutex::new(()));
 
+            // Agent activity telemetry: shared between the MCP stdio
+            // session and the dev HTTP surface (`/mcp-activity.json`).
+            let activity = Arc::new(crate::mcp::activity::ActivityLog::default());
+
             // Spawn the axum + tower-http static-file server on a tokio
             // runtime.  The runtime is kept alive for the lifetime of this
             // scope (i.e. until watch_loop returns).
@@ -172,7 +176,14 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     Ok(listener) => {
                         let addr = listener.local_addr().unwrap().to_string();
                         info!("serving {} on http://{addr}", out.display());
+                        let activity_for_route = activity.clone();
                         let app = axum::Router::new()
+                            .route(
+                                "/mcp-activity.json",
+                                axum::routing::get(move || async move {
+                                    axum::Json(activity_for_route.snapshot())
+                                }),
+                            )
                             .fallback_service(tower_http::services::ServeDir::new(out.clone()));
                         tokio::spawn(async move {
                             if let Err(e) = axum::serve(listener, app).await {
@@ -217,6 +228,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     },
                     write_paths: config.mcp.write_paths,
                     build_lock: build_lock.clone(),
+                    activity: Some(activity.clone()),
                 });
                 std::thread::spawn(move || {
                     if let Err(e) = crate::mcp::run_stdio(state) {
