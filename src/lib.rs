@@ -21,6 +21,7 @@ pub mod render;
 pub mod scaffold;
 pub mod search;
 pub mod site;
+pub mod ssr;
 pub mod theme;
 
 pub use frontmatter::{strip as strip_frontmatter, FrontMatter, FrontMatterKind};
