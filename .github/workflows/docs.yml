@@ -6,6 +6,11 @@ on:
     paths:
       - 'docs/**'
       - 'src/**'
+      # styles/layout.scss is scss!-embedded into the built binary
+      # (src/theme.rs) — it IS deployed chrome, so a styles-only change
+      # must redeploy. Omitting it is the silent-staleness class this
+      # workflow exists to catch (review round 2 of #120).
+      - 'styles/**'
       - 'packages/webui/src/**'
       - 'packages/webui/scripts/**'
       - 'packages/webui/package.json'
