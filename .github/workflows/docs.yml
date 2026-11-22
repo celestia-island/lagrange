@@ -23,6 +23,8 @@ on:
       # entry all come from here and ship.
       - 'packages/webui/vite.config.ts'
       - 'Cargo.toml'
+      # copy_root_assets copies the repo-root LICENSE into the site.
+      - 'LICENSE'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
