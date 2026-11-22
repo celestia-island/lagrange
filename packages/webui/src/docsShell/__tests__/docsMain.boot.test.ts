@@ -6,8 +6,9 @@
 //
 // The import is STATIC on purpose: a runtime dynamic import of this
 // module graph stalls past vitest's default 5s test timeout on first
-// load (measured ~9-10.6s cold, ~0-1ms warm), and the module
-// self-execution guard skips auto-boot under vitest.
+// load — comment-gate-ok: cold-load latency constraint of the runner,
+// not a behaviour claim about the module.
+// The self-execution guard skips auto-boot under vitest.
 import { describe, expect, it, vi } from "vitest";
 import { boot } from "../docsMain";
 import type { DocsPageData } from "../types";
