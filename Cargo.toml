@@ -87,6 +87,10 @@ hikari-i18n = "^0.3"
 
 [dev-dependencies]
 tempfile = "^3"
+# The deploy-trigger gate parses .github/workflows/docs.yml strictly (a
+# hand parser was bypassable by a decoy `paths:` block in another event —
+# review round 5 of PR #120).
+serde_yaml = "0.9"
 
 # ── workspace ──────────────────────────────────────────────────────────────
 # The root package (this crate, `lagrange-library`) is a workspace member by
