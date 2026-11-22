@@ -196,6 +196,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
+    // Per-language SUMMARY trees for the webui lane's manifest.
+    let mut webui_navs: BTreeMap<String, Vec<crate::webui_lane::ManifestNavNode>> = BTreeMap::new();
     // Knowledge collection: one entry per (document, language) translation,
     // folded into knowledge.json after the page loop.
     let mut collected: Vec<knowledge::CollectedDoc> = Vec::new();
@@ -232,6 +234,9 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                 href,
             });
         }
+        // The webui lane's sidebar tree: the SAME post-fallback nav the
+        // legacy sidebar renders, normalized to lang-relative hrefs.
+        webui_navs.insert(lang.clone(), to_manifest_nav(&nav));
         let nav = if nav.is_empty() && lang != &default_lang {
             let fallback = opts.src.join(&default_lang).join("SUMMARY.md");
             let fallback_nav = parse_summary(&fallback).unwrap_or_default();
@@ -473,6 +478,83 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     knowledge::write_json(&opts.out, &kb)?;
     let search_docs = build_search_docs(&collected);
     crate::search::write_index(&opts.out, &search_docs, &base)?;
+
+    // ── 4a. The hikari webui lane: manifest + Node SSR renderer. Emits
+    //        per-language pages through the real hikari component tree
+    //        and turns the flat legacy pages into redirect stubs. When
+    //        the webui build or Node is absent this keeps the legacy
+    //        chrome as the site's surface (warned inside webui_lane).
+    let logo_url = config.site.logo.as_ref().map(|path| {
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        if base.is_empty() {
+            format!("/{name}")
+        } else {
+            format!("{base}/{name}")
+        }
+    });
+    let favicon_url = config.site.favicon.as_ref().map(|path| {
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        if base.is_empty() {
+            format!("/{name}")
+        } else {
+            format!("{base}/{name}")
+        }
+    });
+    let manifest_inputs = crate::webui_lane::ManifestInputs {
+        site: crate::webui_lane::ManifestSite {
+            title: config
+                .site
+                .title
+                .clone()
+                .unwrap_or_else(|| "Lagrange".to_string()),
+            description: config.site.description.clone().unwrap_or_default(),
+            logo: logo_url,
+            base: base.clone(),
+            default_lang: default_lang.clone(),
+            langs: langs
+                .iter()
+                .map(|l| crate::webui_lane::ManifestLang {
+                    code: l.clone(),
+                    label: crate::webui_lane::native_language_label(l),
+                })
+                .collect(),
+            build_stamp: format!(
+                "{} · {}",
+                env!("CARGO_PKG_VERSION"),
+                timestamp_now().split('T').next().unwrap_or("")
+            ),
+            favicon: favicon_url,
+        },
+        pages: multi
+            .values()
+            .map(|mp| crate::webui_lane::ManifestPage {
+                path: mp.page_path.clone(),
+                langs: mp
+                    .pages
+                    .iter()
+                    .map(|(l, p)| {
+                        (
+                            l.clone(),
+                            crate::webui_lane::ManifestPageLang {
+                                title: p.title.clone(),
+                                html: format!("{}\n{}", p.body, p.comments_mount),
+                                math: p.diagrams.math,
+                            },
+                        )
+                    })
+                    .collect(),
+            })
+            .collect(),
+        navs: webui_navs,
+    };
+    crate::webui_lane::emit_manifest(&opts.out, &manifest_inputs)?;
+    crate::webui_lane::run(&opts.out)?;
 
     // ── 4b. Diagnostics + build record. Missing translations come from the
     //        assembled knowledge (doc → translations vs configured langs);
@@ -1440,6 +1522,19 @@ fn rewrite_nav_link(url: &str) -> String {
         Some(f) => format!("{rewritten}#{f}"),
         None => rewritten,
     }
+}
+
+/// SUMMARY tree → the webui lane's manifest nav (lang-relative hrefs —
+/// the shell prefixes the language segment itself).
+fn to_manifest_nav(nodes: &[NavNode]) -> Vec<crate::webui_lane::ManifestNavNode> {
+    nodes
+        .iter()
+        .map(|n| crate::webui_lane::ManifestNavNode {
+            title: n.title.clone(),
+            href: rewrite_nav_link(&n.href),
+            children: to_manifest_nav(&n.children),
+        })
+        .collect()
 }
 
 fn walk_md(dir: &Path) -> Result<Vec<PathBuf>> {

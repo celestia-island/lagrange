@@ -5,12 +5,32 @@ Lagrange is a single crate (`lagrange-library`) shipping a library and a
 
 ## Pipeline
 
+The docs tree ships through **two lanes**:
+
 ```
 markdown -> pest parser -> AST (Block / Inline)
-                              |
-                              v
-                 tairitsu VDom (VNode) -> render_to_html -> HTML
+              |                          |
+              |                          +--> tairitsu VDom (VNode) -> HTML
+              |                                (legacy lane: hand-built chrome)
+              |
+              +--> knowledge.json -----> docs-manifest.json
+                    (chunks/spans)           |
+                                             v
+                                  packages/webui (Node SSR, build time)
+                                  HkFaceShell + HkAdminHeader + HkSidebar
+                                  -> <lang>/<page>.html per language
+                                  + hydration bundle (mermaid through the
+                                    hikari/tairitsu wasm engine)
 ```
+
+The **webui lane** is the default when `packages/webui/dist-docs` is built
+(`just docs` / CI build it via pnpm): every page renders through the real
+hikari component tree — the same `HkFaceShell` / `HkAdminHeader` shell the
+family's consoles wear, with the site logo in the brand slot, the language
+and theme buttons in the top-right action area, the SUMMARY sidebar with
+rail collapse, and a single footer status band. Pages live at per-language
+URLs (`<lang>/<path>.html`); the legacy flat URLs become language-negotiated
+redirects. The **legacy lane** stays as the no-Node fallback.
 
 ## Modules
 
@@ -20,6 +40,7 @@ markdown -> pest parser -> AST (Block / Inline)
 | `render` | AST -> tairitsu `VNode` -> HTML string |
 | `theme` | CSS generated from the hikari palette |
 | `site` | walks the docs tree, renders each page, writes a static site |
+| `webui_lane` | docs-manifest.json emission + the Node SSR renderer spawn |
 | `cli` | the `lagrange` binary |
 
 ## The closed loop

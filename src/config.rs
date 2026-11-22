@@ -137,6 +137,12 @@ pub struct SiteConfig {
     /// Path to a favicon file (relative to src root, e.g. `logo.webp`).
     /// When set, a `<link rel="icon">` is emitted in every page's `<head>`.
     pub favicon: Option<String>,
+    /// Path to the site logo (relative to src root, e.g. `logo.webp`).
+    /// The hikari webui lane renders it in the admin header's brand slot
+    /// (top-left, the avatar's spot on account-bearing surfaces); the
+    /// legacy lane ignores it. The file is copied to the output root like
+    /// any other non-markdown src-root asset.
+    pub logo: Option<String>,
     /// Title template. `{title}` is replaced with the current page title.
     /// Default: `{title}` (page title only). Example: `{title} — My Site`.
     #[serde(default = "default_title_template")]

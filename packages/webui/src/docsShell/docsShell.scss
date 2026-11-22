@@ -1,0 +1,137 @@
+// lagrange docs-shell styles. The chrome (shell, header, sidebar, menu,
+// dialogs, status line) is hikari's own SCSS — nothing here restyles it.
+// This file only covers the docs-specific gaps: the reading column, the
+// header search field + results panel, the footer band's three zones,
+// and the mermaid sub-app host.
+.lagrange-docs-content {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.lagrange-docs-body {
+  // The legacy body HTML ships its own typographic classes; keep the
+  // reading measure stable while those rules still apply.
+  line-height: 1.7;
+}
+
+// ── header search ─────────────────────────────────────────────────────────
+.lagrange-docs-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lagrange-docs-search-input {
+  width: 200px;
+  height: 30px;
+  padding: 0 0.6rem;
+  border-radius: var(--hk-radius-control, 8px);
+  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.2), transparent);
+  background: color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.04), transparent);
+  color: inherit;
+  font-size: 0.85rem;
+  outline: none;
+
+  &:focus-visible {
+    border-color: rgb(var(--hk-color-primary, 60 120 220));
+  }
+}
+
+.lagrange-docs-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(420px, 90vw);
+  max-height: 60vh;
+  overflow: auto;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--hk-radius-surface, 10px);
+  background: rgb(var(--hk-color-surface, 255 255 255));
+  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.12), transparent);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+}
+
+.lagrange-docs-search-empty {
+  padding: 0.6rem 0.7rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.lagrange-docs-search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--hk-radius-control, 8px);
+  text-decoration: none;
+  color: inherit;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, rgb(var(--hk-color-primary, 60 120 220) / 0.1), transparent);
+  }
+}
+
+.lagrange-docs-search-hit-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.lagrange-docs-search-hit-heading {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+.lagrange-docs-search-hit-snippet {
+  font-size: 0.78rem;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── header end cluster ────────────────────────────────────────────────────
+.lagrange-docs-header-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+// ── footer band ───────────────────────────────────────────────────────────
+.lagrange-docs-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  font-size: 0.78rem;
+
+  &-center {
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &-right a {
+    color: inherit;
+    text-decoration: none;
+    opacity: 0.7;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+}
+
+// ── mermaid sub-app host ──────────────────────────────────────────────────
+.lagrange-docs-mermaid {
+  width: 100%;
+  min-height: 120px;
+}
