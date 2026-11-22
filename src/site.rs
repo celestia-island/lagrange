@@ -114,6 +114,18 @@ pub struct BuildStatus {
     pub langs: Vec<String>,
     pub missing_translations: Vec<MissingTranslation>,
     pub broken_links: Vec<BrokenLink>,
+    /// Which chrome lane produced the emitted pages (round 9 of PR #119:
+    /// the webui lane's fallback used to be unobservable — `ok:true`
+    /// shipped while every page silently kept the legacy chrome).
+    /// `webui` = the hikari component tree; `legacy` = the Rust fallback.
+    /// Defaulted so records written before the field existed still parse
+    /// (the MCP surface reads this file as the build's source of truth).
+    #[serde(default = "default_lane")]
+    pub lane: String,
+}
+
+fn default_lane() -> String {
+    "legacy".to_string()
 }
 
 /// Build the whole site.
@@ -196,6 +208,8 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
+    // Per-language SUMMARY trees for the webui lane's manifest.
+    let mut webui_navs: BTreeMap<String, Vec<crate::webui_lane::ManifestNavNode>> = BTreeMap::new();
     // Knowledge collection: one entry per (document, language) translation,
     // folded into knowledge.json after the page loop.
     let mut collected: Vec<knowledge::CollectedDoc> = Vec::new();
@@ -244,6 +258,11 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         } else {
             nav
         };
+        // The webui lane's sidebar tree: the SAME POST-FALLBACK nav the
+        // legacy sidebar renders (a language without its own SUMMARY.md
+        // inherits the default language's tree — exporting before this
+        // point gave it an empty sidebar; round 8 of PR #119).
+        webui_navs.insert(lang.clone(), to_manifest_nav(&nav));
 
         for md_path in walk_md(&lang_dir)? {
             if md_path.file_name().is_some_and(|f| f == "SUMMARY.md") {
@@ -474,6 +493,94 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     let search_docs = build_search_docs(&collected);
     crate::search::write_index(&opts.out, &search_docs, &base)?;
 
+    // ── 4a. The hikari webui lane: manifest + Node SSR renderer. Emits
+    //        per-language pages through the real hikari component tree
+    //        and turns the flat legacy pages into redirect stubs. When
+    //        the webui build or Node is absent this keeps the legacy
+    //        chrome as the site's surface (warned inside webui_lane).
+    let logo_url = config.site.logo.as_ref().map(|path| {
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        if base.is_empty() {
+            format!("/{name}")
+        } else {
+            format!("{base}/{name}")
+        }
+    });
+    let favicon_url = config.site.favicon.as_ref().map(|path| {
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        if base.is_empty() {
+            format!("/{name}")
+        } else {
+            format!("{base}/{name}")
+        }
+    });
+    let manifest_inputs = crate::webui_lane::ManifestInputs {
+        site: crate::webui_lane::ManifestSite {
+            title: config
+                .site
+                .title
+                .clone()
+                .unwrap_or_else(|| "Lagrange".to_string()),
+            description: config.site.description.clone().unwrap_or_default(),
+            logo: logo_url,
+            base: base.clone(),
+            default_lang: default_lang.clone(),
+            langs: langs
+                .iter()
+                .map(|l| crate::webui_lane::ManifestLang {
+                    code: l.clone(),
+                    label: crate::webui_lane::native_language_label(l),
+                })
+                .collect(),
+            build_stamp: format!(
+                "{} · {}",
+                env!("CARGO_PKG_VERSION"),
+                timestamp_now().split('T').next().unwrap_or("")
+            ),
+            favicon: favicon_url,
+        },
+        pages: multi
+            .values()
+            .map(|mp| crate::webui_lane::ManifestPage {
+                path: mp.page_path.clone(),
+                langs: mp
+                    .pages
+                    .iter()
+                    .map(|(l, p)| {
+                        (
+                            l.clone(),
+                            crate::webui_lane::ManifestPageLang {
+                                title: p.title.clone(),
+                                html: format!("{}\n{}", p.body, p.comments_mount),
+                                math: p.diagrams.math,
+                            },
+                        )
+                    })
+                    .collect(),
+            })
+            .collect(),
+        navs: webui_navs,
+    };
+    // The hikari webui lane's pages need the `hi-*` COMPONENT styles (code
+    // highlight, tags) but never the legacy whole-page sheet — see
+    // theme::build_webui_css for why loading that sheet breaks the shell.
+    let webui_css_dir = opts.out.join("assets").join("docs");
+    fs::create_dir_all(&webui_css_dir).context("create assets/docs")?;
+    fs::write(
+        webui_css_dir.join("hikari-components.css"),
+        crate::theme::build_webui_css(),
+    )
+    .context("write assets/docs/hikari-components.css")?;
+
+    crate::webui_lane::emit_manifest(&opts.out, &manifest_inputs)?;
+    let webui_lane_ran = crate::webui_lane::run(&opts.out)?;
+
     // ── 4b. Diagnostics + build record. Missing translations come from the
     //        assembled knowledge (doc → translations vs configured langs);
     //        broken links verify every collected reference against the page
@@ -523,6 +630,11 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         langs: langs.clone(),
         missing_translations,
         broken_links: broken_links.clone(),
+        lane: if webui_lane_ran {
+            "webui".to_string()
+        } else {
+            "legacy".to_string()
+        },
     };
     write_build_status(&opts.out, &status)?;
     if !status.broken_links.is_empty() {
@@ -769,6 +881,7 @@ pub fn build_with_status(opts: &BuildOptions) -> Result<()> {
                 langs: Vec::new(),
                 missing_translations: Vec::new(),
                 broken_links: Vec::new(),
+                lane: "legacy".to_string(),
             };
             // The build may have bailed before even creating the output
             // dir (e.g. "no language directories"); the record must land
@@ -1442,6 +1555,19 @@ fn rewrite_nav_link(url: &str) -> String {
     }
 }
 
+/// SUMMARY tree → the webui lane's manifest nav (lang-relative hrefs —
+/// the shell prefixes the language segment itself).
+fn to_manifest_nav(nodes: &[NavNode]) -> Vec<crate::webui_lane::ManifestNavNode> {
+    nodes
+        .iter()
+        .map(|n| crate::webui_lane::ManifestNavNode {
+            title: n.title.clone(),
+            href: rewrite_nav_link(&n.href),
+            children: to_manifest_nav(&n.children),
+        })
+        .collect()
+}
+
 fn walk_md(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     walk_md_inner(dir, &mut out)?;
@@ -1650,6 +1776,172 @@ fn html_escape_text(s: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Round 8 of PR #119 (S2): a language without its own SUMMARY.md
+    /// inherits the default language's tree in the legacy sidebar. The
+    /// manifest must export the SAME post-fallback tree — exporting
+    /// before the fallback left that language with an empty sidebar.
+    #[test]
+    fn manifest_nav_inherits_the_default_language_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let out = dir.path().join("out");
+        // en has a SUMMARY; ja has pages but no SUMMARY.md.
+        std::fs::create_dir_all(src.join("en")).unwrap();
+        std::fs::create_dir_all(src.join("ja")).unwrap();
+        std::fs::write(
+            src.join("en").join("SUMMARY.md"),
+            "# Summary\n\n- [Quick Start](./quickstart.md)\n- [Architecture](./architecture.md)\n",
+        )
+        .unwrap();
+        for lang in ["en", "ja"] {
+            std::fs::write(
+                src.join(lang).join("quickstart.md"),
+                "# Quick start\n\nbody\n",
+            )
+            .unwrap();
+            std::fs::write(
+                src.join(lang).join("architecture.md"),
+                "# Architecture\n\nbody\n",
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            src.join("lagrange.toml"),
+            "[site]\ntitle = \"T\"\n[languages]\ndefault = \"en\"\norder = [\"en\", \"ja\"]\n",
+        )
+        .unwrap();
+
+        build(&BuildOptions {
+            src: src.clone(),
+            out: out.clone(),
+            site_url: None,
+            default_lang: Some("en".to_string()),
+        })
+        .expect("build");
+
+        let raw = std::fs::read_to_string(out.join("docs-manifest.json")).expect("manifest");
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let ja_nav = json["navs"]["ja"].as_array().expect("ja nav");
+        let ja_leaves = ja_nav[0]["children"].as_array().expect("ja leaves");
+        assert_eq!(
+            ja_leaves.len(),
+            2,
+            "ja inherits en's two-entry SUMMARY instead of an empty sidebar: {raw}"
+        );
+        assert_eq!(ja_leaves[0]["title"], "Quick Start");
+        assert_eq!(ja_leaves[0]["href"], "quickstart.html");
+        // Both languages export the same post-fallback tree.
+        assert_eq!(json["navs"]["en"], json["navs"]["ja"]);
+    }
+
+    /// Round 9 (S2): the emitted lane must be OBSERVABLE — `run()`'s
+    /// result feeds BuildStatus so a silent fallback can't ship as
+    /// `ok:true` with stale chrome. This fixture has no webui build, so
+    /// the legacy value is pinned here; the integration test (the repo's
+    /// own docs build, which DOES have dist-docs in this worktree) pins
+    /// the webui value end to end.
+    #[test]
+    fn build_status_records_the_legacy_lane_when_the_webui_is_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(src.join("en")).unwrap();
+        std::fs::write(src.join("en").join("index.md"), "# Home\n\nbody\n").unwrap();
+        std::fs::write(
+            src.join("lagrange.toml"),
+            "[site]\ntitle = \"T\"\n[languages]\ndefault = \"en\"\norder = [\"en\"]\n",
+        )
+        .unwrap();
+        // Run from a cwd where ./packages/webui cannot resolve and no
+        // override is set — the true fallback posture.
+        let cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let result = build(&BuildOptions {
+            src: src.clone(),
+            out: out.clone(),
+            site_url: None,
+            default_lang: Some("en".to_string()),
+        });
+        std::env::set_current_dir(cwd).unwrap();
+        result.expect("build");
+
+        let raw = std::fs::read_to_string(out.join("build_status.json")).expect("status");
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            json["lane"], "legacy",
+            "without a webui build the status must say so: {raw}"
+        );
+    }
+
+    /// Round 8 (S3/M36/M37): the lane's component sheet is a build
+    /// artifact nothing else references — without this pin, dropping the
+    /// write or the `--hi-*` bridge left every gate green while the
+    /// emitted pages linked a 404 stylesheet.
+    #[test]
+    fn build_emits_the_hikari_component_sheet_for_the_webui_lane() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(src.join("en")).unwrap();
+        std::fs::write(
+            src.join("en").join("index.md"),
+            "# Home\n\n```rust\nfn main() {}\n```\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join("lagrange.toml"),
+            "[site]\ntitle = \"T\"\n[languages]\ndefault = \"en\"\norder = [\"en\"]\n",
+        )
+        .unwrap();
+
+        build(&BuildOptions {
+            src,
+            out: out.clone(),
+            site_url: None,
+            default_lang: Some("en".to_string()),
+        })
+        .expect("build");
+
+        let css_path = out
+            .join("assets")
+            .join("docs")
+            .join("hikari-components.css");
+        let css = std::fs::read_to_string(&css_path)
+            .unwrap_or_else(|e| panic!("component sheet missing at {}: {e}", css_path.display()));
+        assert!(!css.is_empty(), "component sheet is empty");
+        assert!(
+            css.starts_with(":root"),
+            "the --hi-* bridge must lead the sheet: {}",
+            &css[..css.len().min(80)]
+        );
+        assert!(
+            css.contains("--hi-color-primary: rgb(var(--color-primary))"),
+            "the bridge must map onto hikari's own token, not the legacy palette"
+        );
+        assert!(
+            css.contains(".hi-code-highlight-code"),
+            "the hi- aliases must be emitted (code blocks are unstyled without them)"
+        );
+        // Anchored, not substring: descendant selectors may legitimately
+        // contain the substring `body {` inside a rule block — what is
+        // forbidden is a RULE whose selector list starts at body/html.
+        let forbidden = css.lines().any(|l| {
+            let s = l.trim_start();
+            (s.starts_with("body") || s.starts_with("html") || s.starts_with(":root { --hi"))
+                    && (s.contains('{') || s.ends_with('{'))
+                    && !s.starts_with(":root { --hi") // the token bridge IS :root-scoped
+                    && s != ":root {"
+        });
+        assert!(
+            !forbidden,
+            "the component sheet must never carry page-global rules"
+        );
+        assert!(
+            !css.contains(".content {"),
+            "no legacy content column rules"
+        );
+    }
+
     #[test]
     fn rewrite_nav_readme_to_index() {
         assert_eq!(rewrite_nav_link("./README.md"), "index.html");
@@ -1807,6 +2099,7 @@ mod tests {
                 href: "guides/missing.md".to_string(),
                 target: "guides/missing.html".to_string(),
             }],
+            lane: "webui".to_string(),
         };
         let json = serde_json::to_string(&status).unwrap();
         let back: BuildStatus = serde_json::from_str(&json).unwrap();

@@ -3,4 +3,5 @@ allowBuilds:
   esbuild: true
   sass-embedded: true
 minimumReleaseAgeExclude:
-  - '@celestia-island/hikari@0.55.451'
+  - '@celestia-island/hikari@0.55.459'
+  - '@celestia-island/tairitsu-host-client@0.1.0'

@@ -22,6 +22,7 @@ pub mod scaffold;
 pub mod search;
 pub mod site;
 pub mod theme;
+pub mod webui_lane;
 
 pub use frontmatter::{strip as strip_frontmatter, FrontMatter, FrontMatterKind};
 pub use lagrange_content::{derive_document_id, slugify_anchor, PARSER_VERSION};

@@ -6,6 +6,9 @@ on:
     paths:
       - 'docs/**'
       - 'src/**'
+      - 'packages/webui/src/**'
+      - 'packages/webui/scripts/**'
+      - 'packages/webui/package.json'
       - 'Cargo.toml'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
@@ -26,6 +29,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable
+      # The hikari webui lane: hydration client + Node SSR renderer, then
+      # the Rust build consumes them (packages/webui/dist-docs). Without
+      # this step the site falls back to the legacy chrome lane.
+      - run: pnpm --dir packages/webui install --no-frozen-lockfile
+      - run: pnpm --dir packages/webui build:docs:all
       - run: LAGRANGE_SKIP_LIVE=1 cargo run --release -- build --src docs --out _site
       - uses: actions/upload-pages-artifact@v5
         with:

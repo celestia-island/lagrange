@@ -83,7 +83,7 @@ pub fn descriptors() -> Value {
         },
         {
             "name": "docs.status",
-            "description": "Last build outcome and corpus health: build time/duration/ok/error from build_status.json, knowledge counts, per-corpus freshness tallies, missing translations and broken internal links. Fails with instructions to run build.trigger when no build has been recorded yet.",
+            "description": "Last build outcome and corpus health: build time/duration/ok/error/lane (webui|legacy — which chrome the pages carry) from build_status.json, knowledge counts, per-corpus freshness tallies, missing translations and broken internal links. Fails with instructions to run build.trigger when no build has been recorded yet.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {

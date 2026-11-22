@@ -32,9 +32,27 @@ build:
     cargo build --release
 
 # Build lagrange's own documentation with lagrange itself (closed loop).
-# Output goes to target/site/.
+# Output goes to dist/. The hikari webui lane (per-language pages on the
+# real hikari component tree) is built first when pnpm is available;
+# without it the build warns and keeps the legacy chrome.
+# [script('python')]: bash is banned from justfile recipes (#66).
+[script('python')]
 docs:
-    cargo run --release -- build --src docs --out dist
+    import os, shutil, subprocess, sys
+
+    webui = "packages/webui"
+    if shutil.which("pnpm") and os.path.isdir(webui):
+        subprocess.run(["pnpm", "--dir", webui, "install", "--no-frozen-lockfile"], check=True)
+        subprocess.run(["pnpm", "--dir", webui, "build:docs:all"], check=True)
+    else:
+        print("docs: pnpm or packages/webui missing — legacy chrome only", file=sys.stderr)
+    env = dict(os.environ, LAGRANGE_SKIP_LIVE="1")
+    subprocess.run(["cargo", "run", "--release", "--", "build", "--src", "docs", "--out", "dist"], check=True, env=env)
+
+# Just the webui docs bundles (hydration client + Node SSR renderer).
+docs-webui:
+    pnpm --dir packages/webui install --no-frozen-lockfile
+    pnpm --dir packages/webui build:docs:all
 
 # Build + watch: rebuilds the docs tree automatically on change.
 # malkuth path is resolved by just at parse time ({{malkuth_bin}}); the body

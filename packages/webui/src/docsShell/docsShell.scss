@@ -1,0 +1,214 @@
+// lagrange docs-shell styles. The chrome (shell, header, sidebar, menu,
+// dialogs, status line) is hikari's own SCSS — nothing here restyles it.
+// This file only covers the docs-specific gaps: the app root's height
+// chain, the reading column, the header search field + results panel,
+// the footer band's three zones, and the mermaid sub-app host.
+//
+// The root rule is the host's obligation, not decoration: HkFaceShell's
+// `.s-admin-shell` is `height:100%` + `overflow:hidden`, so without a
+// definite-height `#app` the percentage resolves to auto and the shell
+// grows with the document (measured in Chrome: a 913px viewport got a
+// 1972px shell, and the sidebar/header never pinned). Chest's theme.scss
+// carries the same `#app{height:100dvh;overflow:hidden}` contract.
+#app {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+// The page canvas. hikari's components paint their own surfaces but the
+// DOCUMENT behind them is the host's job: left unpainted the browser's
+// default white canvas shows through, and in a dark theme the content
+// reads near-white-on-white (measured in Chrome — the docs body inherits
+// --color-text, so the canvas MUST follow --color-background).
+html,
+body {
+  margin: 0;
+  background: rgb(var(--color-background));
+  color: rgb(var(--color-text));
+}
+
+.lagrange-docs-content {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.lagrange-docs-body {
+  // The legacy body HTML ships its own typographic classes; keep the
+  // reading measure stable while those rules still apply.
+  line-height: 1.7;
+}
+
+// ── header search ─────────────────────────────────────────────────────────
+.lagrange-docs-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lagrange-docs-search-input {
+  /* Clamped: the header's end wing clips (overflow: hidden) once the
+     start wing's min-content eats the row, and a fixed 200px field plus
+     the two icon buttons overflowed narrow viewports (round 5). */
+  width: clamp(120px, 22vw, 200px);
+  min-width: 0;
+  padding-inline-end: 1.6rem;
+  height: 30px;
+  padding: 0 0.6rem;
+  border-radius: var(--hk-radius-control, 8px);
+  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.2), transparent);
+  background: color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.04), transparent);
+  color: inherit;
+  font-size: 0.85rem;
+  outline: none;
+
+  &:focus-visible {
+    border-color: rgb(var(--hk-color-primary, 60 120 220));
+  }
+}
+
+.lagrange-docs-search-clear {
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 1;
+    background: color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.1), transparent);
+  }
+}
+
+.lagrange-docs-search-busy {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--hk-radius-surface, 10px);
+  background: rgb(var(--hk-color-surface, 255 255 255));
+  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.12), transparent);
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.lagrange-docs-search-error {
+  padding: 0.6rem 0.7rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.lagrange-docs-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(420px, 90vw);
+  max-height: 60vh;
+  overflow: auto;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--hk-radius-surface, 10px);
+  background: rgb(var(--hk-color-surface, 255 255 255));
+  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.12), transparent);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+}
+
+.lagrange-docs-search-empty {
+  padding: 0.6rem 0.7rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.lagrange-docs-search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--hk-radius-control, 8px);
+  text-decoration: none;
+  color: inherit;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, rgb(var(--hk-color-primary, 60 120 220) / 0.1), transparent);
+  }
+}
+
+.lagrange-docs-search-hit-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.lagrange-docs-search-hit-heading {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+.lagrange-docs-search-hit-snippet {
+  font-size: 0.78rem;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── header end cluster ────────────────────────────────────────────────────
+.lagrange-docs-header-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+// ── footer band ───────────────────────────────────────────────────────────
+.lagrange-docs-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  font-size: 0.78rem;
+
+  &-center {
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &-right a {
+    color: inherit;
+    text-decoration: none;
+    opacity: 0.7;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+}
+
+// ── mermaid sub-app host ──────────────────────────────────────────────────
+.lagrange-docs-mermaid {
+  width: 100%;
+  min-height: 120px;
+}

@@ -292,6 +292,33 @@ fn dev_mcp_full_chain_search_fetch_write_trigger_status() {
     let status = dev.call_tool("docs.status", json!({}));
     assert_eq!(status["result"]["isError"], false, "raw: {status}");
     assert_eq!(status["result"]["structuredContent"]["build"]["ok"], true);
+    // The lane must be OBSERVABLE through MCP too (round 10): the
+    // silent-fallback signal one layer up from build_status.json.
+    let lane = status["result"]["structuredContent"]["build"]["lane"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        lane == "webui" || lane == "legacy",
+        "lane must be reported, got {lane:?}"
+    );
+    // Per-language URL scheme: the flat root becomes a language-negotiation
+    // stub BY DESIGN, and each language's landing page is the real page —
+    // pin both so the collision can never silently flip (round 10 S2).
+    // MUT: M54 (inverting the root-stub pin turns this assertion RED).
+    {
+        let root = std::fs::read_to_string(tree.path().join("dist").join("index.html"))
+            .expect("root index");
+        assert!(
+            root.contains("location.replace"),
+            "the flat root is a negotiation stub under the per-language scheme"
+        );
+        let en = std::fs::read_to_string(tree.path().join("dist").join("en").join("index.html"))
+            .expect("en landing page");
+        assert!(
+            en.contains("lagrange-page-data"),
+            "the real landing content lives at /en/ (and per-language)"
+        );
+    }
 
     // 9. Ping still answers after everything (long-lived session).
     let ping = dev.request("ping", json!({}));

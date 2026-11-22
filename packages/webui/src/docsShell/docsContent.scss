@@ -1,0 +1,316 @@
+// Content styles for the docs BODY — the markup `lagrange build` emits
+// (markdown elements, the `.lg-*` diagram cards, the live-component
+// blocks). Everything is scoped under `.lagrange-docs-body` on purpose.
+//
+// HISTORY (PR #119 round 6, an S1 caught in a real browser): the lane
+// used to link the Rust `theme::build_css` output — the LEGACY lane's
+// whole page sheet, `:root`/`body`/`.content` rules included. Loaded
+// beside hikari's bundle its page-global rules won: `body{display:flex}`
+// made `.s-admin-shell` size to content (a 913px viewport got a 1972px
+// shell that never scrolled internally), the `:root` `--hi-*` bridges
+// re-pointed the component palette at the legacy one, and
+// `body{background:var(--bg)}` broke light mode (the old sheet's palette
+// is a different family, and it painted a light canvas under hikari's
+// dark text). Load ORDER cannot fix same-specificity clashes, so the fix
+// is scope: this file styles the body, hikari styles the shell.
+//
+// Tokens are hikari's (`--color-*`, triplets — always wrapped in
+// `rgb(…)`), so the body follows the live theme instead of a second
+// palette.
+.lagrange-docs-body {
+  color: rgb(var(--color-text));
+  font-size: 0.95rem;
+  line-height: 1.7;
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: rgb(var(--color-text));
+    line-height: 1.3;
+    margin: 1.6em 0 0.6em;
+    scroll-margin-top: 4rem;
+  }
+
+  h1 {
+    font-size: 1.85rem;
+    font-weight: 700;
+    margin-top: 0;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid rgb(var(--color-border) / 40%);
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  h4 {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  p {
+    margin: 0.75rem 0;
+  }
+
+  a {
+    color: rgb(var(--color-primary));
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md, 8px);
+  }
+
+  // Theme-conditional images: render.rs splits the URL-fragment
+  // convention off the src and tags the <img>, so only the variant
+  // matching the reader's scheme shows.
+  img.lg-img-only-light {
+    display: none;
+  }
+
+  @media (prefers-color-scheme: light) {
+    img.lg-img-only-light {
+      display: inline;
+    }
+
+    img.lg-img-only-dark {
+      display: none;
+    }
+  }
+
+  ul,
+  ol {
+    padding-inline-start: 1.5rem;
+    margin: 0.75rem 0;
+  }
+
+  li {
+    margin: 0.25rem 0;
+  }
+
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.5rem 1rem;
+    border-inline-start: 3px solid rgb(var(--color-primary));
+    border-radius: 0 var(--radius-sm, 6px) var(--radius-sm, 6px) 0;
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-primary) / 8%);
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid rgb(var(--color-border) / 40%);
+    margin: 2rem 0;
+  }
+
+  // hikari's own markup (code highlights, tags) styles itself; the
+  // generic rules below must stay off it — a specificity tie would
+  // clobber padding, background and font metrics.
+  pre:not(.hi-code-highlight-code) {
+    margin: 1rem 0;
+    padding: 1rem;
+    border-radius: var(--radius-md, 8px);
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    overflow: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  :not(pre) > code,
+  p > code,
+  li > code {
+    padding: 0.12em 0.35em;
+    border-radius: 3px;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 25%);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.88em;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+
+  th,
+  td {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    text-align: start;
+  }
+
+  th {
+    font-weight: 600;
+    background: rgb(var(--color-surface));
+  }
+
+  // ── diagram cards (mermaid / math fences) ──────────────────────────
+  .lg-diagram {
+    margin: 1.5rem 0;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+    background: rgb(var(--color-background));
+  }
+
+  .lg-diagram-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .lg-diagram-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: 999px;
+    background: rgb(var(--color-surface));
+  }
+
+  .lg-diagram-toggle-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    border-radius: 999px;
+    padding: 0.1rem 0.65rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    &.active {
+      font-weight: 600;
+      color: rgb(var(--color-text));
+      background: rgb(var(--color-background));
+    }
+  }
+
+  .lg-diagram-preview {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 1.25rem;
+    overflow-x: auto;
+
+    > .lg-diagram-canvas {
+      max-width: 100%;
+
+      svg {
+        max-width: 100%;
+        height: auto;
+      }
+    }
+
+    // KaTeX display output inherits the live text color (the vendor
+    // stylesheet supplies the metrics; this only re-colors).
+    .katex {
+      color: rgb(var(--color-text));
+    }
+  }
+
+  .lg-diagram-error {
+    width: 100%;
+    margin: 0 0 0.75rem;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid rgb(var(--color-error));
+    border-radius: var(--radius-md, 8px);
+    background: rgb(var(--color-error) / 10%);
+    color: rgb(var(--color-error));
+    font-size: 0.85rem;
+  }
+
+  .lg-diagram-source {
+    border-top: 1px solid rgb(var(--color-border) / 40%);
+
+    pre {
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+    }
+  }
+
+  // ── live component blocks (```hikari fences) ───────────────────────
+  // The full chrome: language picker, preview/source tabs, preview frame.
+  // Scoping dropped the tab strip in the first pass and the labels
+  // rendered as bare text (round 7 caught it on quickstart.html).
+  .lg-live-block {
+    margin: 1.5rem 0;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+  }
+
+  .lg-live-langs,
+  .lg-live-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid rgb(var(--color-border) / 40%);
+    background: rgb(var(--color-surface));
+  }
+
+  .lg-live-lang,
+  .lg-live-tab {
+    padding: 0.3rem 0.8rem;
+    border: none;
+    background: transparent;
+    color: rgb(var(--color-muted));
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    &.active {
+      color: rgb(var(--color-primary));
+      border-bottom-color: rgb(var(--color-primary));
+    }
+  }
+
+  .lg-live-tab {
+    padding: 0.4rem 1rem;
+    font-size: 0.8rem;
+  }
+
+  .lg-live-preview {
+    padding: 0;
+    background: rgb(var(--color-background));
+  }
+
+  .lg-live-preview-inner {
+    padding: 1rem;
+  }
+}
+
+// The mermaid sub-app host mounts OUTSIDE the body's text flow but
+// inside the diagram canvas — give it a stable block box.
+.lagrange-docs-mermaid {
+  width: 100%;
+  min-height: 120px;
+}
