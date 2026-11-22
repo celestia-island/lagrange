@@ -1,7 +1,15 @@
 allowBuilds:
-  '@parcel/watcher': set this to true or false
+  '@parcel/watcher': true
   esbuild: true
   sass-embedded: true
+# Explicit base is REQUIRED: pnpm 11's release-age gate ignores the
+# exclude list below unless minimumReleaseAge itself is set (the family
+# trap, _ledger/toolchain-pnpm.md).
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
+  # Bare names exempt resolution; the exact pin is double insurance for
+  # same-day pickups (lockfile verification only honours name@version).
+  - '@celestia-island/hikari'
   - '@celestia-island/hikari@0.55.459'
+  - '@celestia-island/tairitsu-host-client'
   - '@celestia-island/tairitsu-host-client@0.1.0'

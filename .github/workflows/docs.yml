@@ -29,10 +29,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # Family toolchain (_ledger/toolchain-pnpm.md): pnpm 11 via
+      # action-setup — bare `corepack enable` resolves a default pnpm
+      # that rejects this workspace's settings (the 11s deploy failure
+      # of the #119 merge), and node rides setup-node at 22.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
-      - run: corepack enable
+          node-version: 22
       # The hikari webui lane: hydration client + Node SSR renderer, then
       # the Rust build consumes them (packages/webui/dist-docs). Without
       # this step the site falls back to the legacy chrome lane.

@@ -652,6 +652,17 @@ a {
         &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     }
 
+    /* The desktop frame locks the body (each region owns its own
+       scroller). Mobile scrolls the DOCUMENT instead — unlock the body
+       too, or touch scrolling freezes outright on real devices: the
+       desktop body carries height:100vh + overflow:hidden, and this
+       block used to free only .layout/.content, leaving the clipped
+       body with nothing scrollable under a finger (headless probes
+       missed it because programmatic window.scrollTo still moved the
+       documentElement). The sticky topbar rides document scroll. */
+    html, body { height: auto; overflow: visible; }
+    body { display: block; }
+
     .layout { display: block; height: auto; overflow: visible; }
 
     .sidebar {
