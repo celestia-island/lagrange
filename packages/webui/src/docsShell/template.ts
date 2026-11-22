@@ -84,9 +84,17 @@ export interface PageTemplateOptions {
 export function pageTemplate(opts: PageTemplateOptions): string {
   const { site, lang, title, url, body, dataJson, assets, base, math } = opts;
   const fullTitle = title === site.title ? title : `${title} · ${site.title}`;
-  const cssLinks = assets.cssFiles
-    .map((f) => `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/${f}`)}">`)
-    .join("\n    ");
+  // The content stylesheet rides along on EVERY page: the body markup is
+  // the Rust renderer's (`.lg-diagram` cards, `.katex` metrics, code and
+  // table chrome), and the hikari bundle's SCSS never styles it. Linked
+  // BEFORE the bundle's own CSS so hikari's tokens win on shared
+  // selectors (round 5 of PR #119).
+  const cssLinks = [
+    `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/theme.css`)}">`,
+    ...assets.cssFiles.map(
+      (f) => `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/${f}`)}">`,
+    ),
+  ].join("\n    ");
   // EVERY asset URL in this template rides the site base — including the
   // KaTeX vendor pair. Root-absolute paths resolve outside a subpath
   // deployment and kill math rendering there (PR #119 round 2/3).

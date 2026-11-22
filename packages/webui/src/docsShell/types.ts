@@ -1,7 +1,7 @@
 // Docs-site page data contract — the shape `lagrange build` embeds into
 // every page (`window.__LAGRANGE_PAGE__`) and the SSR lane feeds into
 // DocsPage. Produced by src/webui_lane.rs (docs-manifest.json); the JSON
-// is embedded per page by scripts/ssr-docs.mjs.
+// is embedded per page by scripts/ssr-docs.ts.
 //
 // KEEP IN SYNC with the Rust emitter: `src/webui_lane.rs` serializes this
 // shape via serde; field renames are breaking changes for cached pages.

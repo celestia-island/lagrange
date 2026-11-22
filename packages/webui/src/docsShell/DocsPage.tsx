@@ -1,5 +1,5 @@
 // The docs page root: the hikari shell around the page body. Mounted by
-// both lanes — scripts/ssr-docs.mjs (build-time SSR, the no-JS baseline)
+// both lanes — scripts/ssr-docs.ts (build-time SSR, the no-JS baseline)
 // and docsMain.ts (browser hydration over that HTML).
 import { defineComponent, type PropType } from "vue";
 import type { DocsPageData } from "./types";

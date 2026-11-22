@@ -1,4 +1,4 @@
-// Docs-site hydration entry. The SSR lane (ssr-docs.mjs) emits the full
+// Docs-site hydration entry. The SSR lane (scripts/ssr-docs.ts) emits the full
 // shell + body as static HTML; this script hydrates the Vue shell over
 // it and upgrades the body's interactive blocks through the
 // hikari/tairitsu system:

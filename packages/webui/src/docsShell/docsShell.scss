@@ -24,7 +24,12 @@
 }
 
 .lagrange-docs-search-input {
-  width: 200px;
+  /* Clamped: the header's end wing clips (overflow: hidden) once the
+     start wing's min-content eats the row, and a fixed 200px field plus
+     the two icon buttons overflowed narrow viewports (round 5). */
+  width: clamp(120px, 22vw, 200px);
+  min-width: 0;
+  padding-inline-end: 1.6rem;
   height: 30px;
   padding: 0 0.6rem;
   border-radius: var(--hk-radius-control, 8px);
@@ -37,6 +42,39 @@
   &:focus-visible {
     border-color: rgb(var(--hk-color-primary, 60 120 220));
   }
+}
+
+.lagrange-docs-search-clear {
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 1;
+    background: color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.1), transparent);
+  }
+}
+
+.lagrange-docs-search-error {
+  padding: 0.6rem 0.7rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
 .lagrange-docs-search-results {

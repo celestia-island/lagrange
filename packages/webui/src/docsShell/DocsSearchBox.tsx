@@ -1,8 +1,13 @@
 // The header's search field — the docs face of the family's top-right
-// action area. Queries the build's sharded static index (DocsSearch)
-// in the CURRENT page language and renders the hits as plain anchors
-// (real links, open-in-new-tab works). The panel is position-anchored
-// under the input, dismissed by Escape / picking / blurring.
+// action area. Queries the build's sharded static index (DocsSearch) in
+// the CURRENT page language and renders the hits as plain anchors (real
+// links, open-in-new-tab works).
+//
+// Dismissal: Escape, an outside click, or blurring the field. Every one
+// of those routes through `close()`, and the async query path has an
+// explicit error state — a rejected fetch or a corrupt shard must not
+// leave the panel frozen on stale results or surface as an unhandled
+// rejection (PR #119 round 5).
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type PropType } from "vue";
 import { useI18n } from "@celestia-island/hikari";
 import type { DocsSiteMeta } from "./types";
@@ -19,32 +24,67 @@ export const DocsSearchBox = defineComponent({
     const query = ref("");
     const hits = ref<Hit[] | null>(null);
     const open = ref(false);
+    /** A query was attempted and the index could not be read. */
+    const failed = ref(false);
+    /** A query is in flight (kept out of the panel: the previous hits
+     * stay visible until the new answer lands). */
+    const busy = ref(false);
     const rootRef = ref<HTMLElement | null>(null);
+    const inputRef = ref<HTMLInputElement | null>(null);
     const search = computed(() => new DocsSearch(props.site, fetch));
 
     let seq = 0;
+
+    function close() {
+      open.value = false;
+    }
+
+    function clear() {
+      query.value = "";
+      hits.value = null;
+      failed.value = false;
+      seq += 1; // invalidate any in-flight query
+      close();
+      inputRef.value?.focus();
+    }
+
     async function run() {
       // Bump the token on EVERY run, including the clear path: a query
-      // that resolves after the box was emptied must not repopulate it
-      // (round 3: the early return left `seq` stale and stale hits
-      // reopened the panel).
+      // that resolves after the box was emptied must not repopulate it.
       const token = (seq += 1);
+      failed.value = false;
       if (!query.value.trim()) {
         hits.value = null;
-        open.value = false;
+        close();
         return;
       }
-      const results = await search.value.query(query.value, props.lang);
-      if (token !== seq) return; // a newer keystroke already answered
-      hits.value = results;
-      open.value = true;
+      busy.value = true;
+      try {
+        const results = await search.value.query(query.value, props.lang);
+        if (token !== seq) return; // a newer keystroke already answered
+        hits.value = results;
+        open.value = true;
+      } catch {
+        if (token !== seq) return;
+        hits.value = [];
+        failed.value = true;
+        open.value = true;
+      } finally {
+        if (token === seq) busy.value = false;
+      }
     }
 
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") open.value = false;
+      if (e.key === "Escape") close();
     }
     function onDocClick(e: MouseEvent) {
-      if (rootRef.value && !rootRef.value.contains(e.target as Node)) open.value = false;
+      if (rootRef.value && !rootRef.value.contains(e.target as Node)) close();
+    }
+    function onFocusOut(e: FocusEvent) {
+      // Blur to anywhere outside the field's own box dismisses.
+      const next = e.relatedTarget as Node | null;
+      if (next && rootRef.value?.contains(next)) return;
+      close();
     }
     onMounted(() => {
       document.addEventListener("click", onDocClick);
@@ -56,11 +96,17 @@ export const DocsSearchBox = defineComponent({
     });
 
     return () => (
-      <span class="lagrange-docs-search" ref={rootRef}>
+      <span
+        class="lagrange-docs-search"
+        ref={rootRef}
+        data-open={open.value ? "true" : "false"}
+      >
         <input
           class="lagrange-docs-search-input"
+          ref={inputRef}
           type="search"
           placeholder={t("lagrange::docs.search", "Search…")}
+          aria-label={t("lagrange::docs.search", "Search…")}
           autocomplete="off"
           spellcheck={false}
           value={query.value}
@@ -71,15 +117,32 @@ export const DocsSearchBox = defineComponent({
           onFocus={() => {
             if (hits.value) open.value = true;
           }}
+          onFocusout={onFocusOut}
         />
-        {open.value && hits.value && (
+        {query.value && (
+          <button
+            class="lagrange-docs-search-clear"
+            type="button"
+            aria-label={t("lagrange::docs.clearSearch", "Clear search")}
+            title={t("lagrange::docs.clearSearch", "Clear search")}
+            onClick={clear}
+          >
+            ×
+          </button>
+        )}
+        {open.value && (hits.value || failed.value) && (
           <div class="lagrange-docs-search-results" role="listbox">
-            {hits.value.length === 0 && (
+            {failed.value && (
+              <div class="lagrange-docs-search-error" role="status">
+                {t("lagrange::docs.searchFailed", "Search is unavailable right now")}
+              </div>
+            )}
+            {!failed.value && hits.value?.length === 0 && (
               <div class="lagrange-docs-search-empty">
                 {t("lagrange::docs.searchNoResults", "No results")}
               </div>
             )}
-            {hits.value.map((hit) => (
+            {(hits.value ?? []).map((hit) => (
               <a class="lagrange-docs-search-hit" key={hit.url} href={hit.url}>
                 <span class="lagrange-docs-search-hit-title">{hit.title}</span>
                 {hit.heading && <span class="lagrange-docs-search-hit-heading">{hit.heading}</span>}

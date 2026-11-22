@@ -113,10 +113,18 @@ export class DocsSearch {
     }
   }
 
-  /** Query in `lang`: hits from that language's translations only. */
+  /**
+   * Query in `lang`: hits from that language's translations only.
+   *
+   * THROWS when the index itself cannot be read — "the index is missing
+   * or corrupt" and "nothing matched" are different answers and the UI
+   * must be able to say which (PR #119 round 5: swallowing the failure
+   * here made the search box's error state unreachable). A loaded index
+   * with no postings still answers `[]`.
+   */
   async query(query: string, lang: string): Promise<Hit[]> {
     const meta = await this.loadMeta();
-    if (!meta) return [];
+    if (!meta) throw new Error("search index unavailable");
     const tokens = tokenizeQuery(query);
     if (tokens.length === 0) return [];
     const langDocs = new Map<number, DocMeta>();

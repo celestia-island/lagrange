@@ -106,6 +106,28 @@ describe("LagrangeDocsShell", () => {
     expect(menu?.textContent).toContain("Guides");
   });
 
+  // Round 5 M17: blanking activeKey left every row unhighlighted and the
+  // suite stayed green — the real SSR HTML carries data-active and
+  // nothing asserted it.
+  it("highlights the sidebar row of the page being viewed", async () => {
+    const { root } = await mount(LagrangeDocsShell, { page: makePage() });
+    const active = [...root.querySelectorAll<HTMLElement>(".hk-menu-sidebar-row")].filter(
+      (el) => el.getAttribute("data-active") === "true",
+    );
+    expect(active, "exactly one row is active").toHaveLength(1);
+    expect(active[0].textContent).toContain("Architecture");
+    expect(active[0].textContent).not.toContain("Quick start");
+  });
+
+  it("highlights nothing when the page is not in the sidebar tree", async () => {
+    const page = makePage({ path: "orphan/not-in-nav.html" });
+    const { root } = await mount(LagrangeDocsShell, { page });
+    const active = [...root.querySelectorAll<HTMLElement>(".hk-menu-sidebar-row")].filter(
+      (el) => el.getAttribute("data-active") === "true",
+    );
+    expect(active).toHaveLength(0);
+  });
+
   it("renders the single-band footer with the idle static status line", async () => {
     const { root } = await mount(LagrangeDocsShell, { page: makePage() });
     const footer = root.querySelector(".lagrange-docs-footer");

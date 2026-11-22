@@ -69,6 +69,25 @@ describe("pageTemplate asset URLs", () => {
     expect(html).not.toContain('src="/assets/vendor/katex');
   });
 
+  // Round 5 S2: the body markup is the Rust renderer's, so the content
+  // stylesheet must ride every page (a dropped link leaves `.lg-diagram`
+  // cards and every KaTeX formula unstyled).
+  it("links the content stylesheet on every page, before the bundle CSS", () => {
+    const html = render({ base: "/repo" });
+    expect(html).toContain('href="/repo/assets/docs/theme.css"');
+    const themeAt = html.indexOf("theme.css");
+    const bundleAt = html.indexOf("docsMain-abc.css");
+    expect(themeAt).toBeGreaterThan(-1);
+    expect(bundleAt).toBeGreaterThan(-1);
+    expect(themeAt, "content CSS first so hikari tokens win shared selectors").toBeLessThan(
+      bundleAt,
+    );
+    // …and on a math page too.
+    expect(render({ base: "/repo", math: true })).toContain(
+      'href="/repo/assets/docs/theme.css"',
+    );
+  });
+
   it("omits the KaTeX pair entirely on non-math pages", () => {
     expect(render({ math: false })).not.toContain("katex.min");
   });

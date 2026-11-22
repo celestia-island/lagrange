@@ -12,6 +12,8 @@ export const DOCS_UI_KEYS = [
   "lagrange::docs.navTitle",
   "lagrange::docs.language",
   "lagrange::docs.theme",
+  "lagrange::docs.clearSearch",
+  "lagrange::docs.searchFailed",
 ] as const;
 
 const TABLES: Record<string, Record<string, string>> = {
@@ -21,6 +23,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "Contents",
     "lagrange::docs.language": "Language",
     "lagrange::docs.theme": "Theme",
+    "lagrange::docs.clearSearch": "Clear search",
+    "lagrange::docs.searchFailed": "Search is unavailable right now",
   },
   "zh-Hans": {
     "lagrange::docs.search": "搜索…",
@@ -28,6 +32,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "目录",
     "lagrange::docs.language": "语言",
     "lagrange::docs.theme": "主题",
+    "lagrange::docs.clearSearch": "清除搜索",
+    "lagrange::docs.searchFailed": "搜索暂不可用",
   },
   "zh-Hant": {
     "lagrange::docs.search": "搜尋…",
@@ -35,6 +41,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "目錄",
     "lagrange::docs.language": "語言",
     "lagrange::docs.theme": "主題",
+    "lagrange::docs.clearSearch": "清除搜尋",
+    "lagrange::docs.searchFailed": "搜尋暫時無法使用",
   },
   ja: {
     "lagrange::docs.search": "検索…",
@@ -42,6 +50,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "目次",
     "lagrange::docs.language": "言語",
     "lagrange::docs.theme": "テーマ",
+    "lagrange::docs.clearSearch": "検索をクリア",
+    "lagrange::docs.searchFailed": "検索は現在利用できません",
   },
   ko: {
     "lagrange::docs.search": "검색…",
@@ -49,6 +59,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "목차",
     "lagrange::docs.language": "언어",
     "lagrange::docs.theme": "테마",
+    "lagrange::docs.clearSearch": "검색 지우기",
+    "lagrange::docs.searchFailed": "검색을 사용할 수 없습니다",
   },
   fr: {
     "lagrange::docs.search": "Rechercher…",
@@ -56,6 +68,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "Sommaire",
     "lagrange::docs.language": "Langue",
     "lagrange::docs.theme": "Thème",
+    "lagrange::docs.clearSearch": "Effacer la recherche",
+    "lagrange::docs.searchFailed": "La recherche est indisponible",
   },
   es: {
     "lagrange::docs.search": "Buscar…",
@@ -63,6 +77,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "Índice",
     "lagrange::docs.language": "Idioma",
     "lagrange::docs.theme": "Tema",
+    "lagrange::docs.clearSearch": "Borrar búsqueda",
+    "lagrange::docs.searchFailed": "La búsqueda no está disponible",
   },
   ru: {
     "lagrange::docs.search": "Поиск…",
@@ -70,6 +86,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "Содержание",
     "lagrange::docs.language": "Язык",
     "lagrange::docs.theme": "Оформление",
+    "lagrange::docs.clearSearch": "Очистить поиск",
+    "lagrange::docs.searchFailed": "Поиск сейчас недоступен",
   },
   ar: {
     "lagrange::docs.search": "بحث…",
@@ -77,6 +95,8 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.navTitle": "المحتويات",
     "lagrange::docs.language": "اللغة",
     "lagrange::docs.theme": "المظهر",
+    "lagrange::docs.clearSearch": "مسح البحث",
+    "lagrange::docs.searchFailed": "البحث غير متاح الآن",
   },
 };
 
