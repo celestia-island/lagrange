@@ -100,6 +100,7 @@ export const DocsSearchBox = defineComponent({
         class="lagrange-docs-search"
         ref={rootRef}
         data-open={open.value ? "true" : "false"}
+        data-busy={busy.value ? "true" : "false"}
       >
         <input
           class="lagrange-docs-search-input"
@@ -129,6 +130,14 @@ export const DocsSearchBox = defineComponent({
           >
             ×
           </button>
+        )}
+        {/* In-flight row: its OWN surface, so it never reads as the
+            results panel (the "no empty panel flash" contract still
+            holds — that assertion is what caught this overlap). */}
+        {busy.value && !hits.value && !failed.value && (
+          <div class="lagrange-docs-search-busy" role="status">
+            {t("lagrange::docs.searchBusy", "Searching…")}
+          </div>
         )}
         {open.value && (hits.value || failed.value) && (
           <div class="lagrange-docs-search-results" role="listbox">

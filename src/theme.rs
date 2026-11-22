@@ -251,3 +251,52 @@ fn theme_overrides(theme: &ThemeConfig) -> String {
     }
     s
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The legacy sheet must keep its `hi-` aliases: the legacy pages
+    /// render hikari's `hk-code-highlight-*` markup under lagrange's `hi-`
+    /// class names, and dropping the bridge left them unstyled with every
+    /// gate green (PR #119 round 8, M37).
+    #[test]
+    fn legacy_sheet_carries_the_hi_code_highlight_aliases() {
+        let css = build_css(&ThemeConfig::default());
+        assert!(
+            css.contains(".hk-code-highlight-code"),
+            "the registry rule must be present"
+        );
+        // A RULE, not a bare mention: layout.scss carries
+        // `pre:not(.hi-code-highlight-code)`, which satisfied a weaker
+        // `.contains` check even with the alias bridge deleted (round 8
+        // follow-up — the vacuous pin was found re-running M37).
+        assert!(
+            css.contains(".hi-code-highlight-content {"),
+            "the hi- alias RULES must be emitted for lagrange's renderer markup"
+        );
+        assert!(
+            css.contains(".hi-code-highlight-copy {"),
+            "the copy button's alias rule must be present too"
+        );
+    }
+
+    /// The webui lane's sheet is the COMPONENT half only — the legacy
+    /// page stylesheet's global rules must never ride along (round 6's S1).
+    #[test]
+    fn webui_sheet_is_component_scoped_only() {
+        let css = build_webui_css();
+        assert!(css.starts_with(":root"), "the token bridge leads");
+        assert!(
+            css.contains("--hi-color-primary: rgb(var(--color-primary))"),
+            "the bridge maps onto hikari's tokens"
+        );
+        assert!(css.contains(".hi-code-highlight-code"), "aliases present");
+        assert!(!css.contains(".lg-topbar"), "no legacy page chrome");
+        assert!(!css.contains("body {"), "no page-global rules");
+        assert!(
+            !css.contains(".content {"),
+            "no legacy content column rules"
+        );
+    }
+}

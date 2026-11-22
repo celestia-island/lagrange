@@ -93,6 +93,63 @@ function renderMathBoxes(): void {
   }
 }
 
+/**
+ * Copy `text`, mirroring tairitsu's `ClipboardOps::copy_to_clipboard`
+ * (navigator.clipboard, then the hidden-textarea execCommand fallback).
+ * Returns false only when both paths are unavailable — a caller may then
+ * surface failure instead of silently doing nothing.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy path.
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(area);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Code-block copy buttons. The BODY is the Rust renderer's markup
+ * (`button.hi-code-highlight-copy[data-copy]`); the legacy lane wired
+ * these from its inline runtime, which the webui lane never ships — so
+ * without this handler every copy button on the site was inert (round 8
+ * of PR #119, measured in Chrome).
+ *
+ * Delegated, so it keeps working for blocks added later, and it only
+ * paints the `copied` state when the copy actually succeeded.
+ */
+export function installCodeCopy(): void {
+  document.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest?.(
+      "button.hi-code-highlight-copy[data-copy]",
+    ) as HTMLElement | null;
+    if (!button) return;
+    const text = button.getAttribute("data-copy") ?? "";
+    void copyText(text).then((ok) => {
+      button.classList.toggle("copied", ok);
+      if (!ok) return;
+      window.setTimeout(() => button.classList.remove("copied"), 1500);
+    });
+  });
+}
+
 /** The segmented preview/source toggle (delegated — the body is server
  * HTML that never re-renders through Vue). */
 function installDiagramToggle(): void {
@@ -131,6 +188,7 @@ async function boot(): Promise<void> {
 
   // Body upgrades run after hydration settles into the DOM.
   installDiagramToggle();
+  installCodeCopy();
   mountMermaidBoxes();
   renderMathBoxes();
 }

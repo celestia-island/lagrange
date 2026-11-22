@@ -234,9 +234,6 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                 href,
             });
         }
-        // The webui lane's sidebar tree: the SAME post-fallback nav the
-        // legacy sidebar renders, normalized to lang-relative hrefs.
-        webui_navs.insert(lang.clone(), to_manifest_nav(&nav));
         let nav = if nav.is_empty() && lang != &default_lang {
             let fallback = opts.src.join(&default_lang).join("SUMMARY.md");
             let fallback_nav = parse_summary(&fallback).unwrap_or_default();
@@ -249,6 +246,11 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         } else {
             nav
         };
+        // The webui lane's sidebar tree: the SAME POST-FALLBACK nav the
+        // legacy sidebar renders (a language without its own SUMMARY.md
+        // inherits the default language's tree — exporting before this
+        // point gave it an empty sidebar; round 8 of PR #119).
+        webui_navs.insert(lang.clone(), to_manifest_nav(&nav));
 
         for md_path in walk_md(&lang_dir)? {
             if md_path.file_name().is_some_and(|f| f == "SUMMARY.md") {
@@ -1755,6 +1757,119 @@ fn html_escape_text(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Round 8 of PR #119 (S2): a language without its own SUMMARY.md
+    /// inherits the default language's tree in the legacy sidebar. The
+    /// manifest must export the SAME post-fallback tree — exporting
+    /// before the fallback left that language with an empty sidebar.
+    #[test]
+    fn manifest_nav_inherits_the_default_language_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let out = dir.path().join("out");
+        // en has a SUMMARY; ja has pages but no SUMMARY.md.
+        std::fs::create_dir_all(src.join("en")).unwrap();
+        std::fs::create_dir_all(src.join("ja")).unwrap();
+        std::fs::write(
+            src.join("en").join("SUMMARY.md"),
+            "# Summary\n\n- [Quick Start](./quickstart.md)\n- [Architecture](./architecture.md)\n",
+        )
+        .unwrap();
+        for lang in ["en", "ja"] {
+            std::fs::write(
+                src.join(lang).join("quickstart.md"),
+                "# Quick start\n\nbody\n",
+            )
+            .unwrap();
+            std::fs::write(
+                src.join(lang).join("architecture.md"),
+                "# Architecture\n\nbody\n",
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            src.join("lagrange.toml"),
+            "[site]\ntitle = \"T\"\n[languages]\ndefault = \"en\"\norder = [\"en\", \"ja\"]\n",
+        )
+        .unwrap();
+
+        build(&BuildOptions {
+            src: src.clone(),
+            out: out.clone(),
+            site_url: None,
+            default_lang: Some("en".to_string()),
+        })
+        .expect("build");
+
+        let raw = std::fs::read_to_string(out.join("docs-manifest.json")).expect("manifest");
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let ja_nav = json["navs"]["ja"].as_array().expect("ja nav");
+        let ja_leaves = ja_nav[0]["children"].as_array().expect("ja leaves");
+        assert_eq!(
+            ja_leaves.len(),
+            2,
+            "ja inherits en's two-entry SUMMARY instead of an empty sidebar: {raw}"
+        );
+        assert_eq!(ja_leaves[0]["title"], "Quick Start");
+        assert_eq!(ja_leaves[0]["href"], "quickstart.html");
+        // Both languages export the same post-fallback tree.
+        assert_eq!(json["navs"]["en"], json["navs"]["ja"]);
+    }
+
+    /// Round 8 (S3/M36/M37): the lane's component sheet is a build
+    /// artifact nothing else references — without this pin, dropping the
+    /// write or the `--hi-*` bridge left every gate green while the
+    /// emitted pages linked a 404 stylesheet.
+    #[test]
+    fn build_emits_the_hikari_component_sheet_for_the_webui_lane() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(src.join("en")).unwrap();
+        std::fs::write(
+            src.join("en").join("index.md"),
+            "# Home\n\n```rust\nfn main() {}\n```\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join("lagrange.toml"),
+            "[site]\ntitle = \"T\"\n[languages]\ndefault = \"en\"\norder = [\"en\"]\n",
+        )
+        .unwrap();
+
+        build(&BuildOptions {
+            src,
+            out: out.clone(),
+            site_url: None,
+            default_lang: Some("en".to_string()),
+        })
+        .expect("build");
+
+        let css_path = out
+            .join("assets")
+            .join("docs")
+            .join("hikari-components.css");
+        let css = std::fs::read_to_string(&css_path)
+            .unwrap_or_else(|e| panic!("component sheet missing at {}: {e}", css_path.display()));
+        assert!(!css.is_empty(), "component sheet is empty");
+        assert!(
+            css.starts_with(":root"),
+            "the --hi-* bridge must lead the sheet: {}",
+            &css[..css.len().min(80)]
+        );
+        assert!(
+            css.contains("--hi-color-primary: rgb(var(--color-primary))"),
+            "the bridge must map onto hikari's own token, not the legacy palette"
+        );
+        assert!(
+            css.contains(".hi-code-highlight-code"),
+            "the hi- aliases must be emitted (code blocks are unstyled without them)"
+        );
+        assert!(
+            !css.contains("body {") && !css.contains("html, body"),
+            "the component sheet must never carry page-global rules"
+        );
+    }
 
     #[test]
     fn rewrite_nav_readme_to_index() {

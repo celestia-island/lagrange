@@ -235,6 +235,29 @@ describe("DocsSearchBox", () => {
     expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
   });
 
+  // Round 8 M35: `busy` was written and never read — dead state no test
+  // could catch. It now drives the in-flight row and the data-busy flag.
+  it("shows the in-flight state while a query resolves", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        await new Promise((r) => setTimeout(r, 40));
+        return { ok: true, json: async () => defaultBody(url) };
+      }),
+    );
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
+    expect(m.root.querySelector(".lagrange-docs-search")?.textContent).toContain("Searching");
+    await new Promise((r) => setTimeout(r, 90));
+    await nextTick();
+    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+  });
+
   it("hides the clear affordance on an empty field", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;

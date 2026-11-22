@@ -14,6 +14,7 @@ export const DOCS_UI_KEYS = [
   "lagrange::docs.theme",
   "lagrange::docs.clearSearch",
   "lagrange::docs.searchFailed",
+  "lagrange::docs.searchBusy",
 ] as const;
 
 const TABLES: Record<string, Record<string, string>> = {
@@ -25,6 +26,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "Theme",
     "lagrange::docs.clearSearch": "Clear search",
     "lagrange::docs.searchFailed": "Search is unavailable right now",
+    "lagrange::docs.searchBusy": "Searching…",
   },
   "zh-Hans": {
     "lagrange::docs.search": "搜索…",
@@ -34,6 +36,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "主题",
     "lagrange::docs.clearSearch": "清除搜索",
     "lagrange::docs.searchFailed": "搜索暂不可用",
+    "lagrange::docs.searchBusy": "搜索中…",
   },
   "zh-Hant": {
     "lagrange::docs.search": "搜尋…",
@@ -43,6 +46,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "主題",
     "lagrange::docs.clearSearch": "清除搜尋",
     "lagrange::docs.searchFailed": "搜尋暫時無法使用",
+    "lagrange::docs.searchBusy": "搜尋中…",
   },
   ja: {
     "lagrange::docs.search": "検索…",
@@ -52,6 +56,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "テーマ",
     "lagrange::docs.clearSearch": "検索をクリア",
     "lagrange::docs.searchFailed": "検索は現在利用できません",
+    "lagrange::docs.searchBusy": "検索中…",
   },
   ko: {
     "lagrange::docs.search": "검색…",
@@ -61,6 +66,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "테마",
     "lagrange::docs.clearSearch": "검색 지우기",
     "lagrange::docs.searchFailed": "검색을 사용할 수 없습니다",
+    "lagrange::docs.searchBusy": "검색 중…",
   },
   fr: {
     "lagrange::docs.search": "Rechercher…",
@@ -70,6 +76,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "Thème",
     "lagrange::docs.clearSearch": "Effacer la recherche",
     "lagrange::docs.searchFailed": "La recherche est indisponible",
+    "lagrange::docs.searchBusy": "Recherche…",
   },
   es: {
     "lagrange::docs.search": "Buscar…",
@@ -79,6 +86,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "Tema",
     "lagrange::docs.clearSearch": "Borrar búsqueda",
     "lagrange::docs.searchFailed": "La búsqueda no está disponible",
+    "lagrange::docs.searchBusy": "Buscando…",
   },
   ru: {
     "lagrange::docs.search": "Поиск…",
@@ -88,6 +96,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "Оформление",
     "lagrange::docs.clearSearch": "Очистить поиск",
     "lagrange::docs.searchFailed": "Поиск сейчас недоступен",
+    "lagrange::docs.searchBusy": "Поиск…",
   },
   ar: {
     "lagrange::docs.search": "بحث…",
@@ -97,6 +106,7 @@ const TABLES: Record<string, Record<string, string>> = {
     "lagrange::docs.theme": "المظهر",
     "lagrange::docs.clearSearch": "مسح البحث",
     "lagrange::docs.searchFailed": "البحث غير متاح الآن",
+    "lagrange::docs.searchBusy": "جارٍ البحث…",
   },
 };
 

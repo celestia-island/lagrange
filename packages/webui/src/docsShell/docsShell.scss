@@ -97,6 +97,19 @@ body {
   }
 }
 
+.lagrange-docs-search-busy {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--hk-radius-surface, 10px);
+  background: rgb(var(--hk-color-surface, 255 255 255));
+  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.12), transparent);
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
 .lagrange-docs-search-error {
   padding: 0.6rem 0.7rem;
   font-size: 0.85rem;
