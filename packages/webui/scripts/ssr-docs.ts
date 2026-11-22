@@ -29,6 +29,8 @@ import { installDocsLocale } from "../src/docsShell/i18n";
 import { defaultRedirectUrl, redirectStub } from "../src/docsShell/redirect";
 import {
   buildPageData,
+  buildRedirectTargets,
+  buildRootRedirectTargets,
   pageTemplate,
   resolveClientAssetsFrom,
   type ClientAssets,
@@ -106,10 +108,7 @@ async function main(): Promise<void> {
     }
 
     // The legacy flat page becomes a language-negotiated redirect stub.
-    const langUrls = Object.keys(page.langs).map((code) => ({
-      code,
-      url: `${base}/${code}/${page.path}`,
-    }));
+    const langUrls = buildRedirectTargets(manifest, page.path);
     await mkdir(dirname(join(args.out, page.path)), { recursive: true });
     await writeFile(join(args.out, page.path), redirectStub({
       defaultUrl: defaultRedirectUrl(langUrls, manifest.site.defaultLang),
@@ -118,10 +117,7 @@ async function main(): Promise<void> {
   }
 
   // Root index: negotiate over language roots.
-  const rootLangs = manifest.site.langs.map((l) => ({
-    code: l.code,
-    url: `${base}/${l.code}/`,
-  }));
+  const rootLangs = buildRootRedirectTargets(manifest);
   await writeFile(join(args.out, "index.html"), redirectStub({
     defaultUrl: defaultRedirectUrl(rootLangs, manifest.site.defaultLang),
     langUrls: rootLangs,

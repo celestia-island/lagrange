@@ -32,7 +32,8 @@ function fixture(): void {
     markdown: "",
     html: '<div class="lg-diagram" data-diagram-kind="mermaid" data-diagram-rendered="0">'
       + '<div class="lg-diagram-raw"><pre><code>graph TD; A--&gt;B</code></pre></div>'
-      + '<div class="lg-diagram-canvas"></div></div>',
+      + '<div class="lg-diagram-canvas"></div></div>'
+      + '<button class="hi-code-highlight-copy" data-copy="cargo build">copy</button>',
   };
   document.body.innerHTML =
     `<div id="app"><div class="s-admin-shell"><p>server html</p></div></div>`
@@ -43,6 +44,13 @@ describe("docsMain boot", () => {
   it("boots hydration without throwing and upgrades mermaid boxes", { timeout: 15000 }, async () => {
     fixture();
     vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
+    const writes: string[] = [];
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: async (text: string) => { writes.push(text); } },
+      language: "en",
+      languages: ["en"],
+      userAgent: "vitest",
+    });
     await boot();
     const shell = document.querySelector(".s-admin-shell");
     expect(shell).toBeTruthy();
@@ -51,6 +59,17 @@ describe("docsMain boot", () => {
     const box = document.querySelector(".lg-diagram") as HTMLElement | null;
     expect(box?.getAttribute("data-diagram-rendered")).toBe("1");
     expect(box?.querySelector(".lagrange-docs-mermaid")).toBeTruthy();
+    // Round 9 M40: boot() must INSTALL the copy handler — a direct unit
+    // call of installCodeCopy pinned the helper but not the wiring, and
+    // removing the call left every code-block copy button dead.
+    const copyBtn = document.querySelector<HTMLElement>(
+      "button.hi-code-highlight-copy[data-copy]",
+    );
+    expect(copyBtn, "the fixture's copy button must render").toBeTruthy();
+    copyBtn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(writes).toEqual(["cargo build"]);
+    expect(copyBtn!.classList.contains("copied")).toBe(true);
     vi.unstubAllGlobals();
   });
 });

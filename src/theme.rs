@@ -40,7 +40,7 @@ fn webui_component_css() -> String {
     let mut registry = StyleRegistry::default();
     hikari_components::basic::link::LinkComponent::register(&mut registry);
     hikari_components::production::code_highlight::CodeHighlightComponent::register(&mut registry);
-    // `.hk-tag` / `.hi-tag-code` chips (inline code spans, frontmatter tags).
+    // `.hk-tag` chips (inline code spans, frontmatter tags).
     hikari_components::display::tag::TagComponent::register(&mut registry);
 
     let all = registry.get_all();
@@ -54,16 +54,11 @@ fn webui_component_css() -> String {
 /// emits `hi-code-highlight-*` (render.rs). Duplicate every such rule under
 /// the `hi-` alias so the shipped DOM is styled without touching hikari's
 /// published CSS. Both the legacy and the webui component sheets share it.
-/// hikari's stylesheet styles `.hk-code-highlight-*`; lagrange's renderer
-/// emits `hi-code-highlight-*` (render.rs). Duplicate every such rule under
-/// the `hi-` alias so the shipped DOM is styled without touching hikari's
-/// published CSS. Both the legacy component sheet and the webui lane's
-/// share this bridge — one implementation, no drift.
+///
+/// Rules are split by brace depth, skipping comments and strings — a naive
+/// `rfind('}')` boundary scan breaks on comment bodies containing braces
+/// (e.g. `pre { margin-block: 1em }`), orphaning the following rule.
 fn code_highlight_alias(css: &str) -> String {
-    //
-    // Rules are split by brace depth, skipping comments and strings — a naive
-    // `rfind('}')` boundary scan breaks on comment bodies containing braces
-    // (e.g. `pre { margin-block: 1em }`), orphaning the following rule.
     let mut bridge = String::new();
     {
         let mut depth: i32 = 0;

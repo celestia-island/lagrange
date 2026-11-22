@@ -10,6 +10,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPageData,
+  buildRedirectTargets,
+  buildRootRedirectTargets,
   escapeJsonForScript,
   pageTemplate,
   resolveClientAssetsFrom,
@@ -161,5 +163,39 @@ describe("buildPageData", () => {
     ]);
     expect(data.title).toBe("甲");
     expect(data.renderMode).toBe("html");
+  });
+});
+
+describe("redirect target assembly (round 9 M43)", () => {
+  const manifest: Manifest = {
+    site: site({ base: "/repo", defaultLang: "en" }),
+    pages: [
+      {
+        path: "guides/a.html",
+        langs: {
+          en: { title: "A", html: "<p>x</p>", math: false },
+          "zh-Hans": { title: "甲", html: "<p>甲</p>", math: false },
+        },
+      },
+    ],
+    navs: {},
+  };
+
+  it("builds one target per language the page exists in", () => {
+    expect(buildRedirectTargets(manifest, "guides/a.html")).toEqual([
+      { code: "en", url: "/repo/en/guides/a.html" },
+      { code: "zh-Hans", url: "/repo/zh-Hans/guides/a.html" },
+    ]);
+  });
+
+  it("an empty page answers no targets (the stub then lands on default)", () => {
+    expect(buildRedirectTargets(manifest, "nope.html")).toEqual([]);
+  });
+
+  it("the root index negotiates over every configured language", () => {
+    const targets = buildRootRedirectTargets(manifest);
+    expect(targets.map((t) => t.code)).toEqual(["en", "zh-Hans"]);
+    expect(targets[0].url).toBe("/repo/en/");
+    expect(targets[1].url).toBe("/repo/zh-Hans/");
   });
 });

@@ -114,6 +114,11 @@ pub struct BuildStatus {
     pub langs: Vec<String>,
     pub missing_translations: Vec<MissingTranslation>,
     pub broken_links: Vec<BrokenLink>,
+    /// Which chrome lane produced the emitted pages (round 9 of PR #119:
+    /// the webui lane's fallback used to be unobservable — `ok:true`
+    /// shipped while every page silently kept the legacy chrome).
+    /// `webui` = the hikari component tree; `legacy` = the Rust fallback.
+    pub lane: String,
 }
 
 /// Build the whole site.
@@ -567,7 +572,7 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     .context("write assets/docs/hikari-components.css")?;
 
     crate::webui_lane::emit_manifest(&opts.out, &manifest_inputs)?;
-    crate::webui_lane::run(&opts.out)?;
+    let webui_lane_ran = crate::webui_lane::run(&opts.out)?;
 
     // ── 4b. Diagnostics + build record. Missing translations come from the
     //        assembled knowledge (doc → translations vs configured langs);
@@ -618,6 +623,11 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         langs: langs.clone(),
         missing_translations,
         broken_links: broken_links.clone(),
+        lane: if webui_lane_ran {
+            "webui".to_string()
+        } else {
+            "legacy".to_string()
+        },
     };
     write_build_status(&opts.out, &status)?;
     if !status.broken_links.is_empty() {
@@ -864,6 +874,7 @@ pub fn build_with_status(opts: &BuildOptions) -> Result<()> {
                 langs: Vec::new(),
                 missing_translations: Vec::new(),
                 broken_links: Vec::new(),
+                lane: "legacy".to_string(),
             };
             // The build may have bailed before even creating the output
             // dir (e.g. "no language directories"); the record must land
@@ -1816,6 +1827,45 @@ mod tests {
         assert_eq!(json["navs"]["en"], json["navs"]["ja"]);
     }
 
+    /// Round 9 (S2): the emitted lane must be OBSERVABLE — `run()`'s
+    /// result feeds BuildStatus so a silent fallback can't ship as
+    /// `ok:true` with stale chrome. This fixture has no webui build, so
+    /// the legacy value is pinned here; the integration test (the repo's
+    /// own docs build, which DOES have dist-docs in this worktree) pins
+    /// the webui value end to end.
+    #[test]
+    fn build_status_records_the_legacy_lane_when_the_webui_is_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(src.join("en")).unwrap();
+        std::fs::write(src.join("en").join("index.md"), "# Home\n\nbody\n").unwrap();
+        std::fs::write(
+            src.join("lagrange.toml"),
+            "[site]\ntitle = \"T\"\n[languages]\ndefault = \"en\"\norder = [\"en\"]\n",
+        )
+        .unwrap();
+        // Run from a cwd where ./packages/webui cannot resolve and no
+        // override is set — the true fallback posture.
+        let cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let result = build(&BuildOptions {
+            src: src.clone(),
+            out: out.clone(),
+            site_url: None,
+            default_lang: Some("en".to_string()),
+        });
+        std::env::set_current_dir(cwd).unwrap();
+        result.expect("build");
+
+        let raw = std::fs::read_to_string(out.join("build_status.json")).expect("status");
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            json["lane"], "legacy",
+            "without a webui build the status must say so: {raw}"
+        );
+    }
+
     /// Round 8 (S3/M36/M37): the lane's component sheet is a build
     /// artifact nothing else references — without this pin, dropping the
     /// write or the `--hi-*` bridge left every gate green while the
@@ -1865,9 +1915,23 @@ mod tests {
             css.contains(".hi-code-highlight-code"),
             "the hi- aliases must be emitted (code blocks are unstyled without them)"
         );
+        // Anchored, not substring: descendant selectors may legitimately
+        // contain the substring `body {` inside a rule block — what is
+        // forbidden is a RULE whose selector list starts at body/html.
+        let forbidden = css.lines().any(|l| {
+            let s = l.trim_start();
+            (s.starts_with("body") || s.starts_with("html") || s.starts_with(":root { --hi"))
+                    && (s.contains('{') || s.ends_with('{'))
+                    && !s.starts_with(":root { --hi") // the token bridge IS :root-scoped
+                    && s != ":root {"
+        });
         assert!(
-            !css.contains("body {") && !css.contains("html, body"),
+            !forbidden,
             "the component sheet must never carry page-global rules"
+        );
+        assert!(
+            !css.contains(".content {"),
+            "no legacy content column rules"
         );
     }
 
@@ -2028,6 +2092,7 @@ mod tests {
                 href: "guides/missing.md".to_string(),
                 target: "guides/missing.html".to_string(),
             }],
+            lane: "webui".to_string(),
         };
         let json = serde_json::to_string(&status).unwrap();
         let back: BuildStatus = serde_json::from_str(&json).unwrap();

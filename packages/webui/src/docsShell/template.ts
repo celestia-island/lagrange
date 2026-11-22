@@ -147,3 +147,27 @@ export function buildPageData(
     html: variant.html,
   };
 }
+/** The redirect targets a flat page negotiates over: one URL per
+ * language the page exists in (round 9 of PR #119: this assembly lived
+ * in the un-unit-tested orchestrator, where dropping 8 of 9 targets
+ * left every gate green — M43). */
+export function buildRedirectTargets(
+  manifest: Manifest,
+  pagePath: string,
+): { code: string; url: string }[] {
+  const base = manifest.site.base;
+  const page = manifest.pages.find((p) => p.path === pagePath);
+  return Object.keys(page?.langs ?? {}).map((code) => ({
+    code,
+    url: `${base}/${code}/${pagePath}`,
+  }));
+}
+
+/** The root index negotiates over the language roots. */
+export function buildRootRedirectTargets(manifest: Manifest): {
+  code: string;
+  url: string;
+}[] {
+  const base = manifest.site.base;
+  return manifest.site.langs.map((l) => ({ code: l.code, url: `${base}/${l.code}/` }));
+}
