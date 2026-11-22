@@ -6,10 +6,25 @@ on:
     paths:
       - 'docs/**'
       - 'src/**'
+      # styles/layout.scss is scss!-embedded into the built binary
+      # (src/theme.rs) — it IS deployed chrome, so a styles-only change
+      # must redeploy. Omitting it is the silent-staleness class this
+      # workflow exists to catch (review round 2 of #120).
+      - 'styles/**'
       - 'packages/webui/src/**'
       - 'packages/webui/scripts/**'
       - 'packages/webui/package.json'
+      # The workspace file is what killed the #119 deploy: its release-age
+      # settings decide WHICH hikari resolves, so it changes the shipped
+      # chrome. (The lockfile is gitignored, so it can never produce a
+      # tracked-diff event — do not list it; round 4 of #120.)
+      - 'packages/webui/pnpm-workspace.yaml'
+      # Build-shape input: outDir, the /assets/docs/ base and the SSR
+      # entry all come from here and ship.
+      - 'packages/webui/vite.config.ts'
       - 'Cargo.toml'
+      # copy_root_assets copies the repo-root LICENSE into the site.
+      - 'LICENSE'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -29,10 +44,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # Family toolchain (_ledger/toolchain-pnpm.md): pnpm 11 via
+      # action-setup — bare `corepack enable` resolves a default pnpm
+      # that rejects this workspace's settings (the 11s deploy failure
+      # of the #119 merge), and node rides setup-node at 22.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
-      - run: corepack enable
+          node-version: 22
       # The hikari webui lane: hydration client + Node SSR renderer, then
       # the Rust build consumes them (packages/webui/dist-docs). Without
       # this step the site falls back to the legacy chrome lane.
