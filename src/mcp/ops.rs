@@ -51,6 +51,9 @@ pub fn status(state: &McpState, _args: &Value) -> Result<Value, String> {
             "error": status.error,
             "pages": status.pages,
             "langs": status.langs,
+            // Which chrome lane produced the pages — the silent-fallback
+            // signal (round 9/10 of PR #119).
+            "lane": status.lane,
         },
         "knowledge": counts,
         "freshness": freshness,
@@ -74,6 +77,7 @@ pub fn trigger(state: &McpState, _args: &Value) -> Result<Value, String> {
                 "ok": true,
                 "built_at": status.built_at,
                 "duration_ms": status.duration_ms,
+                "lane": status.lane,
                 "pages": status.pages,
                 "documents": status.documents,
                 "chunks": status.chunks,

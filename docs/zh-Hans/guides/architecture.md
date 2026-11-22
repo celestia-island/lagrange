@@ -23,8 +23,9 @@ markdown -> pest parser -> AST (Block / Inline)
                                       hikari/tairitsu wasm 引擎）
 ```
 
-**webui 车道**在 `packages/webui/dist-docs` 已构建时是默认车道
-（`just docs` 与 CI 都经 pnpm 构建）：每个页面都由真正的 hikari 组件树
+**webui 车道**在构建能找到 webui 产物时运行——从仓根
+（`packages/webui/dist-docs`），或任意位置经 `LAGRANGE_WEBUI_DIR` 指定；
+`just docs` 与 CI 都先经 pnpm 构建产物：每个页面都由真正的 hikari 组件树
 渲染——与家族各控制台同一套 `HkFaceShell` / `HkAdminHeader` 外壳，
 站点 logo 占品牌槽、语言与主题按钮在右上角动作区、SUMMARY 侧栏带
 轨道折叠、页脚单一状态带。页面使用按语言的 URL

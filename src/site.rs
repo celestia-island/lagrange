@@ -118,7 +118,14 @@ pub struct BuildStatus {
     /// the webui lane's fallback used to be unobservable — `ok:true`
     /// shipped while every page silently kept the legacy chrome).
     /// `webui` = the hikari component tree; `legacy` = the Rust fallback.
+    /// Defaulted so records written before the field existed still parse
+    /// (the MCP surface reads this file as the build's source of truth).
+    #[serde(default = "default_lane")]
     pub lane: String,
+}
+
+fn default_lane() -> String {
+    "legacy".to_string()
 }
 
 /// Build the whole site.

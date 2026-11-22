@@ -186,11 +186,23 @@ async function boot(): Promise<void> {
   if (!root) throw new Error("docs hydration: #app mount point missing");
   app.mount(root, true);
 
-  // Body upgrades run after hydration settles into the DOM.
-  installDiagramToggle();
-  installCodeCopy();
-  mountMermaidBoxes();
-  renderMathBoxes();
+  // Body upgrades run after hydration settles into the DOM. Each is
+  // isolated: one upgrade failing must not take the rest down with it
+  // (round 10 note — a throw in an earlier installer used to silently
+  // kill every installer after it, and no test pinned the order because
+  // order was never supposed to matter).
+  for (const upgrade of [
+    installDiagramToggle,
+    installCodeCopy,
+    mountMermaidBoxes,
+    renderMathBoxes,
+  ]) {
+    try {
+      upgrade();
+    } catch (err) {
+      console.error("docs hydration: body upgrade failed:", err);
+    }
+  }
 }
 
 // Self-execute when this is a real docs page: the payload script tag

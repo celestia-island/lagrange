@@ -23,8 +23,9 @@ markdown -> pest parser -> AST (Block / Inline)
                                     hikari/tairitsu wasm engine)
 ```
 
-The **webui lane** is the default when `packages/webui/dist-docs` is built
-(`just docs` / CI build it via pnpm): every page renders through the real
+The **webui lane** runs when the build finds the webui bundle — from the
+repo root (`packages/webui/dist-docs`), or anywhere via `LAGRANGE_WEBUI_DIR`;
+`just docs` / CI build the bundles via pnpm first: every page renders through the real
 hikari component tree — the same `HkFaceShell` / `HkAdminHeader` shell the
 family's consoles wear, with the site logo in the brand slot, the language
 and theme buttons in the top-right action area, the SUMMARY sidebar with
