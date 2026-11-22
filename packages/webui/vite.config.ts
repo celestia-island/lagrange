@@ -31,9 +31,12 @@ export default defineConfig(({ mode }) => ({
           assetsDir: "assets",
           rollupOptions: {
             input: "src/docsShell/docsMain.ts",
-            // The SSR pages reference assets at this absolute prefix and
-            // copy them into <out>/assets/docs — subpath deployments keep
-            // the legacy Rust lane until this becomes configurable.
+            // The client bundle's INTERNAL chunk URLs are baked at this
+            // absolute prefix (vite `base`). The SSR page template
+            // prefixes the site base for the ENTRY urls it emits, but
+            // the bundle's own runtime chunk fetches stay absolute —
+            // subpath deployments must keep the legacy Rust lane until
+            // this becomes configurable per build.
             base: "/assets/docs/",
           },
         },

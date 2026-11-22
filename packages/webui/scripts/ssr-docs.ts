@@ -26,6 +26,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DocsPage } from "../src/docsShell/DocsPage";
 import { installDocsLocale } from "../src/docsShell/i18n";
+import { defaultRedirectUrl, escapeAttr, redirectStub } from "../src/docsShell/redirect";
 import type { DocsPageData } from "../src/docsShell/types";
 
 interface ManifestNavNode {
@@ -41,7 +42,7 @@ interface ManifestPageLang {
   math: boolean;
 }
 
-interface Manifest {
+export interface Manifest {
   site: {
     title: string;
     description: string;
@@ -68,10 +69,6 @@ function parseArgs(): { manifest: string; out: string; clientDir: string } {
     return v;
   };
   return { manifest: get("manifest"), out: get("out"), clientDir: get("client-dir") };
-}
-
-function escapeAttr(v: string): string {
-  return v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 interface ClientAssets {
@@ -124,8 +121,11 @@ function pageTemplate(opts: {
   const cssLinks = assets.cssFiles
     .map((f) => `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/${f}`)}">`)
     .join("\n    ");
+  // KaTeX vendor rides the site base like every sibling asset URL in
+  // this template (review round 2: root-absolute paths 404 on subpath
+  // deployments).
   const katexTags = math
-    ? `<link rel="stylesheet" href="/assets/vendor/katex.min.css">\n    <script defer src="/assets/vendor/katex.min.js"></script>`
+    ? `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/vendor/katex.min.css`)}">\n    <script defer src="${escapeAttr(`${base}/assets/vendor/katex.min.js`)}"></script>`
     : "";
   return `<!doctype html>
 <html lang="${escapeAttr(lang)}">
@@ -143,41 +143,6 @@ function pageTemplate(opts: {
   <div id="app">${body}</div>
   <script type="application/json" id="lagrange-page-data">${escapeJsonForScript(dataJson)}</script>
   <script type="module" src="${escapeAttr(`${base}/assets/docs/${assets.entryJs}`)}"></script>
-</body>
-</html>
-`;
-}
-
-function redirectStub(opts: {
-  defaultUrl: string;
-  langUrls: { code: string; url: string }[];
-}): string {
-  const { defaultUrl, langUrls } = opts;
-  const map = JSON.stringify(
-    Object.fromEntries(langUrls.map((l) => [l.code, l.url])),
-  ).replace(/</g, "\\u003c");
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="refresh" content="0;url=${escapeAttr(defaultUrl)}">
-  <link rel="canonical" href="${escapeAttr(defaultUrl)}">
-</head>
-<body>
-  <script>
-  (function () {
-    var map = ${map};
-    var langs = (navigator.languages || [navigator.language || ""]).join(",").split(",");
-    for (var i = 0; i < langs.length; i++) {
-      var c = langs[i];
-      if (map[c]) { location.replace(map[c]); return; }
-      var short = c.split("-")[0];
-      if (map[short]) { location.replace(map[short]); return; }
-    }
-    location.replace(${JSON.stringify(defaultUrl)});
-  })();
-  </script>
-  <a href="${escapeAttr(defaultUrl)}">Continue</a>
 </body>
 </html>
 `;
@@ -246,10 +211,9 @@ async function main(): Promise<void> {
       code,
       url: `${base}/${code}/${page.path}`,
     }));
-    const fallback = langUrls.find((l) => l.code === manifest.site.defaultLang) ?? langUrls[0];
     await mkdir(dirname(join(args.out, page.path)), { recursive: true });
     await writeFile(join(args.out, page.path), redirectStub({
-      defaultUrl: fallback.url,
+      defaultUrl: defaultRedirectUrl(langUrls, manifest.site.defaultLang),
       langUrls,
     }));
   }
@@ -259,10 +223,8 @@ async function main(): Promise<void> {
     code: l.code,
     url: `${base}/${l.code}/`,
   }));
-  const rootFallback =
-    rootLangs.find((l) => l.code === manifest.site.defaultLang) ?? rootLangs[0];
   await writeFile(join(args.out, "index.html"), redirectStub({
-    defaultUrl: rootFallback.url,
+    defaultUrl: defaultRedirectUrl(rootLangs, manifest.site.defaultLang),
     langUrls: rootLangs,
   }));
 

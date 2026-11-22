@@ -101,9 +101,10 @@ export const LagrangeDocsShell = defineComponent({
     const menuItems = computed(() => navToMenuItems(page.value.nav));
     const activeKey = computed(() => page.value.path);
     function go(href: string) {
-      // External and anchor hrefs ride the SUMMARY verbatim — only
+      // External, anchor and root-absolute hrefs ride the SUMMARY
+      // verbatim (the same passthrough set absolute_href allows) — only
       // page paths get the language prefix.
-      if (/^(https?:|mailto:|#)/.test(href)) {
+      if (/^(https?:|mailto:|tel:|#|\/)/.test(href)) {
         window.location.assign(href);
         return;
       }

@@ -77,7 +77,13 @@ pub struct ManifestPage {
     pub langs: BTreeMap<String, ManifestPageLang>,
 }
 
+/// The manifest is the Rust→TS contract `scripts/ssr-docs.ts` parses:
+/// field names are camelCase (`defaultLang`, `buildStamp`) — the TS side
+/// declares the same shape, and the serialization test pins the casing
+/// (a snake_case regression silently breaks redirects + the footer
+/// stamp; review round 2 of PR #119).
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManifestSite {
     pub title: String,
     pub description: String,
@@ -244,9 +250,16 @@ mod tests {
             "\"html\":\"<p>x</p>\"",
             "\"href\":\"guides/architecture.html\"",
             "\"label\":\"English\"",
+            // camelCase contract pins (PR #119 round 2): a snake_case
+            // regression makes the TS side read undefined for BOTH
+            // fields — wrong redirect language + empty footer stamp.
+            "\"defaultLang\":\"en\"",
+            "\"buildStamp\":\"0.2.12\"",
         ] {
             assert!(json.contains(needle), "manifest missing {needle}: {json}");
         }
+        assert!(!json.contains("default_lang"), "snake_case leaked: {json}");
+        assert!(!json.contains("build_stamp"), "snake_case leaked: {json}");
         // Empty section hrefs must serialize (the shell keys groups off
         // them), and math flags must be present explicitly.
         assert!(json.contains("\"math\":false"), "{json}");

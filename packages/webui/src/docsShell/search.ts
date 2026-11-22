@@ -159,10 +159,15 @@ export class DocsSearch {
       .map(({ doc, chunk }) => {
         const meta3 = doc.chunks[chunk];
         const heading = meta3?.heading_path?.join(" › ") ?? "";
+        const anchor = meta3?.anchor;
         return {
           title: doc.title,
           heading,
-          url: `${langUrl(this.site, doc.url, doc.lang)}#${meta3?.anchor ?? ""}`,
+          // No trailing '#' when the chunk meta is absent — a bare hash
+          // would read as "top of page" instead of a missing target.
+          url: anchor
+            ? `${langUrl(this.site, doc.url, doc.lang)}#${anchor}`
+            : langUrl(this.site, doc.url, doc.lang),
           snippet: meta3?.snippet ?? "",
         };
       });
