@@ -101,6 +101,12 @@ export const LagrangeDocsShell = defineComponent({
     const menuItems = computed(() => navToMenuItems(page.value.nav));
     const activeKey = computed(() => page.value.path);
     function go(href: string) {
+      // External and anchor hrefs ride the SUMMARY verbatim — only
+      // page paths get the language prefix.
+      if (/^(https?:|mailto:|#)/.test(href)) {
+        window.location.assign(href);
+        return;
+      }
       const base = site.value.base;
       window.location.assign(`${base}/${page.value.lang}/${href}`.replace(/\/{2,}/g, "/"));
     }
