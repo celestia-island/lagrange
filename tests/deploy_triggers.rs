@@ -5,6 +5,9 @@
 //! must therefore be listed, and every listed path must be able to
 //! produce a tracked-diff event.
 //!
+//! MUT: decoy-paths (deleting a required path entry fails the coverage
+//! test; a decoy block above a gutted `push.paths` fails it too).
+//!
 //! This gate has been broken three times by reviewers, and each break
 //! taught the same lesson: a contract check that can be satisfied while
 //! the deploy never fires is worse than none, because it disarms the
