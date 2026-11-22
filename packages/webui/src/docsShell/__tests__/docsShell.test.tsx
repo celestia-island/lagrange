@@ -265,6 +265,7 @@ describe("LagrangeDocsShell", () => {
     ]);
     // Subpath deployment: the fallback keeps the base and never doubles
     // the slash when base is empty.
+    // MUT: M14 (blanking the fallback URL turns this test RED).
     expect(
       buildLocaleOptions([{ code: "ja", label: "日本語" }], [], "/repo")[0].url,
     ).toBe("/repo/ja/");

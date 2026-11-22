@@ -304,6 +304,7 @@ fn dev_mcp_full_chain_search_fetch_write_trigger_status() {
     // Per-language URL scheme: the flat root becomes a language-negotiation
     // stub BY DESIGN, and each language's landing page is the real page —
     // pin both so the collision can never silently flip (round 10 S2).
+    // MUT: M54 (inverting the root-stub pin turns this assertion RED).
     {
         let root = std::fs::read_to_string(tree.path().join("dist").join("index.html"))
             .expect("root index");

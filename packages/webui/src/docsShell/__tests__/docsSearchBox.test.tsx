@@ -93,6 +93,7 @@ describe("DocsSearchBox", () => {
     expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
     expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("false");
     // …and the stale-hit guard does not repopulate it afterwards.
+    // MUT: M18 (removing the empty-query reset turns this test RED).
     await new Promise((r) => setTimeout(r, 40));
     expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
@@ -162,6 +163,8 @@ describe("DocsSearchBox", () => {
 
   // Round 6 M24: blurring the field dismisses the panel (the docblock
   // always claimed it; nothing asserted it).
+  // MUT: M24 (neutralizing onFocusOut turns this test RED — re-verified
+  // 2026-11-23 before anchoring).
   it("dismisses when focus leaves the field", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
@@ -237,6 +240,7 @@ describe("DocsSearchBox", () => {
 
   // Round 8 M35: `busy` was written and never read — dead state no test
   // could catch. It now drives the in-flight row and the data-busy flag.
+  // MUT: M35 (hiding data-busy turns this test RED).
   it("shows the in-flight state while a query resolves", async () => {
     vi.stubGlobal(
       "fetch",

@@ -3,6 +3,7 @@
 // the flat pages that carried the legacy copy runtime, so the hydration
 // entry must re-implement it. Without a handler every copy button on the
 // site is inert — measured in Chrome, invisible to every other gate.
+// MUT: M40 (dropping installCodeCopy from boot() turns the boot test RED).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { copyText, installCodeCopy } from "../docsMain";
 

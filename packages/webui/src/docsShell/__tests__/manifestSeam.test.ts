@@ -61,6 +61,8 @@ describe("docs-manifest Rust→TS seam", () => {
     const langUrls = m.site.langs.map((l) => ({ code: l.code, url: `/${l.code}/` }));
     expect(defaultRedirectUrl(langUrls, m.site.defaultLang)).toBe("/zh-Hans/");
     // An unknown default degrades to the first listed, never undefined.
+    // MUT: M2 (defaultRedirectUrl returning langUrls[0] unconditionally
+    // turns this test RED).
     expect(defaultRedirectUrl(langUrls, "xx")).toBe("/en/");
     expect(defaultRedirectUrl([], "en")).toBe("");
   });
