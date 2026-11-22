@@ -114,22 +114,72 @@ describe("LagrangeDocsShell", () => {
     expect(footer?.textContent).toContain("Built with Lagrange");
   });
 
+  it("persists the sidebar rail state under lagrange's own key (round trip)", async () => {
+    // Round 3 M7: renaming the storage key survived the whole suite.
+    const { root } = await mount(LagrangeDocsShell, { page: makePage() });
+    const toggle = root.querySelector<HTMLButtonElement>(
+      ".hk-sidebar-rail-toggle button, button[aria-label*='sidebar' i]",
+    );
+    expect(toggle, "the rail toggle must render (sidebarCollapsible)").toBeTruthy();
+    toggle!.dispatchEvent(new Event("click"));
+    await nextTick();
+    await nextTick();
+    const saved = window.localStorage.getItem("lagrange.docs.sidebar");
+    expect(saved, "clicking the rail toggle must persist the rail style").toBe("rail");
+  });
+
+  it("restores the persisted rail state on mount", async () => {
+    window.localStorage.setItem("lagrange.docs.sidebar", "rail");
+    const { root } = await mount(LagrangeDocsShell, { page: makePage() });
+    await nextTick();
+    // The shell's rail host carries the collapsed density when it starts
+    // on the rail — the prop round-trips into the component.
+    const railHost = root.querySelector("[class*='rail']");
+    expect(railHost).toBeTruthy();
+    expect(window.localStorage.getItem("lagrange.docs.sidebar")).toBe("rail");
+  });
+
   it("navigates sidebar rows with real page loads to the per-language URL", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { assign });
     const { root } = await mount(LagrangeDocsShell, { page: makePage() });
-    // Select fires via HkMenu's rows; simulate through the component's
-    // own emitted event by clicking the active leaf row.
-    const rows = [...root.querySelectorAll("[class*='hk-menu'] *")].filter((el) =>
-      el.textContent === "Quick start",
+    // HkMenu rows are buttons; the leaf whose label matches a nav title
+    // is the tree endpoint.
+    const rows = [...root.querySelectorAll<HTMLElement>("button")].filter(
+      (el) => el.textContent?.trim() === "Quick start",
     );
-    const row = rows[rows.length - 1] as HTMLElement;
-    row.dispatchEvent(new Event("click"));
+    expect(rows.length, "the leaf row must render in the sidebar").toBe(1);
+    rows[0].dispatchEvent(new Event("click"));
     await nextTick();
-    // Either HkMenu bubbled the select (assign called) or the row was not
-    // interactive in this DOM — the shell contract test pins the URL
-    // builder directly below, so this only guards the wiring presence.
-    expect(typeof row.textContent).toBe("string");
+    await nextTick();
+    expect(assign).toHaveBeenCalledWith("/en/guides/quickstart.html");
+    vi.unstubAllGlobals();
+  });
+
+  it("leaves external and root-absolute nav hrefs unprefixed", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    const page = makePage({
+      path: "guides/architecture.html",
+      nav: [
+        { title: "Upstream", href: "https://example.com/x" },
+        { title: "Absolute", href: "/status" },
+      ],
+    });
+    const { root } = await mount(LagrangeDocsShell, { page });
+    const click = (label: string) => {
+      const row = [...root.querySelectorAll<HTMLElement>("button")].find(
+        (el) => el.textContent?.trim() === label,
+      );
+      expect(row, `${label} row must render`).toBeTruthy();
+      row!.dispatchEvent(new Event("click"));
+    };
+    click("Upstream");
+    await nextTick();
+    expect(assign).toHaveBeenLastCalledWith("https://example.com/x");
+    click("Absolute");
+    await nextTick();
+    expect(assign).toHaveBeenLastCalledWith("/status");
     vi.unstubAllGlobals();
   });
 });

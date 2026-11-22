@@ -24,12 +24,16 @@ export const DocsSearchBox = defineComponent({
 
     let seq = 0;
     async function run() {
+      // Bump the token on EVERY run, including the clear path: a query
+      // that resolves after the box was emptied must not repopulate it
+      // (round 3: the early return left `seq` stale and stale hits
+      // reopened the panel).
+      const token = (seq += 1);
       if (!query.value.trim()) {
         hits.value = null;
         open.value = false;
         return;
       }
-      const token = (seq += 1);
       const results = await search.value.query(query.value, props.lang);
       if (token !== seq) return; // a newer keystroke already answered
       hits.value = results;

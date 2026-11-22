@@ -26,39 +26,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DocsPage } from "../src/docsShell/DocsPage";
 import { installDocsLocale } from "../src/docsShell/i18n";
-import { defaultRedirectUrl, escapeAttr, redirectStub } from "../src/docsShell/redirect";
-import type { DocsPageData } from "../src/docsShell/types";
-
-interface ManifestNavNode {
-  title: string;
-  href: string;
-  children?: ManifestNavNode[];
-}
-
-interface ManifestPageLang {
-  title: string;
-  html: string;
-  /** KaTeX vendor needed (mermaid is hikari-side now). */
-  math: boolean;
-}
-
-export interface Manifest {
-  site: {
-    title: string;
-    description: string;
-    logo: string | null;
-    base: string;
-    defaultLang: string;
-    langs: { code: string; label: string }[];
-    buildStamp: string;
-    favicon: string | null;
-  };
-  pages: {
-    path: string;
-    langs: Record<string, ManifestPageLang>;
-  }[];
-  navs: Record<string, ManifestNavNode[]>;
-}
+import { defaultRedirectUrl, redirectStub } from "../src/docsShell/redirect";
+import {
+  buildPageData,
+  pageTemplate,
+  resolveClientAssetsFrom,
+  type ClientAssets,
+  type Manifest,
+} from "../src/docsShell/template";
 
 function parseArgs(): { manifest: string; out: string; clientDir: string } {
   const args = process.argv.slice(2);
@@ -71,26 +46,12 @@ function parseArgs(): { manifest: string; out: string; clientDir: string } {
   return { manifest: get("manifest"), out: get("out"), clientDir: get("client-dir") };
 }
 
-interface ClientAssets {
-  entryJs: string;
-  cssFiles: string[];
-}
 
-/** Read the vite client manifest to find the docs entry + its CSS.
- * Manifest paths carry the build's `assets/` prefix; the copy step puts
- * those files directly under `<out>/assets/docs/`, so the prefix is
- * stripped here (double-prefixing 404s — measured). */
+/** Read the vite client manifest and pick the docs entry (the pure
+ * selection + prefix-strip lives in template.ts so it has a unit gate). */
 async function resolveClientAssets(clientDir: string): Promise<ClientAssets> {
-  const manifestPath = join(clientDir, ".vite", "manifest.json");
-  const raw = JSON.parse(await readFile(manifestPath, "utf8"));
-  const entryKey = Object.keys(raw).find(
-    (k) => raw[k].isEntry && k.includes("docsMain"),
-  );
-  if (!entryKey) throw new Error("ssr-docs: client manifest has no docsMain entry");
-  const entry = raw[entryKey];
-  const strip = (f: string) => f.replace(/^assets\//, "");
-  const cssFiles = [...(entry.css ?? [])].map(strip);
-  return { entryJs: strip(entry.file), cssFiles };
+  const raw = JSON.parse(await readFile(join(clientDir, ".vite", "manifest.json"), "utf8"));
+  return resolveClientAssetsFrom(raw);
 }
 
 async function copyAssets(clientDir: string, out: string): Promise<void> {
@@ -98,54 +59,6 @@ async function copyAssets(clientDir: string, out: string): Promise<void> {
   const dest = join(out, "assets", "docs");
   await mkdir(dirname(dest), { recursive: true });
   await cp(src, dest, { recursive: true });
-}
-
-function escapeJsonForScript(json: string): string {
-  // A JSON payload inside <script> must not contain a closing tag.
-  return json.replace(/</g, "\\u003c").replace(/-->/g, "--\\u003e");
-}
-
-function pageTemplate(opts: {
-  site: Manifest["site"];
-  lang: string;
-  title: string;
-  url: string;
-  body: string;
-  dataJson: string;
-  assets: ClientAssets;
-  base: string;
-  math: boolean;
-}): string {
-  const { site, lang, title, url, body, dataJson, assets, base, math } = opts;
-  const fullTitle = title === site.title ? title : `${title} · ${site.title}`;
-  const cssLinks = assets.cssFiles
-    .map((f) => `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/${f}`)}">`)
-    .join("\n    ");
-  // KaTeX vendor rides the site base like every sibling asset URL in
-  // this template (review round 2: root-absolute paths 404 on subpath
-  // deployments).
-  const katexTags = math
-    ? `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/vendor/katex.min.css`)}">\n    <script defer src="${escapeAttr(`${base}/assets/vendor/katex.min.js`)}"></script>`
-    : "";
-  return `<!doctype html>
-<html lang="${escapeAttr(lang)}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${escapeAttr(fullTitle)}</title>
-  <meta name="description" content="${escapeAttr(site.description)}">
-  <link rel="canonical" href="${escapeAttr(url)}">
-  ${site.favicon ? `<link rel="icon" href="${escapeAttr(site.favicon)}">` : ""}
-  ${cssLinks}
-  ${katexTags}
-</head>
-<body>
-  <div id="app">${body}</div>
-  <script type="application/json" id="lagrange-page-data">${escapeJsonForScript(dataJson)}</script>
-  <script type="module" src="${escapeAttr(`${base}/assets/docs/${assets.entryJs}`)}"></script>
-</body>
-</html>
-`;
 }
 
 async function main(): Promise<void> {
@@ -169,21 +82,7 @@ async function main(): Promise<void> {
   let written = 0;
   for (const page of manifest.pages) {
     for (const [lang, variant] of Object.entries(page.langs)) {
-      const data: DocsPageData = {
-        site: manifest.site,
-        lang,
-        path: page.path,
-        url: `${base}/${lang}/${page.path}`,
-        title: variant.title,
-        nav: manifest.navs[lang] ?? [],
-        locales: Object.keys(page.langs).map((code) => ({
-          code,
-          url: `${base}/${code}/${page.path}`,
-        })),
-        renderMode: "html",
-        markdown: "",
-        html: variant.html,
-      };
+      const data = buildPageData(manifest, page.path, lang, variant);
       await installDocsLocale(lang);
       const app = createSSRApp(DocsPage, { page: data });
       const body = await renderToString(app);

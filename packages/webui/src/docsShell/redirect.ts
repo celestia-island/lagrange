@@ -15,6 +15,30 @@ export function defaultRedirectUrl(langUrls: { code: string; url: string }[], de
   );
 }
 
+/**
+ * Resolve one browser language tag against the site's language codes:
+ * exact tag → the site language that PREFIXES it (longest first, so
+ * `zh-Hant-TW` picks `zh-Hant`, not `zh-Hans`) → the primary subtag.
+ * Returned to the emitted stub as source text so the page carries the
+ * same rule the unit tests execute.
+ */
+const NEGOTIATE_SOURCE = `function pick(map, codes) {
+    for (var i = 0; i < codes.length; i++) {
+      var c = codes[i];
+      if (!c) continue;
+      if (map[c]) return map[c];
+      var best = null;
+      for (var j = 0; j < langs.length; j++) {
+        var code = langs[j];
+        if (c.indexOf(code + "-") === 0 && (!best || code.length > best.length)) best = code;
+      }
+      if (best && map[best]) return map[best];
+      var short = c.split("-")[0];
+      if (map[short]) return map[short];
+    }
+    return null;
+  }`;
+
 export function redirectStub(opts: {
   defaultUrl: string;
   langUrls: { code: string; url: string }[];
@@ -23,6 +47,7 @@ export function redirectStub(opts: {
   const map = JSON.stringify(
     Object.fromEntries(langUrls.map((l) => [l.code, l.url])),
   ).replace(/</g, "\\u003c");
+  const codes = JSON.stringify(langUrls.map((l) => l.code)).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html>
 <head>
@@ -34,18 +59,36 @@ export function redirectStub(opts: {
   <script>
   (function () {
     var map = ${map};
-    var langs = (navigator.languages || [navigator.language || ""]).join(",").split(",");
-    for (var i = 0; i < langs.length; i++) {
-      var c = langs[i];
-      if (map[c]) { location.replace(map[c]); return; }
-      var short = c.split("-")[0];
-      if (map[short]) { location.replace(map[short]); return; }
-    }
-    location.replace(${JSON.stringify(defaultUrl)});
+    var langs = ${codes};
+    var tags = (navigator.languages || [navigator.language || ""]).join(",").split(",");
+  ${NEGOTIATE_SOURCE}
+    location.replace(pick(map, tags) || ${JSON.stringify(defaultUrl)});
   })();
   </script>
   <a href="${escapeAttr(defaultUrl)}">Continue</a>
 </body>
 </html>
 `;
+}
+
+/** The TS mirror of the stub's `pick` (executed by the unit tests, kept
+ * in lockstep with NEGOTIATE_SOURCE by redirectExec.test.ts running the
+ * emitted JS against the same table). */
+export function pickRedirectUrl(
+  map: Record<string, string>,
+  tags: string[],
+): string | null {
+  const codes = Object.keys(map);
+  for (const c of tags) {
+    if (!c) continue;
+    if (map[c]) return map[c];
+    let best: string | null = null;
+    for (const code of codes) {
+      if (c.startsWith(`${code}-`) && (!best || code.length > best.length)) best = code;
+    }
+    if (best && map[best]) return map[best];
+    const short = c.split("-")[0];
+    if (map[short]) return map[short];
+  }
+  return null;
 }

@@ -8,7 +8,7 @@
 // redirects landed on the wrong language.
 import { describe, expect, it } from "vitest";
 import { defaultRedirectUrl, redirectStub } from "../redirect";
-import type { Manifest } from "../../../scripts/ssr-docs";
+import type { Manifest } from "../template";
 
 /** EXACT Rust-emitted shape (serde camelCase). Keep in lockstep with
  * the Rust test's structs. */
