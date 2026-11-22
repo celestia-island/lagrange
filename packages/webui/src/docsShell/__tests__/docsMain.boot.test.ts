@@ -5,10 +5,9 @@
 // white-screen page.
 //
 // The import is STATIC on purpose: a runtime dynamic import of this
-// module graph hangs the vite test runner (measured), and the module
+// module graph stalls past vitest's default 5s test timeout on first
+// load (measured ~9-10.6s cold, ~0-1ms warm), and the module
 // self-execution guard skips auto-boot under vitest.
-// comment-gate-ok: environment measurement (the runner hang), not a
-// behaviour claim — no mutation applies to a tooling constraint.
 import { describe, expect, it, vi } from "vitest";
 import { boot } from "../docsMain";
 import type { DocsPageData } from "../types";
