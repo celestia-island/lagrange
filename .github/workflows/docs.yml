@@ -14,6 +14,10 @@ on:
       - 'packages/webui/src/**'
       - 'packages/webui/scripts/**'
       - 'packages/webui/package.json'
+      # The install resolves hikari for the SSR renderer; a lockfile-only
+      # merge changes the rendered chrome too (same silent-staleness class
+      # as styles/** — review round 3 of #120).
+      - 'packages/webui/pnpm-lock.yaml'
       - 'Cargo.toml'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
