@@ -14,10 +14,14 @@ on:
       - 'packages/webui/src/**'
       - 'packages/webui/scripts/**'
       - 'packages/webui/package.json'
-      # The install resolves hikari for the SSR renderer; a lockfile-only
-      # merge changes the rendered chrome too (same silent-staleness class
-      # as styles/** — review round 3 of #120).
-      - 'packages/webui/pnpm-lock.yaml'
+      # The workspace file is what killed the #119 deploy: its release-age
+      # settings decide WHICH hikari resolves, so it changes the shipped
+      # chrome. (The lockfile is gitignored, so it can never produce a
+      # tracked-diff event — do not list it; round 4 of #120.)
+      - 'packages/webui/pnpm-workspace.yaml'
+      # Build-shape input: outDir, the /assets/docs/ base and the SSR
+      # entry all come from here and ship.
+      - 'packages/webui/vite.config.ts'
       - 'Cargo.toml'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
