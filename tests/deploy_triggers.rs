@@ -8,10 +8,14 @@
 //! This gate has been broken three times by reviewers, and each break
 //! taught the same lesson: a contract check that can be satisfied while
 //! the deploy never fires is worse than none, because it disarms the
-//! human who would have read the file. So it now parses with a real YAML
+//! human who would have read the file. So it parses with a real YAML
 //! parser, reads ONLY `on.push`, and **fails closed** on every shape it
-//! does not explicitly understand (unknown keys, absent `branches`,
-//! `paths-ignore`, YAML aliases).
+//! does not explicitly understand *within that trigger block* (unknown
+//! keys, absent `branches`, `paths-ignore`, YAML anchors/aliases).
+//!
+//! Scope, stated so nobody over-reads the green check: this proves the
+//! PUSH TRIGGER. It cannot see a job-level `if:` that skips the deploy,
+//! nor anything GitHub does at runtime — that stays a human review.
 
 use serde_yaml::Value;
 
@@ -24,19 +28,33 @@ fn workflow() -> Value {
     serde_yaml::from_str(&raw).expect("docs.yml must be valid YAML")
 }
 
+/// Drop a trailing YAML comment. `#` only opens a comment when it starts a
+/// token, so `foo#bar` keeps its bytes (and a quoted `'#'` is left alone —
+/// this file has none, and being conservative here only means a stricter
+/// alias scan, never a looser one).
+fn strip_yaml_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut prev_is_space = true;
+    for (i, b) in bytes.iter().enumerate() {
+        if *b == b'#' && prev_is_space {
+            return &line[..i];
+        }
+        prev_is_space = b.is_ascii_whitespace();
+    }
+    line
+}
+
 /// The `on.push` mapping, or a panic naming the shape that was not
 /// understood — never a silent skip.
 fn push_trigger() -> serde_yaml::Mapping {
-    // YAML anchors/aliases are expanded before this code ever sees them,
-    // so a `paths: *all` could point at a list defined under a decoy
-    // event. Refuse the construct outright: this file is small enough to
-    // spell everything out (review round 6 of PR #120).
+    // YAML anchors/aliases are expanded before this code ever sees them, so
+    // a `paths: *all` could point at a list defined under a decoy event.
+    // Refuse the construct — but only where YAML can actually place one
+    // (value position after `key:` or a `- ` item), because a blanket scan
+    // for `&` false-fails on the `if: a && b` idiom three of this repo's
+    // own workflows use (review round 7 of PR #120).
     let raw = std::fs::read_to_string(workflow_path()).expect("read docs.yml");
-    let has_alias = raw.contains('&')
-        || raw.lines().any(|line| {
-            let t = line.trim_start();
-            t.starts_with('*') || t.contains(": *")
-        });
+    let has_alias = raw.lines().any(|line| alias_token(line).is_some());
     assert!(
         !has_alias,
         "YAML anchors/aliases in docs.yml defeat this gate's ability to prove what \
@@ -214,4 +232,51 @@ fn the_parser_reads_only_the_push_event() {
         vec!["src/**"],
         "the contract must read push.paths, never the first `paths:` in the file"
     );
+}
+
+/// The alias scan must not fire on code that merely CONTAINS `&` — the
+/// repo's own workflows gate jobs with `if: … && …` (review round 7 of
+/// PR #120: a blanket `contains('&')` would have rejected that idiom).
+#[test]
+fn the_alias_scan_ignores_operators_and_comments() {
+    for innocent in [
+        "    if: github.event_name == 'push' && !github.event.deleted",
+        "      run: cargo build 2>&1",
+        "    # paths: *all would be rejected, but this is only a comment",
+        "      - 'docs/**'  # not & an anchor",
+    ] {
+        assert_eq!(
+            alias_token(innocent),
+            None,
+            "`{innocent}` must not be read as a YAML alias/anchor"
+        );
+    }
+
+    for offensive in [
+        "    paths: &all",
+        "    paths: *all",
+        "      - &entry 'docs/**'",
+        "      - *entry",
+    ] {
+        assert!(
+            alias_token(offensive).is_some(),
+            "`{offensive}` IS a YAML anchor/alias and must be rejected"
+        );
+    }
+}
+
+/// The value-position anchor/alias detector, split out so the tests above
+/// can drive it directly (the production path uses the same code).
+fn alias_token(line: &str) -> Option<&str> {
+    let line = strip_yaml_comment(line);
+    let t = line.trim();
+    let value = t
+        .split_once(':')
+        .map(|(_, v)| v.trim())
+        .unwrap_or_else(|| t.strip_prefix('-').map(str::trim).unwrap_or(""));
+    if value.starts_with('&') || value.starts_with('*') {
+        Some(value)
+    } else {
+        None
+    }
 }
