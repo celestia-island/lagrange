@@ -13,6 +13,9 @@
 //! does not explicitly understand *within that trigger block* (unknown
 //! keys, absent `branches`, `paths-ignore`, YAML anchors/aliases).
 //!
+//! MUT: decoy-paths (a `pull_request: paths:` block above a gutted
+//! `push.paths` used to pass — round 5), MUT: branches-absent, MUT: alias-paths.
+//!
 //! Scope, stated so nobody over-reads the green check: this proves the
 //! PUSH TRIGGER. It cannot see a job-level `if:` that skips the deploy,
 //! nor anything GitHub does at runtime — that stays a human review.
@@ -32,6 +35,7 @@ fn workflow() -> Value {
 /// token, so `foo#bar` keeps its bytes (and a quoted `'#'` is left alone —
 /// this file has none, and being conservative here only means a stricter
 /// alias scan, never a looser one).
+/// MUT: alias-paths (an anchor/alias in value position still fails the gate).
 fn strip_yaml_comment(line: &str) -> &str {
     let bytes = line.as_bytes();
     let mut prev_is_space = true;
@@ -46,6 +50,7 @@ fn strip_yaml_comment(line: &str) -> &str {
 
 /// The `on.push` mapping, or a panic naming the shape that was not
 /// understood — never a silent skip.
+/// MUT: branches-absent · MUT: filters-key · MUT: decoy-paths.
 fn push_trigger() -> serde_yaml::Mapping {
     // YAML anchors/aliases are expanded before this code ever sees them, so
     // a `paths: *all` could point at a list defined under a decoy event.
@@ -75,6 +80,7 @@ fn push_trigger() -> serde_yaml::Mapping {
         .unwrap_or_else(|| panic!("`on.push` must be a mapping, got {push:?}"));
 
     // Fail closed on ANY key this contract does not understand. An unknown
+    // MUT: filters-key (an unknown `on.push` key refuses to pass).
     // key (a nested `filters:` block, a future GitHub addition) can
     // disable the deploy while `paths:` still looks complete — round 6
     // found three such shapes passing a whitelist-less check.
@@ -217,6 +223,7 @@ fn deploy_triggers_never_list_an_untracked_path() {
 
 /// The parser must read `on.push`, never "the first `paths:` in the file"
 /// (round 5's decoy attack) and never an alias-defined list (round 6's).
+/// MUT: decoy-paths · MUT: alias-paths.
 #[test]
 fn the_parser_reads_only_the_push_event() {
     let decoy = "on:\n  pull_request:\n    paths:\n      - 'docs/**'\n  push:\n    branches: [master]\n    paths:\n      - 'src/**'\n";
