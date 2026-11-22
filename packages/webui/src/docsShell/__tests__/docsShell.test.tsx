@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createApp, defineComponent, h, nextTick } from "vue";
 import { mount } from "../testUtils";
-import { LagrangeDocsShell, navToMenuItems } from "../LagrangeDocsShell";
+import { buildLocaleOptions, LagrangeDocsShell, navToMenuItems } from "../LagrangeDocsShell";
 import { DocsPage } from "../DocsPage";
 import type { DocsPageData } from "../types";
 
@@ -154,6 +154,57 @@ describe("LagrangeDocsShell", () => {
     await nextTick();
     expect(assign).toHaveBeenCalledWith("/en/guides/quickstart.html");
     vi.unstubAllGlobals();
+  });
+
+  it("prepends the site base to sidebar navigation (subpath deploy)", async () => {
+    // Round 4 M13: with base="/repo", dropping `base` from go() sent every
+    // row to /en/... instead of /repo/en/... and the whole suite stayed
+    // green — both navigation tests ran with base="" where the two are
+    // indistinguishable.
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    const base = makePage({
+      site: { ...makePage().site, base: "/repo" },
+      url: "/repo/en/guides/architecture.html",
+      locales: [
+        { code: "en", url: "/repo/en/guides/architecture.html" },
+        { code: "zh-Hans", url: "/repo/zh-Hans/guides/architecture.html" },
+      ],
+    });
+    const { root } = await mount(LagrangeDocsShell, { page: base });
+    const row = [...root.querySelectorAll<HTMLElement>("button")].find(
+      (el) => el.textContent?.trim() === "Quick start",
+    );
+    expect(row, "the leaf row must render").toBeTruthy();
+    row!.dispatchEvent(new Event("click"));
+    await nextTick();
+    await nextTick();
+    expect(assign).toHaveBeenCalledWith("/repo/en/guides/quickstart.html");
+    vi.unstubAllGlobals();
+  });
+
+  it("buildLocaleOptions falls back to the language root, base included", () => {
+    // Round 4 M14: this fallback is unreachable in today's docs tree
+    // (every page exists in every language) and was unasserted; it is
+    // now a pure helper with a direct test.
+    const opts = buildLocaleOptions(
+      [
+        { code: "en", label: "English" },
+        { code: "ja", label: "日本語" },
+      ],
+      [{ code: "en", url: "/en/guides/a.html" }],
+      "",
+    );
+    expect(opts).toEqual([
+      { code: "en", label: "English", url: "/en/guides/a.html" },
+      // No ja translation of this page → that language's root.
+      { code: "ja", label: "日本語", url: "/ja/" },
+    ]);
+    // Subpath deployment: the fallback keeps the base and never doubles
+    // the slash when base is empty.
+    expect(
+      buildLocaleOptions([{ code: "ja", label: "日本語" }], [], "/repo")[0].url,
+    ).toBe("/repo/ja/");
   });
 
   it("leaves external and root-absolute nav hrefs unprefixed", async () => {

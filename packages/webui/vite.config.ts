@@ -31,12 +31,14 @@ export default defineConfig(({ mode }) => ({
           assetsDir: "assets",
           rollupOptions: {
             input: "src/docsShell/docsMain.ts",
-            // The client bundle's INTERNAL chunk URLs are baked at this
-            // absolute prefix (vite `base`). The SSR page template
-            // prefixes the site base for the ENTRY urls it emits, but
-            // the bundle's own runtime chunk fetches stay absolute —
-            // subpath deployments must keep the legacy Rust lane until
-            // this becomes configurable per build.
+            // Where the hydration bundle's files land (copied to
+            // <out>/assets/docs by the SSR lane). The page template
+            // prefixes the SITE base on the entry URLs it emits, and the
+            // bundle's own dynamic-chunk fetches resolve relative to the
+            // entry (import.meta.url), so a subpath deployment works —
+            // measured at --site-url https://example.com/repo (PR #119
+            // round 4). What is NOT configurable here is this directory
+            // name itself; it is fixed for every deployment.
             base: "/assets/docs/",
           },
         },

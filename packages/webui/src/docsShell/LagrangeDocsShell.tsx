@@ -66,6 +66,27 @@ export function navToMenuItems(nav: DocsNavNode[]): HkMenuItem[] {
   }));
 }
 
+/**
+ * Language-picker options: every site language, mapped to this page's
+ * copy when it exists and to that language's root otherwise (the root
+ * is itself a negotiation stub, so the pick always lands somewhere real
+ * — never a dead URL). Exported so the fallback has an executing test;
+ * every page in today's docs tree happens to exist in all languages, so
+ * the fallback branch is otherwise unreachable (PR #119 round 4, M14).
+ */
+export function buildLocaleOptions(
+  langs: { code: string; label: string }[],
+  locales: { code: string; url: string }[],
+  base: string,
+): { code: string; label: string; url: string }[] {
+  const byCode = new Map(locales.map((l) => [l.code, l.url]));
+  return langs.map((l) => ({
+    code: l.code,
+    label: l.label,
+    url: byCode.get(l.code) ?? `${base}/${l.code}/`.replace(/\/{2,}/g, "/"),
+  }));
+}
+
 export const LagrangeDocsShell = defineComponent({
   name: "LagrangeDocsShell",
   props: {
@@ -123,14 +144,9 @@ export const LagrangeDocsShell = defineComponent({
     /** Languages this page exists in, plus the rest of the site's
      * languages routed to their index (a language with no translation
      * of THIS page still gets a reachable pick, never a dead one). */
-    const localeOptions = computed(() => {
-      const byCode = new Map(page.value.locales.map((l) => [l.code, l.url]));
-      return site.value.langs.map((l) => ({
-        code: l.code,
-        label: l.label,
-        url: byCode.get(l.code) ?? `${site.value.base}/${l.code}/`,
-      }));
-    });
+    const localeOptions = computed(() =>
+      buildLocaleOptions(site.value.langs, page.value.locales, site.value.base),
+    );
     function onLocaleSelect(code: string) {
       const hit = localeOptions.value.find((l) => l.code === code);
       if (hit) window.location.assign(hit.url);
