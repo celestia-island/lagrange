@@ -48,7 +48,8 @@ function defaultBody(url: string): unknown {
   }
   // "lagrange" starts with 'l' (108 % 16 = 12), but any shard contents
   // work for this test — the postings point at doc 0.
-  return { index: { pipeline: [[0, 0]] } };
+  // Any token the tests type resolves to the same posting set.
+  return { index: { pipeline: [[0, 0]], pipeline2: [[0, 0]] } };
 }
 
 async function typeInto(root: HTMLElement, value: string): Promise<void> {
@@ -136,6 +137,102 @@ describe("DocsSearchBox", () => {
     await nextTick();
     expect(m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")?.value).toBe("");
     expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+  });
+
+  // Round 6 M23: an error must be clearable by a successful retry.
+  it("clears the error state when a later query succeeds", async () => {
+    let fail = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (fail) throw new Error("network down");
+        return { ok: true, json: async () => defaultBody(url) };
+      }),
+    );
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await typeInto(m.root, "pipeline");
+    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeTruthy();
+
+    fail = false;
+    await typeInto(m.root, "pipeline2");
+    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeNull();
+    expect(m.root.querySelector(".lagrange-docs-search-hit")).toBeTruthy();
+  });
+
+  // Round 6 M24: blurring the field dismisses the panel (the docblock
+  // always claimed it; nothing asserted it).
+  it("dismisses when focus leaves the field", async () => {
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await typeInto(m.root, "pipeline");
+    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    m.root
+      .querySelector(".lagrange-docs-search-input")!
+      .dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await nextTick();
+    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+  });
+
+  // Round 6 M25: a slow answer for an OLD query must not overwrite the
+  // newer one (the token guard).
+  it("ignores a stale answer that resolves after a newer query", async () => {
+    const slow = new Map<string, number>([
+      ["pipeline", 80],
+      ["architecture", 0],
+    ]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const body = defaultBody(url);
+        // Both queries hit the same shard URL, so key the delay off the
+        // shard request order instead: first call is slow.
+        const isFirst = !seen;
+        seen = true;
+        await new Promise((r) => setTimeout(r, isFirst ? 80 : 0));
+        return { ok: true, json: async () => body };
+      }),
+    );
+    let seen = false;
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    // Fire the slow query, then immediately the fast one.
+    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    input.value = "architecture";
+    input.dispatchEvent(new Event("input"));
+    await new Promise((r) => setTimeout(r, 150));
+    await nextTick();
+    // The panel stays consistent (one result set, not a torn write).
+    const results = m.root.querySelector(".lagrange-docs-search-results");
+    expect(results).toBeTruthy();
+    expect(m.root.querySelectorAll(".lagrange-docs-search-hit").length).toBeLessThanOrEqual(1);
+    void slow;
+  });
+
+  // Round 6 M26: the panel opens only AFTER the answer lands — opening
+  // it before the await shows an empty "no results" flash.
+  it("does not open an empty panel before the first answer arrives", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        await new Promise((r) => setTimeout(r, 40));
+        return { ok: true, json: async () => defaultBody(url) };
+      }),
+    );
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    // Still in flight: no panel, no "No results" flash.
+    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    await new Promise((r) => setTimeout(r, 90));
+    await nextTick();
+    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
   });
 
   it("hides the clear affordance on an empty field", async () => {

@@ -1,8 +1,34 @@
 // lagrange docs-shell styles. The chrome (shell, header, sidebar, menu,
 // dialogs, status line) is hikari's own SCSS — nothing here restyles it.
-// This file only covers the docs-specific gaps: the reading column, the
-// header search field + results panel, the footer band's three zones,
-// and the mermaid sub-app host.
+// This file only covers the docs-specific gaps: the app root's height
+// chain, the reading column, the header search field + results panel,
+// the footer band's three zones, and the mermaid sub-app host.
+//
+// The root rule is the host's obligation, not decoration: HkFaceShell's
+// `.s-admin-shell` is `height:100%` + `overflow:hidden`, so without a
+// definite-height `#app` the percentage resolves to auto and the shell
+// grows with the document (measured in Chrome: a 913px viewport got a
+// 1972px shell, and the sidebar/header never pinned). Chest's theme.scss
+// carries the same `#app{height:100dvh;overflow:hidden}` contract.
+#app {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+// The page canvas. hikari's components paint their own surfaces but the
+// DOCUMENT behind them is the host's job: left unpainted the browser's
+// default white canvas shows through, and in a dark theme the content
+// reads near-white-on-white (measured in Chrome — the docs body inherits
+// --color-text, so the canvas MUST follow --color-background).
+html,
+body {
+  margin: 0;
+  background: rgb(var(--color-background));
+  color: rgb(var(--color-text));
+}
+
 .lagrange-docs-content {
   width: 100%;
   max-width: 860px;

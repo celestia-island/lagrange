@@ -84,13 +84,15 @@ export interface PageTemplateOptions {
 export function pageTemplate(opts: PageTemplateOptions): string {
   const { site, lang, title, url, body, dataJson, assets, base, math } = opts;
   const fullTitle = title === site.title ? title : `${title} · ${site.title}`;
-  // The content stylesheet rides along on EVERY page: the body markup is
-  // the Rust renderer's (`.lg-diagram` cards, `.katex` metrics, code and
-  // table chrome), and the hikari bundle's SCSS never styles it. Linked
-  // BEFORE the bundle's own CSS so hikari's tokens win on shared
-  // selectors (round 5 of PR #119).
+  // ONLY the hikari bundle's CSS. The body's content styles live in the
+  // bundle too (docsContent.scss, scoped under .lagrange-docs-body) —
+  // linking the Rust lane's whole-page sheet here was an S1: its
+  // :root/body/.content rules hijacked the shell (round 6 of PR #119).
   const cssLinks = [
-    `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/theme.css`)}">`,
+    // `hi-*` component styles (code-highlight scaffolding, tags) — the
+    // Rust renderer emits those classes and hikari's Vue bundle does not
+    // own them. Component-scoped only, never the legacy page sheet.
+    `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/hikari-components.css`)}">`,
     ...assets.cssFiles.map(
       (f) => `<link rel="stylesheet" href="${escapeAttr(`${base}/assets/docs/${f}`)}">`,
     ),

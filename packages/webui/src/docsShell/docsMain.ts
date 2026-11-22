@@ -20,6 +20,7 @@ import { DocsPage } from "./DocsPage";
 import { installDocsLocale } from "./i18n";
 import type { DocsPageData } from "./types";
 import "./docsShell.scss";
+import "./docsContent.scss";
 
 interface DiagramGlobalBox extends HTMLElement {
   dataset: DOMStringMap;

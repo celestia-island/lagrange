@@ -69,23 +69,21 @@ describe("pageTemplate asset URLs", () => {
     expect(html).not.toContain('src="/assets/vendor/katex');
   });
 
-  // Round 5 S2: the body markup is the Rust renderer's, so the content
-  // stylesheet must ride every page (a dropped link leaves `.lg-diagram`
-  // cards and every KaTeX formula unstyled).
-  it("links the content stylesheet on every page, before the bundle CSS", () => {
+  // Round 6 S1: the lane must NOT link the Rust lane's whole-page sheet.
+  // Doing so hijacked the hikari shell (`:root`/`body`/`.content` rules:
+  // a 913px viewport got a 1549px non-scrolling shell, and light mode
+  // went illegible). The body's content styles ship INSIDE the bundle,
+  // scoped under .lagrange-docs-body.
+  it("links the component sheet + the bundle, never the legacy page sheet", () => {
     const html = render({ base: "/repo" });
-    expect(html).toContain('href="/repo/assets/docs/theme.css"');
-    const themeAt = html.indexOf("theme.css");
-    const bundleAt = html.indexOf("docsMain-abc.css");
-    expect(themeAt).toBeGreaterThan(-1);
-    expect(bundleAt).toBeGreaterThan(-1);
-    expect(themeAt, "content CSS first so hikari tokens win shared selectors").toBeLessThan(
-      bundleAt,
-    );
-    // …and on a math page too.
-    expect(render({ base: "/repo", math: true })).toContain(
-      'href="/repo/assets/docs/theme.css"',
-    );
+    expect(html).not.toContain("theme.css");
+    expect(html).toContain('href="/repo/assets/docs/hikari-components.css"');
+    expect(html).toContain('href="/repo/assets/docs/docsMain-abc.css"');
+    const hrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((m) => m[1]);
+    expect(hrefs, "component sheet then bundle, both base-prefixed").toEqual([
+      "/repo/assets/docs/hikari-components.css",
+      "/repo/assets/docs/docsMain-abc.css",
+    ]);
   });
 
   it("omits the KaTeX pair entirely on non-math pages", () => {

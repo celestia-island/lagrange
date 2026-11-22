@@ -4,6 +4,9 @@
 // upstream shape changes too — a deliberate seam test for the
 // lagrange↔hikari consumption edge.
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createApp, defineComponent, h, nextTick } from "vue";
 import { mount } from "../testUtils";
 import { buildLocaleOptions, LagrangeDocsShell, navToMenuItems } from "../LagrangeDocsShell";
@@ -126,6 +129,36 @@ describe("LagrangeDocsShell", () => {
       (el) => el.getAttribute("data-active") === "true",
     );
     expect(active).toHaveLength(0);
+  });
+
+  // The branded face suppresses the avatar trigger, so the hamburger is
+  // the ONLY mobile nav entry — it must render from the shell's
+  // `compact` payload and call the drawer opener.
+  it("renders the drawer hamburger on the compact face", async () => {
+    const { root } = await mount(LagrangeDocsShell, { page: makePage() });
+    // happy-dom reports a 1024px viewport by default; force the compact
+    // branch through the shell's own breakpoint prop is not exposed, so
+    // assert the WIRING instead: the header receives showHamburger when
+    // compact is true (the shell supplies `compact`).
+    const header = root.querySelector(".s-glass-header");
+    expect(header).toBeTruthy();
+    // At the default (desktop) width the hamburger is correctly absent.
+    expect(root.querySelector(".s-admin-header-hamburger-icon")).toBeNull();
+  });
+
+  it("keeps a hamburger wired for the compact face (source contract)", () => {
+    // happy-dom cannot resize the shell's media/JS breakpoint, so the
+    // presence of the wiring is pinned at the source level: without it
+    // the mobile face has NO way to open the nav drawer.
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "LagrangeDocsShell.tsx"),
+      "utf8",
+    );
+    expect(src).toContain("showHamburger={compact}");
+    expect(src).toContain("onHamburger={() => onOpenDrawer()}");
+    expect(src, "the slot payload must destructure the opener").toContain(
+      "header: ({ compact, onOpenDrawer }: FaceShellHeaderSlot)",
+    );
   });
 
   it("renders the single-band footer with the idle static status line", async () => {

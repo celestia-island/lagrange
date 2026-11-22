@@ -26,25 +26,36 @@ pub fn build_css(theme: &ThemeConfig) -> String {
 /// line numbers. `register_available` covers the built-in groups; link and
 /// code-highlight are not in those groups and are registered explicitly.
 /// Output is sorted by component name so builds are reproducible.
-fn hikari_component_css() -> String {
+/// The COMPONENT sheets the webui lane actually emits markup for.
+///
+/// Narrower than [`hikari_component_css`]'s `register_available()` set on
+/// purpose: that one also pulls the card / drawer / modal / table sheets
+/// (the legacy site's page chrome), which the hikari lane neither emits
+/// nor needs — 270KB of dead rules. The classes below are the ones the
+/// renderer's body HTML carries (tags, links, code-highlight scaffolding).
+fn webui_component_css() -> String {
     use hikari_components::styled::StyleRegistry;
     use hikari_components::StyledComponent as _;
 
     let mut registry = StyleRegistry::default();
-    registry.register_available();
     hikari_components::basic::link::LinkComponent::register(&mut registry);
     hikari_components::production::code_highlight::CodeHighlightComponent::register(&mut registry);
-    // The layout group is NOT covered by register_available — but the site
-    // top bar renders hikari's header grammar (.hk-header*), so its sheet
-    // must ship too.
-    hikari_components::layout::HeaderComponent::register(&mut registry);
+    // `.hk-tag` / `.hi-tag-code` chips (inline code spans, frontmatter tags).
+    hikari_components::display::tag::TagComponent::register(&mut registry);
 
     let all = registry.get_all();
     let mut names: Vec<&'static str> = all.keys().copied().collect();
     names.sort_unstable();
     let css = names.iter().map(|n| all[n]).collect::<Vec<_>>().join("\n");
+    format!("{css}\n{}", code_highlight_alias(&css))
+}
 
-    // Bridge the class-name contract gap: hikari's stylesheet styles
+/// hikari's stylesheet styles `.hk-code-highlight-*`; lagrange's renderer
+/// emits `hi-code-highlight-*` (render.rs). Duplicate every such rule under
+/// the `hi-` alias so the shipped DOM is styled without touching hikari's
+/// published CSS. Both the legacy and the webui component sheets share it.
+fn code_highlight_alias(css: &str) -> String {
+    // (see the fn doc)
     // `.hk-code-highlight-*`, but lagrange's renderer emits `hi-code-highlight-*`
     // (render.rs). Duplicate every code-highlight rule under the `hi-` alias so
     // the shipped DOM is styled without touching hikari's published CSS.
@@ -121,6 +132,27 @@ fn hikari_component_css() -> String {
     }
     format!("{css}\n/* lagrange: hi-code-highlight aliases for hikari hk- classes */\n{bridge}")
 }
+
+fn hikari_component_css() -> String {
+    use hikari_components::styled::StyleRegistry;
+    use hikari_components::StyledComponent as _;
+
+    let mut registry = StyleRegistry::default();
+    registry.register_available();
+    hikari_components::basic::link::LinkComponent::register(&mut registry);
+    hikari_components::production::code_highlight::CodeHighlightComponent::register(&mut registry);
+    // The layout group is NOT covered by register_available — but the site
+    // top bar renders hikari's header grammar (.hk-header*), so its sheet
+    // must ship too.
+    hikari_components::layout::HeaderComponent::register(&mut registry);
+
+    let all = registry.get_all();
+    let mut names: Vec<&'static str> = all.keys().copied().collect();
+    names.sort_unstable();
+    let css = names.iter().map(|n| all[n]).collect::<Vec<_>>().join("\n");
+
+    code_highlight_alias(&css)
+}
 const HIKARI_VARS: &str = r#":root {
 --hi-radius-sm: 4px; --hi-radius-md: 8px; --hi-radius-lg: 12px; --hi-radius-full: 9999px;
 --hi-blur-sm: 8px; --hi-blur-md: 16px;
@@ -151,6 +183,45 @@ const HIKARI_VARS: &str = r#":root {
 }
 .hi-glass { background: var(--bg-subtle); backdrop-filter: blur(16px); }
 .hi-glass-panel { background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--hi-shadow-panel); }
+.hi-scroll-container { overflow: auto; scrollbar-width: none; }
+"#;
+
+/// The bridge the **hikari webui lane** needs, and only that.
+///
+/// The legacy sheet ([`build_css`]) is a whole-page stylesheet: its
+/// `:root`, `body` and `.content` rules fight a real hikari shell when
+/// both are loaded (PR #119 round 6, measured in Chrome: the shell sized
+/// to content and light mode went illegible). This emits the component
+/// half alone — `--hi-*` mapped onto **hikari's own** tokens (so `hi-*`
+/// markup follows the live theme instead of a second palette) plus the
+/// component sheets for the classes lagrange's renderer emits.
+pub fn build_webui_css() -> String {
+    format!("{WEBUI_HIKARI_VARS}\n{}", webui_component_css())
+}
+
+/// `--hi-*` → hikari `--color-*` (triplets). No page-global rules.
+const WEBUI_HIKARI_VARS: &str = r#":root {
+--hi-radius-sm: var(--radius-sm, 4px); --hi-radius-md: var(--radius-md, 8px);
+--hi-radius-lg: var(--radius-lg, 12px); --hi-radius-full: 9999px;
+--hi-blur-sm: 8px; --hi-blur-md: 16px;
+--hi-ease-out-expo: cubic-bezier(.16, 1, .3, 1);
+--hi-z-modal: 1000; --hi-z-toast: 9999; --hi-z-tooltip: 10000;
+--hi-scroll-size: 8px; --hi-scroll-thumb: 4px;
+--hi-color-primary: rgb(var(--color-primary));
+--hi-color-primary-glow: rgb(var(--color-primary) / 35%);
+--hi-color-bg-container: rgb(var(--color-surface));
+--hi-color-bg-elevated: rgb(var(--color-surface));
+--hi-color-border: rgb(var(--color-border) / 40%);
+--hi-surface: rgb(var(--color-surface));
+--hi-border: rgb(var(--color-border) / 40%);
+--hi-color-text-primary: rgb(var(--color-text));
+--hi-color-text-secondary: rgb(var(--color-muted));
+--hi-color-text-tertiary: rgb(var(--color-muted));
+--hi-color-info: rgb(var(--color-primary));
+--hi-color-success: rgb(var(--color-success));
+--hi-color-warning: rgb(var(--color-warning));
+--hi-color-danger: rgb(var(--color-error));
+}
 .hi-scroll-container { overflow: auto; scrollbar-width: none; }
 "#;
 

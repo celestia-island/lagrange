@@ -167,9 +167,14 @@ export const LagrangeDocsShell = defineComponent({
         contentMode="document"
       >
         {{
-          header: ({ compact }: FaceShellHeaderSlot) => (
+          header: ({ compact, onOpenDrawer }: FaceShellHeaderSlot) => (
             <HkAdminHeader
               compact={compact}
+              // Below the shell breakpoint the drawer is the ONLY nav surface,
+              // and the branded face carries no avatar trigger to open it, so
+              // the hamburger is the sole entry point (the docs plan rule).
+              showHamburger={compact}
+              onHamburger={() => onOpenDrawer()}
               avatarAction="menu"
               title={page.value.title}
               brandSrc={site.value.logo ?? undefined}

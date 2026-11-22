@@ -553,14 +553,16 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             .collect(),
         navs: webui_navs,
     };
-    // The webui lane's pages are hikari-component based, but the BODY
-    // markup still carries the content stylesheet's classes (`.lg-diagram`
-    // cards, `.katex` metrics, code/table chrome). Ship that stylesheet
-    // as a file the hikari <head> links — without it a math page renders
-    // raw TeX (round 5 of PR #119).
-    let theme_css_path = opts.out.join("assets").join("docs");
-    fs::create_dir_all(&theme_css_path).context("create assets/docs")?;
-    fs::write(theme_css_path.join("theme.css"), &css).context("write assets/docs/theme.css")?;
+    // The hikari webui lane's pages need the `hi-*` COMPONENT styles (code
+    // highlight, tags) but never the legacy whole-page sheet — see
+    // theme::build_webui_css for why loading that sheet breaks the shell.
+    let webui_css_dir = opts.out.join("assets").join("docs");
+    fs::create_dir_all(&webui_css_dir).context("create assets/docs")?;
+    fs::write(
+        webui_css_dir.join("hikari-components.css"),
+        crate::theme::build_webui_css(),
+    )
+    .context("write assets/docs/hikari-components.css")?;
 
     crate::webui_lane::emit_manifest(&opts.out, &manifest_inputs)?;
     crate::webui_lane::run(&opts.out)?;
