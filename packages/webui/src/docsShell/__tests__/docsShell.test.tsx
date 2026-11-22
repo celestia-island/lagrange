@@ -187,11 +187,19 @@ describe("LagrangeDocsShell", () => {
     window.localStorage.setItem("lagrange.docs.sidebar", "rail");
     const { root } = await mount(LagrangeDocsShell, { page: makePage() });
     await nextTick();
-    // The shell's rail host carries the collapsed density when it starts
-    // on the rail — the prop round-trips into the component.
-    const railHost = root.querySelector("[class*='rail']");
-    expect(railHost).toBeTruthy();
-    expect(window.localStorage.getItem("lagrange.docs.sidebar")).toBe("rail");
+    // The persisted value must reach the SHELL, not just sit in storage:
+    // the rail toggle reports the state it started in.
+    const toggle = root.querySelector(".hk-sidebar-rail-toggle button");
+    expect(toggle, "the rail toggle renders").toBeTruthy();
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("starts expanded when nothing is persisted", async () => {
+    const { root } = await mount(LagrangeDocsShell, { page: makePage() });
+    await nextTick();
+    expect(
+      root.querySelector(".hk-sidebar-rail-toggle button")?.getAttribute("aria-expanded"),
+    ).toBe("true");
   });
 
   it("navigates sidebar rows with real page loads to the per-language URL", async () => {
