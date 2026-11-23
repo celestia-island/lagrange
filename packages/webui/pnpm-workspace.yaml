@@ -7,9 +7,12 @@ allowBuilds:
 # trap, _ledger/toolchain-pnpm.md).
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
-  # Bare names exempt resolution; the exact pin is double insurance for
-  # same-day pickups (lockfile verification only honours name@version).
-  - '@celestia-island/hikari'
+  # Exact pins, not chest's bare-name shape: this repo commits no
+  # lockfile and CI installs with --no-frozen-lockfile, so a bare-name
+  # exemption would let every deploy re-resolve to the newest hikari in
+  # ^0.55.459 with no commit to point at (review round 10 of #120
+  # measured a same-day 0.55.463 resolving). The repo-level deviation is
+  # recorded in _ledger/toolchain-pnpm.md; same-day pickups here edit the
+  # pin (the ledger's surgical recipe).
   - '@celestia-island/hikari@0.55.459'
-  - '@celestia-island/tairitsu-host-client'
   - '@celestia-island/tairitsu-host-client@0.1.0'
