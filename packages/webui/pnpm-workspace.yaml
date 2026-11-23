@@ -14,5 +14,5 @@ minimumReleaseAgeExclude:
   # measured a same-day 0.55.463 resolving). The repo-level deviation is
   # recorded in _ledger/toolchain-pnpm.md; same-day pickups here edit the
   # pin (the ledger's surgical recipe).
-  - '@celestia-island/hikari@0.55.459'
+  - '@celestia-island/hikari@0.55.472'
   - '@celestia-island/tairitsu-host-client@0.1.0'

@@ -13,7 +13,7 @@
     "build:docs:all": "pnpm build:docs && pnpm build:docs:ssr"
   },
   "dependencies": {
-    "@celestia-island/hikari": "^0.55.459",
+    "@celestia-island/hikari": "^0.55.472",
     "@vue/server-renderer": "^3.5.45",
     "dompurify": "^3.4.18",
     "lucide-vue-next": "^1",
