@@ -163,11 +163,36 @@ export function buildRedirectTargets(
   }));
 }
 
-/** The root index negotiates over the language roots. */
+/** The page a language root opens on: a language's landing page,
+ * resolved from the pages that actually exist for it.
+ *
+ * MUT: R1 (no `index.html` in the language) — the root stub used to send
+ * every visitor to `<lang>/`, a URL that only resolves when the docs tree
+ * gives that language a README/index. Sites without one (the hub) answered
+ * GitHub Pages' own 404 for their domain root. MUT: R2 (a language with
+ * `intro.html` but no README) — `intro.html` is the convention lagrange's
+ * own docs use, so it outranks alphabetical order. MUT: R3 (a language
+ * with neither) — falls to its first page rather than a dead URL.
+ *
+ * Order: `index.html` (a README/index folded into its directory), then
+ * `intro.html`, then the first page the build lists for that language. */
+export function languageEntryPath(manifest: Manifest, code: string): string | null {
+  const existing = manifest.pages.filter((p) => code in p.langs).map((p) => p.path);
+  if (existing.includes("index.html")) return "index.html";
+  if (existing.includes("intro.html")) return "intro.html";
+  return existing[0] ?? null;
+}
+
+/** The root index negotiates over the language landing pages. */
 export function buildRootRedirectTargets(manifest: Manifest): {
   code: string;
   url: string;
 }[] {
   const base = manifest.site.base;
-  return manifest.site.langs.map((l) => ({ code: l.code, url: `${base}/${l.code}/` }));
+  return manifest.site.langs
+    .map((l) => {
+      const entry = languageEntryPath(manifest, l.code);
+      return entry ? { code: l.code, url: `${base}/${l.code}/${entry}` } : null;
+    })
+    .filter((t): t is { code: string; url: string } => t !== null);
 }

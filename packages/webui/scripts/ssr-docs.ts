@@ -31,6 +31,7 @@ import {
   buildPageData,
   buildRedirectTargets,
   buildRootRedirectTargets,
+  languageEntryPath,
   pageTemplate,
   resolveClientAssetsFrom,
   type ClientAssets,
@@ -116,12 +117,29 @@ async function main(): Promise<void> {
     }));
   }
 
-  // Root index: negotiate over language roots.
+  // Root index: negotiate over language landing pages.
   const rootLangs = buildRootRedirectTargets(manifest);
   await writeFile(join(args.out, "index.html"), redirectStub({
     defaultUrl: defaultRedirectUrl(rootLangs, manifest.site.defaultLang),
     langUrls: rootLangs,
   }));
+
+  // Language roots: `<lang>/` must open too (a visitor typing it, a
+  // directory link, a trailing-slash canonical). When the language has no
+  // README/index the build emits no `<lang>/index.html`, and the host
+  // answers its own 404. Write a stub that lands on the language's entry
+  // page. Skipped when the build already wrote a real page there — the
+  // stub must not clobber authored content.
+  for (const lang of manifest.site.langs) {
+    const entry = languageEntryPath(manifest, lang.code);
+    if (!entry || entry === "index.html") continue;
+    const url = `${manifest.site.base}/${lang.code}/${entry}`;
+    await mkdir(join(args.out, lang.code), { recursive: true });
+    await writeFile(
+      join(args.out, lang.code, "index.html"),
+      redirectStub({ defaultUrl: url, langUrls: [{ code: lang.code, url }] }),
+    );
+  }
 
   console.error(`ssr-docs: wrote ${written} pages (+redirects) into ${args.out}`);
 }
