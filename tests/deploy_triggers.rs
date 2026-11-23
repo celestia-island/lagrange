@@ -7,6 +7,7 @@
 //!
 //! MUT: decoy-paths (deleting a required path entry fails the coverage
 //! test; a decoy block above a gutted `push.paths` fails it too).
+//! MUT: branches-absent · MUT: filters-key.
 //!
 //! This gate has been broken three times by reviewers, and each break
 //! taught the same lesson: a contract check that can be satisfied while
@@ -14,14 +15,22 @@
 //! human who would have read the file. So it parses with a real YAML
 //! parser, reads ONLY `on.push`, and **fails closed** on every shape it
 //! does not explicitly understand *within that trigger block* (unknown
-//! keys, absent `branches`, `paths-ignore`, YAML anchors/aliases).
-//!
-//! MUT: decoy-paths (a `pull_request: paths:` block above a gutted
-//! `push.paths` used to pass — round 5), MUT: branches-absent, MUT: alias-paths.
+//! keys, absent `branches`, `paths-ignore`).
 //!
 //! Scope, stated so nobody over-reads the green check: this proves the
 //! PUSH TRIGGER. It cannot see a job-level `if:` that skips the deploy,
 //! nor anything GitHub does at runtime — that stays a human review.
+//!
+//! YAML anchors/aliases are deliberately NOT scanned here (PR #120
+//! residual cleanup, closing rounds 8/9's simplification
+//! recommendation): `serde_yaml` resolves aliases before this gate runs,
+//! so the coverage test below already validates whatever the file
+//! resolves to — a list too short fails, a list spelled through an
+//! anchor passes only if it genuinely contains every required input.
+//! GitHub's loader (anchors supported since 2025-09) honours the same
+//! expansion, so a correctly-anchored list deploys exactly what the
+//! coverage test validated; an over-short one fails HERE, before merge.
+//!
 
 use serde_yaml::Value;
 
@@ -34,46 +43,14 @@ fn workflow() -> Value {
     serde_yaml::from_str(&raw).expect("docs.yml must be valid YAML")
 }
 
-/// Drop a trailing YAML comment. `#` only opens a comment when it starts a
-/// token, so `foo#bar` keeps its bytes (and a quoted `'#'` is left alone —
-/// this file has none, and being conservative here only means a stricter
-/// alias scan, never a looser one).
-/// MUT: alias-paths (an anchor/alias in value position still fails the gate).
-fn strip_yaml_comment(line: &str) -> &str {
-    let bytes = line.as_bytes();
-    let mut prev_is_space = true;
-    for (i, b) in bytes.iter().enumerate() {
-        if *b == b'#' && prev_is_space {
-            return &line[..i];
-        }
-        prev_is_space = b.is_ascii_whitespace();
-    }
-    line
-}
-
-/// The `on.push` mapping, or a panic naming the shape that was not
-/// understood — never a silent skip.
-/// MUT: branches-absent · MUT: filters-key · MUT: decoy-paths.
-fn push_trigger() -> serde_yaml::Mapping {
-    // YAML anchors/aliases are expanded before this code ever sees them, so
-    // a `paths: *all` could point at a list defined under a decoy event.
-    // Refuse the construct — but only where YAML can actually place one
-    // (value position after `key:` or a `- ` item), because a blanket scan
-    // for `&` false-fails on the `if: a && b` idiom three of this repo's
-    // own workflows use (review round 7 of PR #120).
-    let raw = std::fs::read_to_string(workflow_path()).expect("read docs.yml");
-    let has_alias = raw.lines().any(|line| alias_token(line).is_some());
-    assert!(
-        !has_alias,
-        "YAML anchors/aliases in docs.yml defeat this gate's ability to prove what \
-         `on.push.paths` contains; spell the list out"
-    );
-
-    let doc = workflow();
+/// The `on.push` mapping of a parsed workflow, or a panic naming the
+/// shape that was not understood — never a silent skip.
+/// MUT: decoy-paths · MUT: branches-absent · MUT: filters-key.
+fn push_trigger_from(doc: &Value) -> serde_yaml::Mapping {
     let on = doc
         .get("on")
         .or_else(|| doc.get("true")) // YAML 1.1 parses a bare `on:` key as `true`
-        .expect("docs.yml must declare an `on:` block");
+        .expect("`on:` must declare an `on:` block");
 
     let push = on
         .get("push")
@@ -83,7 +60,6 @@ fn push_trigger() -> serde_yaml::Mapping {
         .unwrap_or_else(|| panic!("`on.push` must be a mapping, got {push:?}"));
 
     // Fail closed on ANY key this contract does not understand. An unknown
-    // MUT: filters-key (an unknown `on.push` key refuses to pass).
     // key (a nested `filters:` block, a future GitHub addition) can
     // disable the deploy while `paths:` still looks complete — round 6
     // found three such shapes passing a whitelist-less check.
@@ -127,6 +103,11 @@ fn push_trigger() -> serde_yaml::Mapping {
     );
 
     mapping.clone()
+}
+
+/// The production reader: the real file's `on.push`.
+fn push_trigger() -> serde_yaml::Mapping {
+    push_trigger_from(&workflow())
 }
 
 fn deploy_triggers() -> Vec<String> {
@@ -224,14 +205,23 @@ fn deploy_triggers_never_list_an_untracked_path() {
     }
 }
 
-/// The parser must read `on.push`, never "the first `paths:` in the file"
-/// (round 5's decoy attack) and never an alias-defined list (round 6's).
-/// MUT: decoy-paths · MUT: alias-paths.
+/// The parser must read `on.push` — never "the first `paths:` in the
+/// file" (round 5's decoy attack drove the production function, not a
+/// hand-built literal; PR #120 residual cleanup gave this test the
+/// production path after round 9 proved the old shape could pass
+/// vacuously).
+/// MUT: decoy-paths.
 #[test]
 fn the_parser_reads_only_the_push_event() {
-    let decoy = "on:\n  pull_request:\n    paths:\n      - 'docs/**'\n  push:\n    branches: [master]\n    paths:\n      - 'src/**'\n";
-    let doc: Value = serde_yaml::from_str(decoy).unwrap();
-    let push_paths: Vec<&str> = doc["on"]["push"]["paths"]
+    let decoy: Value = serde_yaml::from_str(
+        // The decoy's pull_request block mirrors the real file's shape
+        // (branches + paths), so a regression reaches the paths assertion
+        // instead of tripping the branches check first (round 2).
+        "on:\n  pull_request:\n    branches: [master]\n    paths:\n      - 'docs/**'\n  push:\n    branches: [master]\n    paths:\n      - 'src/**'\n",
+    )
+    .unwrap();
+    let mapping = push_trigger_from(&decoy);
+    let push_paths: Vec<&str> = mapping["paths"]
         .as_sequence()
         .unwrap()
         .iter()
@@ -242,51 +232,4 @@ fn the_parser_reads_only_the_push_event() {
         vec!["src/**"],
         "the contract must read push.paths, never the first `paths:` in the file"
     );
-}
-
-/// The alias scan must not fire on code that merely CONTAINS `&` — the
-/// repo's own workflows gate jobs with `if: … && …` (review round 7 of
-/// PR #120: a blanket `contains('&')` would have rejected that idiom).
-#[test]
-fn the_alias_scan_ignores_operators_and_comments() {
-    for innocent in [
-        "    if: github.event_name == 'push' && !github.event.deleted",
-        "      run: cargo build 2>&1",
-        "    # paths: *all would be rejected, but this is only a comment",
-        "      - 'docs/**'  # not & an anchor",
-    ] {
-        assert_eq!(
-            alias_token(innocent),
-            None,
-            "`{innocent}` must not be read as a YAML alias/anchor"
-        );
-    }
-
-    for offensive in [
-        "    paths: &all",
-        "    paths: *all",
-        "      - &entry 'docs/**'",
-        "      - *entry",
-    ] {
-        assert!(
-            alias_token(offensive).is_some(),
-            "`{offensive}` IS a YAML anchor/alias and must be rejected"
-        );
-    }
-}
-
-/// The value-position anchor/alias detector, split out so the tests above
-/// can drive it directly (the production path uses the same code).
-fn alias_token(line: &str) -> Option<&str> {
-    let line = strip_yaml_comment(line);
-    let t = line.trim();
-    let value = t
-        .split_once(':')
-        .map(|(_, v)| v.trim())
-        .unwrap_or_else(|| t.strip_prefix('-').map(str::trim).unwrap_or(""));
-    if value.starts_with('&') || value.starts_with('*') {
-        Some(value)
-    } else {
-        None
-    }
 }
