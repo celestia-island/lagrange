@@ -83,8 +83,12 @@ describe("DocsSearch", () => {
       { title: "t", description: "d", logo: null, base: "", defaultLang: "en", langs: [], buildStamp: "s" },
       makeFetcher({
         "/search_meta.json": meta,
-        // 'a' = 97 % 16 = 1 → shard 01 holds "anchor".
-        "/search_i_01.json": { index: { anchor: [[1, 0]] } },
+        // 'a' = 97 % 16 = 1 → shard 01 holds "anchor". The shard is the
+        // BARE postings map — the shape `src/search.rs` writes (its own
+        // test pins it). A wrapped `{index: …}` fixture here is what let
+        // the reader and the writer drift apart while every test stayed
+        // green.
+        "/search_i_01.json": { anchor: [[1, 0]] },
       }),
     );
     const hits = await s.query("anchor", "zh-Hans");
@@ -96,7 +100,7 @@ describe("DocsSearch", () => {
   it("returns empty for unknown tokens instead of loading everything", async () => {
     const s = new DocsSearch(
       { title: "t", description: "d", logo: null, base: "", defaultLang: "en", langs: [], buildStamp: "s" },
-      makeFetcher({ "/search_meta.json": meta, "/search_i_00.json": { index: {} } }),
+      makeFetcher({ "/search_meta.json": meta, "/search_i_00.json": {} }),
     );
     expect(await s.query("zzzz", "en")).toEqual([]);
   });

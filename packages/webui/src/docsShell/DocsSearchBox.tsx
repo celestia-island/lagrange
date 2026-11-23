@@ -60,7 +60,13 @@ export const DocsSearchBox = defineComponent({
     const busy = ref(false);
     const rootRef = ref<HTMLElement | null>(null);
     const inputRef = ref<HTMLInputElement | null>(null);
-    const search = computed(() => new DocsSearch(props.site, fetch));
+    // `fetch` must be bound to `window`: DocsSearch stores it on an
+    // instance field and calls it as a method, which makes `this` the
+    // DocsSearch instance — and Chrome throws "Illegal invocation" for a
+    // Window method invoked off the Window. DocsSearch's catch turned that
+    // into null, so every query answered "unavailable" on every browser
+    // while happy-dom (which does not check `this`) kept the tests green.
+    const search = computed(() => new DocsSearch(props.site, fetch.bind(window)));
 
     let seq = 0;
 
@@ -138,7 +144,8 @@ export const DocsSearchBox = defineComponent({
       document.removeEventListener("keydown", onKey);
     });
 
-    const field = (autoFocus: boolean) => (
+    const field = () => (
+      <span class="lagrange-docs-search-field">
       <input
         class="lagrange-docs-search-input"
         ref={inputRef}
@@ -147,9 +154,9 @@ export const DocsSearchBox = defineComponent({
         aria-label={t("lagrange::docs.search", "Search…")}
         autocomplete="off"
         spellcheck={false}
-        // The sheet's field takes focus when the sheet opens; the
-        // desktop field never steals focus on page load.
-        autofocus={autoFocus ? "true" : undefined}
+        // No autofocus: HkPopover focuses its own panel on the tick after
+        // it opens and would take focus straight back, so the attribute
+        // bought nothing (measured in Chrome, round 1 of #124).
         value={query.value}
         onInput={(e: Event) => {
           query.value = (e.target as HTMLInputElement).value;
@@ -160,10 +167,6 @@ export const DocsSearchBox = defineComponent({
         }}
         onFocusout={onFocusOut}
       />
-    );
-
-    const results = () => (
-      <>
         {query.value && (
           <button
             class="lagrange-docs-search-clear"
@@ -175,6 +178,11 @@ export const DocsSearchBox = defineComponent({
             ×
           </button>
         )}
+      </span>
+    );
+
+    const results = () => (
+      <>
         {/* In-flight row: its OWN surface, so it never reads as the
             results panel (the "no empty panel flash" contract still
             holds — that assertion is what caught this overlap). */}
@@ -226,6 +234,10 @@ export const DocsSearchBox = defineComponent({
           <HkPopover
             modelValue={open.value}
             onUpdate:modelValue={onSheetUpdate}
+            // `.value`, the family's shape (HkColorPicker, HkAdminHeader,
+            // …): the ref is written during the first patch, which re-runs
+            // this render, and HkPopover reads the anchor only once
+            // `modelValue` turns true — by then it is populated.
             anchorRef={rootRef.value}
             placement="bottom-end"
             offset={6}
@@ -233,7 +245,7 @@ export const DocsSearchBox = defineComponent({
             title={t("lagrange::docs.search", "Search…")}
           >
             <div class="lagrange-docs-search-sheet">
-              {field(true)}
+              {field()}
               {results()}
             </div>
           </HkPopover>
@@ -246,7 +258,7 @@ export const DocsSearchBox = defineComponent({
           data-open={open.value ? "true" : "false"}
           data-busy={busy.value ? "true" : "false"}
         >
-          {field(false)}
+          {field()}
           {results()}
         </span>
       );

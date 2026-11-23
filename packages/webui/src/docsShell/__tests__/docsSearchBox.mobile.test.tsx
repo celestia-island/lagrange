@@ -58,7 +58,7 @@ function stubFetch(): void {
             ],
             shards: ["search_i_00.json"],
           }
-        : { index: { pipeline: [[0, 0]], pipeline2: [[0, 0]] } };
+        : { pipeline: [[0, 0]], pipeline2: [[0, 0]] };
       return { ok: true, json: async () => body };
     }),
   );

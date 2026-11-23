@@ -49,7 +49,8 @@ function defaultBody(url: string): unknown {
   // "lagrange" starts with 'l' (108 % 16 = 12), but any shard contents
   // work for this test — the postings point at doc 0.
   // Any token the tests type resolves to the same posting set.
-  return { index: { pipeline: [[0, 0]], pipeline2: [[0, 0]] } };
+  // Bare postings map — the shape the build writes.
+  return { pipeline: [[0, 0]], pipeline2: [[0, 0]] };
 }
 
 async function typeInto(root: HTMLElement, value: string): Promise<void> {
@@ -59,6 +60,24 @@ async function typeInto(root: HTMLElement, value: string): Promise<void> {
   await nextTick();
   await new Promise((r) => setTimeout(r, 30));
   await nextTick();
+}
+
+/**
+ * `stubFetch`, but the way a REAL browser hands it out: a Window method
+ * invoked with the wrong `this` throws "Illegal invocation". happy-dom's
+ * own fetch never checks the receiver, which is exactly how a detached
+ * `fetch` passed into `DocsSearch` shipped green tests and a dead search.
+ */
+function strictFetch(): void {
+  const impl = async (input: string | URL | Request): Promise<Response> =>
+    ({ ok: true, json: async () => defaultBody(String(input)) } as unknown as Response);
+  const strict = function fetch(this: unknown, input: string | URL | Request): Promise<Response> {
+    if (this !== window && this !== globalThis) {
+      throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    }
+    return impl(input);
+  };
+  vi.stubGlobal("fetch", strict);
 }
 
 let cleanup: (() => void) | null = null;
@@ -71,6 +90,22 @@ afterEach(() => {
 });
 
 describe("DocsSearchBox", () => {
+  // 2026-11-24: `new DocsSearch(site, fetch)` stored the bare Window
+  // method on an instance and called it as a method; Chrome rejected the
+  // receiver and every query died as "unavailable" on every docs site.
+  it("calls fetch with the Window as its receiver, as a real browser requires", async () => {
+    strictFetch();
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await typeInto(m.root, "pipeline");
+    // MUT: M6 (back to the bare `fetch`) — the strict stub throws, the
+    // box shows its error state instead of hits.
+    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeNull();
+    const results = m.root.querySelector(".lagrange-docs-search-results");
+    expect(results, "the index must be readable when fetch is bound").toBeTruthy();
+    expect(results?.textContent).toContain("Architecture");
+  });
+
   it("renders hits for a query in the page language", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
@@ -99,7 +134,7 @@ describe("DocsSearchBox", () => {
   });
 
   it("shows the no-results state for a query with no postings", async () => {
-    stubFetch((url) => (url.endsWith("search_meta.json") ? defaultBody("search_meta.json") : { index: {} }));
+    stubFetch((url) => (url.endsWith("search_meta.json") ? defaultBody("search_meta.json") : {}));
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "zzzz");
