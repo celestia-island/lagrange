@@ -1,4 +1,4 @@
-<p align="center"><img src="https://raw.githubusercontent.com/celestia-island/lagrange/master/docs/logo.webp" alt="Lagrange" width="240" /></p>
+<p align="center"><img src="https://raw.githubusercontent.com/celestia-island/celestia-island.github.io/main/res/logos/lagrange.webp" alt="Lagrange" width="240" /></p>
 
 <h1 align="center">Lagrange</h1>
 
