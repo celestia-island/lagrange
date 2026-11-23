@@ -161,12 +161,19 @@ describe("LagrangeDocsShell", () => {
     );
   });
 
-  it("renders the single-band footer with the idle static status line", async () => {
+  // 2026-11-24 user direction: no status indicator bottom-left, no footer
+  // band on a static docs site — it cost a phone a sixth of its viewport
+  // and reported nothing (a static build has no connection to show).
+  it("renders NO footer band and NO status line", async () => {
     const { root } = await mount(LagrangeDocsShell, { page: makePage() });
-    const footer = root.querySelector(".lagrange-docs-footer");
-    expect(footer).toBeTruthy();
-    expect(footer?.textContent).toContain("Lagrange · 0.2.12 · 2026-11-22");
-    expect(footer?.textContent).toContain("Built with Lagrange");
+    // MUT: M5 (restoring the footer slot) — the band is back the moment
+    // the slot is, and the shell reserves its height again.
+    expect(root.querySelector(".lagrange-docs-footer")).toBeNull();
+    expect(root.querySelector(".s-status-bar")).toBeNull();
+    // The connection-status indicator (the bottom-left light) is gone
+    // with it.
+    expect(root.textContent).not.toContain("Panel");
+    expect(root.textContent).not.toContain("Built with Lagrange");
   });
 
   it("persists the sidebar rail state under lagrange's own key (round trip)", async () => {

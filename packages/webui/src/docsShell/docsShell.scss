@@ -43,6 +43,11 @@ body {
 }
 
 // ── header search ─────────────────────────────────────────────────────────
+// Two shapes (see DocsSearchBox.tsx): `[data-shape="inline"]` is the
+// desktop field with an anchored results panel; `[data-shape="sheet"]`
+// is the mobile trigger whose field + results live inside the bottom
+// sheet, laid out in normal flow there (the sheet is the surface — no
+// absolute positioning, no own background).
 .lagrange-docs-search {
   position: relative;
   display: inline-flex;
@@ -173,38 +178,52 @@ body {
   white-space: nowrap;
 }
 
+// Mobile: the trigger is one icon slot, exactly like its neighbours.
+.lagrange-docs-search[data-shape="sheet"] {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lagrange-docs-search-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+
+  .lagrange-docs-search-input {
+    // The sheet gives the field the full width a phone can spare.
+    width: 100%;
+    height: 40px;
+    font-size: 1rem;
+  }
+
+  .lagrange-docs-search-results {
+    // In flow inside the sheet: no anchoring, no second surface.
+    position: static;
+    width: 100%;
+    max-height: 55vh;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .lagrange-docs-search-busy {
+    position: static;
+    padding: 0.4rem 0;
+  }
+
+  .lagrange-docs-search-clear {
+    inset-inline-end: 8px;
+  }
+}
+
 // ── header end cluster ────────────────────────────────────────────────────
 .lagrange-docs-header-end {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-
-// ── footer band ───────────────────────────────────────────────────────────
-.lagrange-docs-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
-  font-size: 0.78rem;
-
-  &-center {
-    opacity: 0.7;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &-right a {
-    color: inherit;
-    text-decoration: none;
-    opacity: 0.7;
-
-    &:hover {
-      opacity: 1;
-    }
-  }
 }
 
 // ── mermaid sub-app host ──────────────────────────────────────────────────
