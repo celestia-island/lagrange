@@ -4,6 +4,7 @@ description = "A pest-based markdown documentation renderer"
 cname = "lagrange.docs.celestia.world"
 # The hikari webui lane renders this in the admin header's brand slot.
 logo = "logo.webp"
+favicon = "logo.webp"
 
 # [layout]
 # mode = "sidebar"
