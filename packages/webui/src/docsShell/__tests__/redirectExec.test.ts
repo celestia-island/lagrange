@@ -57,6 +57,8 @@ describe("redirect stub negotiation (executed)", () => {
   // language and always lands on the default — the exact bug hikari#1531's
   // user reported. The pick function maps the region to the script after
   // the primary-subtag walk fails.
+  // MUT:mut-zh-region — removing the zh-region mapping from pickRedirectUrl
+  // REDS this test (zh-CN falls through to the English default).
   it("maps zh-CN to zh-Hans and zh-TW to zh-Hant", () => {
     const hans = runStub(stub, { languages: ["zh-CN", "en"] });
     expect(hans.url).toContain("/zh-Hans/");
