@@ -1,0 +1,37 @@
+// AgentActivity styles. The .vue source was `<style scoped>`; the rules
+// are nested under the component root class `.agent-activity` so they
+// keep applying only within the component (scoped-data-v semantics).
+// Specificity is preserved: `.x[data-v]` (0,2,0) ≡ `.root .x` (0,2,0),
+// and element-descendant rules keep the same element counts.
+
+.agent-activity {
+  padding: 1rem;
+
+  .hint { color: #888; font-size: 0.85rem; }
+
+  .activity-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  .activity-table th,
+  .activity-table td {
+    text-align: left;
+    padding: 0.35rem 0.6rem;
+    border-bottom: 1px solid #eee;
+  }
+
+  .mono { font-family: monospace; font-size: 0.8rem; }
+
+  .ok { color: #16a34a; font-weight: 600; }
+
+  .fail { color: #dc2626; font-weight: 600; }
+
+  .detail {
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

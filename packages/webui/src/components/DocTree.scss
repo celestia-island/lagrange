@@ -1,0 +1,90 @@
+// DocTree styles. The .vue source was `<style scoped>`; the rules are
+// nested under the component root class `.doc-tree` so they keep
+// applying only within the component (scoped-data-v semantics).
+// Specificity is preserved (`.x[data-v]` 0,2,0 ≡ `.root .x` 0,2,0), and
+// the pseudo-class rule keeps its shape nested.
+
+.doc-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  .doc-node {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1rem;
+    background: #fafafa;
+  }
+
+  .doc-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .doc-title {
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  .doc-id {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #888;
+  }
+
+  .badge {
+    background: #e0e7ff;
+    color: #3730a3;
+    padding: 0.1rem 0.5rem;
+    border-radius: 99px;
+    font-size: 0.75rem;
+  }
+
+  .doc-tags {
+    margin-bottom: 0.5rem;
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+  }
+
+  .tag {
+    background: #dcfce7;
+    color: #166534;
+    padding: 0.1rem 0.4rem;
+    border-radius: 99px;
+    font-size: 0.7rem;
+  }
+
+  .lang-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .lang-item {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+
+    &:hover { background: #f0f0f0; }
+  }
+
+  .lang-code {
+    font-weight: 600;
+    min-width: 5rem;
+    color: #555;
+  }
+
+  .lang-title { flex: 1; }
+
+  .lang-rev {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #aaa;
+  }
+}
