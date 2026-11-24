@@ -72,7 +72,16 @@ async function discoverPage(base) {
 async function discoverWord(base, pagePath) {
   const index = await loadSearchIndex(base);
   if (!index) return null;
-  const lang = pagePath.match(/\/([a-z]{2,8})(?:\/|\.)/i)?.[1]?.toLowerCase() ?? "en";
+  // Match the page against the build's OWN language segments first — a
+  // naive `[a-z]{2,8}` slice mangles multi-segment tags like `zh-Hans`
+  // (it would extract "index" out of `/zh-Hans/index.html`).
+  const knownLangs = [...index.byLang.keys()];
+  const path = `/${pagePath.replace(/^\/+/, "")}`;
+  const lang =
+    knownLangs.find((k) => path.toLowerCase().startsWith(`/${k.toLowerCase()}/`)) ??
+    knownLangs.find((k) => path.toLowerCase() === `/${k.toLowerCase()}`) ??
+    path.match(/\/([a-z]{2,8})(?:\/|\.)/i)?.[1]?.toLowerCase();
+  if (!lang || !index.byLang.has(lang)) return null;
   const langDocs = new Set((index.byLang.get(lang) ?? []).map((d) => d.id));
   if (!langDocs.size) return null;
   let best = null;
