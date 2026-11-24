@@ -565,6 +565,7 @@ try {
   // the precondition for the blur the click below will cause.
   check("desktop: the field keeps focus while results show", v.hits > 0 && typeof v.focused === "string" && v.focused.includes("lagrange-docs-search-input"), `hits=${v.hits} focused=${v.focused}`);
 
+
   // ── 4. desktop: a REAL mouse click on a hit navigates ──────────────────
   // The regression this pins (round 5 of #124): the results are teleported
   // outside the field's box, and a containment test in a `focusout` handler
@@ -587,6 +588,26 @@ try {
   const hrefPath = (v.href ?? "").split("#")[0];
   const navigated = !!v.href && after !== before && after.startsWith(hrefPath);
   check("desktop: clicking a hit navigates to it", navigated, `before=${before} after=${after} href=${v.href}`);
+  // NEGATIVE control: a query that cannot match must answer nothing. Binding
+  // the positive case to the word is not enough on its own — an index that
+  // ignores the query and lists every document would still contain the word
+  // in SOME row (`.some()`). A nonsense token is the discriminator: a search
+  // that filters returns 0, a search that does not returns the corpus.
+  const NONSENSE = "zzzqx" + "zzqx"; // no token of this shape exists in any shard
+  const clearField = await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-input'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
+  if (clearField === true) {
+    await send("Input.insertText", { text: NONSENSE });
+    await poll(async () => {
+      const s = await safe(`JSON.stringify({ h: document.querySelectorAll('.lagrange-docs-search-hit').length, q: document.querySelector('.lagrange-docs-search-input')?.value ?? '' })`);
+      const p2 = s ? JSON.parse(s) : null;
+      // Settled when the box holds the nonsense token and the list is empty.
+      return p2 && p2.q === "${NONSENSE}" && p2.h === 0 ? p2 : null;
+    });
+    const negHits = await safe(`document.querySelectorAll('.lagrange-docs-search-hit').length`);
+    check("desktop search filters (a nonsense query matches nothing)", negHits === 0, `hits=${negHits}`);
+  } else {
+    check("desktop search filters (a nonsense query matches nothing)", false, `could not clear the field (${clearField})`);
+  }
 } finally {
   await closeTab();
 }
