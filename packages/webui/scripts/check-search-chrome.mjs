@@ -86,7 +86,16 @@ async function discoverWord(base, pagePath) {
   const langDocs = new Set((index.byLang.get(lang) ?? []).map((d) => d.id));
   if (!langDocs.size) return null;
   let best = null;
+  // The CLIENT hard-codes its shard count (`SHARD_COUNT = 16` in
+  // `docsShell/search.ts`, mirroring `src/search.rs`'s constant), so
+  // addressing parity holds only when the served index really has 16
+  // shards. If a future build changes that count, discovery must refuse
+  // rather than compute an index the client would never look in.
   const shardCount = index.meta.shards.length;
+  if (shardCount !== 16) {
+    console.error(`the served index has ${shardCount} shards but the client addresses 16 — cannot prove a discovered word lands in the shard the client reads`);
+    process.exit(2);
+  }
   for (const [shardIdx, name] of index.meta.shards.entries()) {
     let shard;
     try {
@@ -322,12 +331,15 @@ try {
   // `new Set(...).size === 1` would then compare one shared '?' and pass —
   // measuring nothing (round 2 of #125).
   const numeric = sizeList.length >= 2 && sizeList.every((s) => /^\d+$/.test(s));
+  const phoneUniform = numeric && new Set(sizeList).size === 1;
   check(
     "phone: every header action renders the same size",
-    numeric && new Set(sizeList).size === 1,
+    phoneUniform,
     `sizes=${sizeList.join(",")}`,
   );
 
+  const phoneHydrated = await safe(`!!document.querySelector('#app')?.__vue_app__`);
+  check("phone: the client bundle actually hydrated", phoneHydrated === true, `vueApp=${phoneHydrated}`);
   const mismatch = consoleErrors.filter((e) => /hydrat/i.test(e));
   console.log(`info  phone hydration: ${mismatch.length} mismatch line(s) — HkFaceShell's compact/hamburger, pre-existing in hikari`);
   // The known line cannot be this component's oracle (see above); its guard
@@ -335,10 +347,14 @@ try {
   // verified in rounds 10). But an UNBOUNDED count hides a SECOND, new
   // mismatch — the search's own — behind the tolerated one, so the oracle
   // here is "no more than the tracked defect", not "however many lines".
+  // Not just a count: the tolerated line must be the KNOWN one. A single
+  // search-caused mismatch could otherwise substitute for HkFaceShell's and
+  // still satisfy "at most one".
+  const fromSearch = mismatch.filter((line) => /lagrange-docs-search|DocsSearch|docs-search/i.test(line));
   check(
     "phone: no hydration mismatch beyond the tracked hikari one",
-    mismatch.length <= 1,
-    `mismatch=${mismatch.length}`,
+    mismatch.length <= 1 && fromSearch.length === 0,
+    `mismatch=${mismatch.length} fromSearch=${fromSearch.length}`,
   );
   // ── 2. the receiver: a real query must answer, not error ────────────────
   await send("Runtime.evaluate", {
@@ -366,8 +382,8 @@ try {
   // Attribution: the poll below accepts focus arriving from ANY source, so
   // prove the field did not already hold it — otherwise a poll after the tap
   // would pass on focus that preceded it.
-  const sfPreexisting = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-sheet input')`);
-  check("phone: the sheet's field starts unfocused", sfPreexisting === false, `preFocused=${sfPreexisting}`);
+  const sfPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-sheet input'); if (!el) return null; document.activeElement?.blur?.(); return document.activeElement === el; })()`);
+  check("phone: the sheet's field is unfocused before the tap", sfPreexisting === false && sfPreexisting !== null, `preFocused=${sfPreexisting}`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   // Focus is synchronous on mousedown, so poll instead of sleeping: a fixed
@@ -414,6 +430,20 @@ try {
   check("desktop: the client bundle actually hydrated", dhydrated === true, `vueApp=${dhydrated}`);
   check("desktop hydration reports no mismatch", !consoleErrors.some((e) => /hydrat/i.test(e)), consoleErrors.find((e) => /hydrat/i.test(e)) ?? "");
 
+  const dSizes = await safe(`JSON.stringify([...document.querySelectorAll('.s-admin-header-actions button')].map((b) => String(b.className).match(/hk-icon-button-(\\d+)/)?.[1] ?? '?'))`);
+  const dSizeList = dSizes ? JSON.parse(dSizes) : [];
+  const dNumeric = dSizeList.length >= 2 && dSizeList.every((s) => /^\d+$/.test(s));
+  const desktopUniform = dNumeric && new Set(dSizeList).size === 1;
+  // Uniform on both sides is not enough: a phone row stuck at the DESKTOP
+  // size is exactly the 28/32 regression class (uniform 32 everywhere would
+  // otherwise read as "consistent"). Mobile actions must be strictly
+  // smaller, which no single-viewport assertion can establish.
+  check(
+    "phone actions are smaller than desktop actions",
+    phoneUniform && desktopUniform && Number(sizeList[0]) < Number(dSizeList[0]),
+    `phone=${sizeList[0]} desktop=${dSizeList[0]}`,
+  );
+
   // A REAL pointer focus on the field, then real typed text. The focus
   // matters: the hit-click regression is a blur-then-close sequence, and a
   // panel opened by a programmatic value change (no focused input) can
@@ -424,8 +454,8 @@ try {
   // Same attribution guard as the phone branch: a fresh load leaves the
   // field unfocused, and asserting that makes the click the only
   // explanation for the focus the poll below waits for.
-  const fPreexisting = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-input')`);
-  check("desktop: the field starts unfocused", fPreexisting === false, `preFocused=${fPreexisting}`);
+  const fPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-input'); if (!el) return null; document.activeElement?.blur?.(); return document.activeElement === el; })()`);
+  check("desktop: the field is unfocused before the click", fPreexisting === false && fPreexisting !== null, `preFocused=${fPreexisting}`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: f.x, y: f.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: f.x, y: f.y, button: "left", clickCount: 1 });
   const focused = await poll(async () => {
@@ -467,7 +497,7 @@ try {
   check("desktop results are on screen, not clipped by the header", v.hits > 0 && v.visible, `hits=${v.hits} at=${v.at}`);
   // The field MUST still hold focus when the hits are on screen — that is
   // the precondition for the blur the click below will cause.
-  check("desktop: the field keeps focus while results show", typeof v.focused === "string" && v.focused.includes("lagrange-docs-search-input"), `focused=${v.focused}`);
+  check("desktop: the field keeps focus while results show", v.hits > 0 && typeof v.focused === "string" && v.focused.includes("lagrange-docs-search-input"), `hits=${v.hits} focused=${v.focused}`);
 
   // ── 4. desktop: a REAL mouse click on a hit navigates ──────────────────
   // The regression this pins (round 5 of #124): the results are teleported
