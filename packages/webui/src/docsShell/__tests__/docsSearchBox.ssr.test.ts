@@ -9,7 +9,8 @@
 // Why its own file, in a NODE environment: the happy-dom suites stub
 // `useBreakpoint` (isMobile=true), which makes the server render the BUTTON
 // branch — a "no field in SSR" assertion there is vacuous, and round 10 of
-// #124 measured exactly that passing against a real leak. What is
+// #124 measured exactly that passing against a real leak (MUT: M4 — the
+// same leak, passing under a mocked breakpoint). What is
 // load-bearing is `typeof window === "undefined"`: only then does hikari's
 // real server branch run, so the shell's own gate is the only thing keeping
 // children out of the output. (Round 12 confirmed the node environment is

@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-// Docs-shell contract tests. These mount the REAL hikari components (no
-// mocks of HkFaceShell/HkAdminHeader/...), so the pins below bite on
-// upstream shape changes too — a deliberate seam test for the
-// lagrange↔hikari consumption edge.
+// Docs-shell contract tests against the REAL hikari components (no mocks),
+// so the pins bite on what ships. MUT anchors name each pin's mutation.
+// Covers the header slots, the locale picker wiring, the sidebar persistence
+// and the footer ban.
+
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

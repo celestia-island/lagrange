@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// The mobile shape of the docs search (2026-11-24): an always-present
+// MUT: M13 (force the inline branch) — without the mobile shape this file's
+// first case fails. The mobile shape of the docs search (2026-11-24): an always-present
 // field in the header's end wing squeezed the language and theme buttons
 // past the viewport edge on a phone. Below the shell breakpoint the
 // search collapses to ONE icon button — the same slot its neighbours
@@ -120,6 +121,8 @@ describe("DocsSearchBox (mobile)", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     // The sheet is teleported to document.body (happy-dom): the field
     // and the results live INSIDE it, never in the header row.
+    // MUT: M10 (remove the mobile HkPopover) — the assertion below then
+    // finds no field, which is how this case earns its keep.
     const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-sheet input");
     expect(input, "the sheet must hold the search field").toBeTruthy();
     expect(m.root.querySelector(".lagrange-docs-search-input")).toBeNull();
@@ -163,6 +166,7 @@ describe("DocsSearchBox (mobile)", () => {
   // undone — the answer landed, `run()` set `open = true`, and the sheet
   // came back on its own. happy-dom's desktop suites never see this (they
   // mock the breakpoint), so it lives here, in the mobile shape.
+  // MUT: M20 (`onSheetUpdate` not bumping the token / clearing `busy`).
   it("stays closed when the sheet is dismissed mid-flight", async () => {
     vi.stubGlobal(
       "fetch",

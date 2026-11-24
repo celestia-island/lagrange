@@ -1,12 +1,8 @@
-// SSr-lane template + redirect-stub guards (PR #119 round 3).
-//
-// Round 3's mutations M9–M12 SURVIVED because everything they touched
-// lived in the orchestrator or was asserted by grepping source text:
-//   M9  breaking the stub's negotiation control flow (the grep still hit),
-//   M10 escapeAttr → identity,
-//   M11 KaTeX URLs back to root-absolute (the round-2 regression),
-//   M12 dropping the manifest's `assets/` prefix strip.
-// The tests below EXECUTE the emitted artifacts instead of grepping them.
+// SSR-lane template + redirect-stub guards (PR #119 round 3).
+// MUT anchors name the mutation each pin survives.
+// The redirect targets and the language-root stubs are assembled here so
+// every one of them is reachable by a unit test.
+
 import { describe, expect, it } from "vitest";
 import {
   buildPageData,

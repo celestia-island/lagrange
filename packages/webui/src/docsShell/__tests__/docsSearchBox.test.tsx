@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
-// Search-box behaviour: the async path, the dismissal routes and the
-// clear affordance (PR #119 round 5 — mutation M18 survived because no
-// test mounted this component at all).
+// Desktop shape of the docs search: async path, dismissal routes, clear
+// affordance. MUT anchors name the mutation each pin survives.
+// The component is mounted UNMOCKED here (no breakpoint stub): the phone
+// shape lives in docsSearchBox.mobile.
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { mount } from "../testUtils";
@@ -12,6 +14,7 @@ import type { DocsSiteMeta } from "../types";
 // the real one reports dismissal (Escape / backdrop / ✕ all emit
 // `update:modelValue(false)`). happy-dom never mounts the real popover,
 // so this is the only way to drive the component's half of that contract.
+// MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the suite green.
 const popoverState = vi.hoisted(() => ({ dismiss: null as (() => void) | null }));
 vi.mock("@celestia-island/hikari", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@celestia-island/hikari")>();
@@ -97,6 +100,7 @@ async function typeInto(root: ParentNode, value: string): Promise<void> {
  * invoked with the wrong `this` throws "Illegal invocation". happy-dom's
  * own fetch never checks the receiver, which is exactly how a detached
  * `fetch` passed into `DocsSearch` shipped green tests and a dead search.
+ * MUT: M1 (bare `fetch`) — this stub is the only oracle that catches it.
  */
 function strictFetch(): void {
   const impl = async (input: string | URL | Request): Promise<Response> =>
@@ -105,6 +109,7 @@ function strictFetch(): void {
   // invoked off the Window throws. (`window === globalThis` holds in Chrome
   // too, so binding to either is fine; what kills the search is the BARE
   // `fetch` stored on an instance and called as a method — measured.)
+  // MUT: M9 (round 8's M1) — reverting to the bare `fetch` makes this throw.
   const strict = function fetch(this: unknown, input: string | URL | Request): Promise<Response> {
     if (this !== window) {
       throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");

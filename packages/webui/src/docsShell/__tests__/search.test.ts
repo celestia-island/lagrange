@@ -1,7 +1,8 @@
 // Search seam tests: the client tokenizer + shard hash MUST mirror
-// src/search.rs — the shard mapping is pinned by the Rust side's own
-// self-test ('l' → 12, 'd' → 4, 'a' → 1), so a mismatch here means
-// queries silently load the wrong shards.
+// src/search.rs (its self-test pins 'l'→12, 'd'→4, 'a'→1).
+// MUT: M14 (read the shard as `.index`).
+// The fixtures carry the BARE postings map — the shape the build writes.
+
 import { describe, expect, it } from "vitest";
 import { DocsSearch, langUrl, shardFor, tokenizeQuery } from "../search";
 import type { DocsSiteMeta } from "../types";
