@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-// Docs-shell contract tests. These mount the REAL hikari components (no
-// mocks of HkFaceShell/HkAdminHeader/...), so the pins below bite on
-// upstream shape changes too — a deliberate seam test for the
-// lagrange↔hikari consumption edge.
+// Docs-shell contract tests against the REAL hikari components (no mocks),
+// so the pins bite on what ships. MUT anchors name each pin's mutation.
+// Covers the header slots, the locale picker wiring, the sidebar persistence
+// and the footer ban.
+
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -161,12 +162,27 @@ describe("LagrangeDocsShell", () => {
     );
   });
 
-  it("renders the single-band footer with the idle static status line", async () => {
+  // 2026-11-24 user direction: no status indicator bottom-left, no footer
+  // band on a static docs site — it cost a phone a sixth of its viewport
+  // and reported nothing (a static build has no connection to show).
+  it("renders NO footer band and NO status line", async () => {
     const { root } = await mount(LagrangeDocsShell, { page: makePage() });
-    const footer = root.querySelector(".lagrange-docs-footer");
-    expect(footer).toBeTruthy();
-    expect(footer?.textContent).toContain("Lagrange · 0.2.12 · 2026-11-22");
-    expect(footer?.textContent).toContain("Built with Lagrange");
+    // MUT: M5 (restoring the footer slot) — the band is back the moment
+    // the slot is, and the shell reserves its height again.
+    // Assert the PROPERTY (no footer surface at all), not one class name:
+    // a footer under any other class also contradicts the rule, and pinning
+    // `.lagrange-docs-footer` let that through (round 10 of #124, M15).
+    expect(root.querySelector(".lagrange-docs-footer")).toBeNull();
+    expect(root.querySelector("footer")).toBeNull();
+    expect(
+      [...root.querySelectorAll("[class]")].filter((el) => /footer/i.test(el.className.toString())),
+      "no element may carry a footer class",
+    ).toEqual([]);
+    expect(root.querySelector(".s-status-bar")).toBeNull();
+    // The connection-status indicator (the bottom-left light) is gone
+    // with it.
+    expect(root.textContent).not.toContain("Panel");
+    expect(root.textContent).not.toContain("Built with Lagrange");
   });
 
   it("persists the sidebar rail state under lagrange's own key (round trip)", async () => {

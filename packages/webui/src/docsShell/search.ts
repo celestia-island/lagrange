@@ -105,7 +105,12 @@ export class DocsSearch {
     try {
       const res = await this.fetchImpl(`${this.site.base}/${name}`);
       if (!res.ok) return null;
-      const shard = ((await res.json()) as { index: Record<string, number[][]> }).index;
+      // The build writes the postings map BARE (`src/search.rs`:
+      // `to_string(&shard.index)`), and its own test pins that shape.
+      // Reading `.index` off it yielded undefined and threw every query
+      // into the error state — the docs search answered "unavailable"
+      // on every site the webui lane built (2026-11-24).
+      const shard = (await res.json()) as Record<string, number[][]>;
       this.shards.set(name, shard);
       return shard;
     } catch {

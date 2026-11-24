@@ -1,18 +1,16 @@
-// SSr-lane template + redirect-stub guards (PR #119 round 3).
-//
-// Round 3's mutations M9–M12 SURVIVED because everything they touched
-// lived in the orchestrator or was asserted by grepping source text:
-//   M9  breaking the stub's negotiation control flow (the grep still hit),
-//   M10 escapeAttr → identity,
-//   M11 KaTeX URLs back to root-absolute (the round-2 regression),
-//   M12 dropping the manifest's `assets/` prefix strip.
-// The tests below EXECUTE the emitted artifacts instead of grepping them.
+// SSR-lane template + redirect-stub guards (PR #119 round 3).
+// MUT anchors name the mutation each pin survives.
+// The redirect targets and the language-root stubs are assembled here so
+// every one of them is reachable by a unit test.
+
 import { describe, expect, it } from "vitest";
 import {
   buildPageData,
   buildRedirectTargets,
   buildRootRedirectTargets,
   escapeJsonForScript,
+  languageEntryPath,
+  languageRootStubs,
   pageTemplate,
   resolveClientAssetsFrom,
   type ClientAssets,
@@ -192,10 +190,69 @@ describe("redirect target assembly (round 9 M43)", () => {
     expect(buildRedirectTargets(manifest, "nope.html")).toEqual([]);
   });
 
-  it("the root index negotiates over every configured language", () => {
+  // The root index negotiates over the language LANDING PAGES, not the
+  // bare language directories: `<lang>/` only resolves when the docs
+  // tree gives that language a README/index, and a site without one
+  // answered the host's 404 from its own domain root (hub, 2026-11-24).
+  it("the root index lands on each language's first page when it has no README", () => {
     const targets = buildRootRedirectTargets(manifest);
     expect(targets.map((t) => t.code)).toEqual(["en", "zh-Hans"]);
-    expect(targets[0].url).toBe("/repo/en/");
-    expect(targets[1].url).toBe("/repo/zh-Hans/");
+    // The fixture's only page is guides/a.html — that IS the entry.
+    expect(targets[0].url).toBe("/repo/en/guides/a.html");
+    expect(targets[1].url).toBe("/repo/zh-Hans/guides/a.html");
+  });
+
+  it("a language with intro.html and no README lands on intro.html", () => {
+    const m: Manifest = {
+      ...manifest,
+      pages: [
+        { path: "aaa.html", langs: { en: {} as never } },
+        { path: "intro.html", langs: { en: {} as never } },
+      ],
+    };
+    expect(languageEntryPath(m, "en")).toBe("intro.html");
+  });
+
+  it("a language with a folded README (index.html) lands on its index", () => {
+    const m: Manifest = {
+      ...manifest,
+      pages: [
+        { path: "intro.html", langs: { en: {} as never } },
+        { path: "index.html", langs: { en: {} as never } },
+      ],
+    };
+    expect(languageEntryPath(m, "en")).toBe("index.html");
+  });
+
+  // Round 12 M17: the stub loop used to live in the un-unit-tested SSR
+  // script, so deleting the authored-index skip clobbered a real page with
+  // a self-redirect and 81 tests stayed green.
+  it("writes a <lang>/index.html stub for a language with no authored index", () => {
+    const stubs = languageRootStubs(manifest);
+    expect(stubs.map((s) => s.path)).toEqual(["en/index.html", "zh-Hans/index.html"]);
+    expect(stubs[0].html).toContain('url=/repo/en/guides/a.html');
+  });
+
+  it("does NOT write a stub over a language that authored index.html", () => {
+    const m: Manifest = {
+      ...manifest,
+      pages: [
+        { path: "index.html", langs: { en: {} as never } },
+        { path: "intro.html", langs: { "zh-Hans": {} as never } },
+      ],
+    };
+    // MUT: M17 (dropping the `entry === "index.html"` skip) — `en` then gets
+    // a stub that redirects to itself, replacing the authored page.
+    expect(languageRootStubs(m).map((s) => s.path)).toEqual(["zh-Hans/index.html"]);
+  });
+
+  it("a configured language with no pages yields no root target", () => {
+    const m: Manifest = {
+      ...manifest,
+      site: site({ langs: [{ code: "en", label: "English" }, { code: "ja", label: "日本語" }] }),
+      pages: [{ path: "intro.html", langs: { en: {} as never } }],
+    };
+    expect(languageEntryPath(m, "ja")).toBeNull();
+    expect(buildRootRedirectTargets(m).map((t) => t.code)).toEqual(["en"]);
   });
 });

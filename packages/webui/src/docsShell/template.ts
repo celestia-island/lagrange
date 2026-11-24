@@ -3,7 +3,7 @@
 // handling have an executing unit gate (review round 3 of PR #119:
 // reverting the KaTeX base fix or the asset-prefix strip left every
 // gate green because both lived inside the un-unit-tested orchestrator).
-import { escapeAttr } from "./redirect";
+import { escapeAttr, redirectStub } from "./redirect";
 import type { DocsPageData } from "./types";
 
 /** The subset of the Rust-emitted docs-manifest.json this lane reads.
@@ -163,11 +163,68 @@ export function buildRedirectTargets(
   }));
 }
 
-/** The root index negotiates over the language roots. */
+/** The page a language root opens on: a language's landing page,
+ * resolved from the pages that actually exist for it.
+ *
+ * MUT: R1 (no `index.html` in the language) — the root stub used to send
+ * every visitor to `<lang>/`, a URL that only resolves when the docs tree
+ * gives that language a README/index. Sites without one (the hub) answered
+ * GitHub Pages' own 404 for their domain root. MUT: R2 (a language with
+ * `intro.html` but no README) — `intro.html` is the per-language landing
+ * name the hub standardises on (`docs/<lang>/intro.md`, the SUMMARY's
+ * lead row), so it outranks alphabetical order. MUT: R3 (a language with
+ * neither) — falls to its first page rather than a dead URL.
+ *
+ * Order: `index.html` (a README/index folded into its directory — the
+ * name lagrange's own docs use), then `intro.html` (only ever at the
+ * language root; a nested `guides/intro.html` is NOT honoured), then the
+ * first page the build lists for that language. */
+export function languageEntryPath(manifest: Manifest, code: string): string | null {
+  const existing = manifest.pages.filter((p) => code in p.langs).map((p) => p.path);
+  if (existing.includes("index.html")) return "index.html";
+  if (existing.includes("intro.html")) return "intro.html";
+  return existing[0] ?? null;
+}
+
+/** The `<lang>/index.html` stubs the build must ALSO write, so a typed
+ * directory URL opens (a language without a README/index has no page
+ * there, and the host answers its own 404).
+ *
+ * The `index.html` arm is load-bearing and easy to lose: when a language
+ * DOES author a landing page, the page loop has already written
+ * `<lang>/index.html`, and a stub written over it replaces real content
+ * with a redirect to itself. MUT: M17 (round 12 — deleting this skip
+ * overwrote a planted authored page with `url=/en/guides/architecture.html`).
+ *
+ * Pure so it can be unit-tested: the script that writes these is not in any
+ * test's import graph, which is how the guard went unguarded for six rounds. */
+export function languageRootStubs(
+  manifest: Manifest,
+): { path: string; html: string }[] {
+  const base = manifest.site.base;
+  const out: { path: string; html: string }[] = [];
+  for (const lang of manifest.site.langs) {
+    const entry = languageEntryPath(manifest, lang.code);
+    if (!entry || entry === "index.html") continue;
+    const url = `${base}/${lang.code}/${entry}`;
+    out.push({
+      path: `${lang.code}/index.html`,
+      html: redirectStub({ defaultUrl: url, langUrls: [{ code: lang.code, url }] }),
+    });
+  }
+  return out;
+}
+
+/** The root index negotiates over the language landing pages. */
 export function buildRootRedirectTargets(manifest: Manifest): {
   code: string;
   url: string;
 }[] {
   const base = manifest.site.base;
-  return manifest.site.langs.map((l) => ({ code: l.code, url: `${base}/${l.code}/` }));
+  return manifest.site.langs
+    .map((l) => {
+      const entry = languageEntryPath(manifest, l.code);
+      return entry ? { code: l.code, url: `${base}/${l.code}/${entry}` } : null;
+    })
+    .filter((t): t is { code: string; url: string } => t !== null);
 }

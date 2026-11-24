@@ -1,7 +1,8 @@
 // Search seam tests: the client tokenizer + shard hash MUST mirror
-// src/search.rs — the shard mapping is pinned by the Rust side's own
-// self-test ('l' → 12, 'd' → 4, 'a' → 1), so a mismatch here means
-// queries silently load the wrong shards.
+// src/search.rs (its self-test pins 'l'→12, 'd'→4, 'a'→1).
+// MUT: M14 (read the shard as `.index`).
+// The fixtures carry the BARE postings map — the shape the build writes.
+
 import { describe, expect, it } from "vitest";
 import { DocsSearch, langUrl, shardFor, tokenizeQuery } from "../search";
 import type { DocsSiteMeta } from "../types";
@@ -83,8 +84,12 @@ describe("DocsSearch", () => {
       { title: "t", description: "d", logo: null, base: "", defaultLang: "en", langs: [], buildStamp: "s" },
       makeFetcher({
         "/search_meta.json": meta,
-        // 'a' = 97 % 16 = 1 → shard 01 holds "anchor".
-        "/search_i_01.json": { index: { anchor: [[1, 0]] } },
+        // 'a' = 97 % 16 = 1 → shard 01 holds "anchor". The shard is the
+        // BARE postings map — the shape `src/search.rs` writes (its own
+        // test pins it). A wrapped `{index: …}` fixture here is what let
+        // the reader and the writer drift apart while every test stayed
+        // green.
+        "/search_i_01.json": { anchor: [[1, 0]] },
       }),
     );
     const hits = await s.query("anchor", "zh-Hans");
@@ -96,7 +101,7 @@ describe("DocsSearch", () => {
   it("returns empty for unknown tokens instead of loading everything", async () => {
     const s = new DocsSearch(
       { title: "t", description: "d", logo: null, base: "", defaultLang: "en", langs: [], buildStamp: "s" },
-      makeFetcher({ "/search_meta.json": meta, "/search_i_00.json": { index: {} } }),
+      makeFetcher({ "/search_meta.json": meta, "/search_i_00.json": {} }),
     );
     expect(await s.query("zzzz", "en")).toEqual([]);
   });

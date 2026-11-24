@@ -1,8 +1,9 @@
 // lagrange docs-shell styles. The chrome (shell, header, sidebar, menu,
-// dialogs, status line) is hikari's own SCSS — nothing here restyles it.
-// This file only covers the docs-specific gaps: the app root's height
-// chain, the reading column, the header search field + results panel,
-// the footer band's three zones, and the mermaid sub-app host.
+// dialogs) is hikari's own SCSS — nothing here restyles it. This file
+// only covers the docs-specific gaps: the app root's height chain, the
+// reading column, the header search (inline field on desktop, trigger +
+// bottom sheet on phones), and the mermaid sub-app host. There is no
+// footer band: a static docs site has no status to report.
 //
 // The root rule is the host's obligation, not decoration: HkFaceShell's
 // `.s-admin-shell` is `height:100%` + `overflow:hidden`, so without a
@@ -43,17 +44,35 @@ body {
 }
 
 // ── header search ─────────────────────────────────────────────────────────
+// Two shapes (see DocsSearchBox.tsx): `[data-shape="inline"]` is the
+// desktop field with an anchored results panel; `[data-shape="sheet"]`
+// is the mobile trigger whose field + results live inside the bottom
+// sheet, laid out in normal flow there (the sheet is the surface — no
+// absolute positioning, no own background).
 .lagrange-docs-search {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
 
+// The field's own positioned box: the clear button anchors to THIS, not to
+// the outer search span — inside the sheet the results list sits between
+// them, and the button drifted onto the third hit (2026-11-24).
+.lagrange-docs-search[data-shape="inline"] .lagrange-docs-search-field {
+  width: clamp(120px, 22vw, 200px);
+}
+
+.lagrange-docs-search-field {
+  position: relative;
+  display: block;
+}
+
 .lagrange-docs-search-input {
+  display: block;
+  width: 100%;
   /* Clamped: the header's end wing clips (overflow: hidden) once the
      start wing's min-content eats the row, and a fixed 200px field plus
      the two icon buttons overflowed narrow viewports (round 5). */
-  width: clamp(120px, 22vw, 200px);
   min-width: 0;
   padding-inline-end: 1.6rem;
   height: 30px;
@@ -173,38 +192,52 @@ body {
   white-space: nowrap;
 }
 
+// Mobile: the trigger is one icon slot, exactly like its neighbours.
+.lagrange-docs-search[data-shape="sheet"] {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lagrange-docs-search-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+
+  .lagrange-docs-search-input {
+    // The sheet gives the field the full width a phone can spare.
+    width: 100%;
+    height: 40px;
+    font-size: 1rem;
+  }
+
+  .lagrange-docs-search-results {
+    // In flow inside the sheet: no anchoring, no second surface.
+    position: static;
+    width: 100%;
+    max-height: 55vh;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .lagrange-docs-search-busy {
+    position: static;
+    padding: 0.4rem 0;
+  }
+
+  .lagrange-docs-search-clear {
+    inset-inline-end: 8px;
+  }
+}
+
 // ── header end cluster ────────────────────────────────────────────────────
 .lagrange-docs-header-end {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-
-// ── footer band ───────────────────────────────────────────────────────────
-.lagrange-docs-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
-  font-size: 0.78rem;
-
-  &-center {
-    opacity: 0.7;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &-right a {
-    color: inherit;
-    text-decoration: none;
-    opacity: 0.7;
-
-    &:hover {
-      opacity: 1;
-    }
-  }
 }
 
 // ── mermaid sub-app host ──────────────────────────────────────────────────

@@ -5,27 +5,31 @@
 //   - header left wing: the site logo in HkAdminHeader's brand slot
 //     (`brandSrc`, the zero-account branded face — no avatar, no
 //     dropdown), followed by the page title;
-//   - header right wing: the search field, then the top-right language
+//   - header right wing: the search, then the top-right language
 //     button (a direct button, per the 2026-11-22 user direction — NOT
 //     the legacy bottom-left selector) and the theme button, which opens
 //     a chest-anatomy settings window without the section rail: an
-//     HkAdaptiveDialog whose only content is HkThemePanelContent;
+//     HkAdaptiveDialog whose only content is HkThemePanelContent. The
+//     search is an inline field on desktop and one icon button + bottom
+//     sheet on mobile, so the end wing never overflows a phone (the
+//     language button was cut off at the viewport edge, 2026-11-24);
 //   - sidebar: the language's SUMMARY tree on HkMenu (variant=sidebar),
 //     with the shell's rail collapse (expanded ↔ icon rail + hover
 //     peek) persisted under lagrange's own storage namespace — the
 //     library never persists it itself;
-//   - footer: a single band — HkConnectionStatus (standalone, idle: a
-//     static build has no connection to report) left, site title +
-//     build stamp centre, "Built with Lagrange" right.
+//   - footer: none. A static, account-free docs site has nothing to
+//     report — no connection to show, no status to light — and on a
+//     phone the band cost a sixth of the viewport (2026-11-24 user
+//     direction: no indicator bottom-left, nothing bottom on demand).
+//     The build stamp lives in each page's own content where it belongs.
 //
 // Multi-page navigation is real page loads, not SPA routing: sidebar
 // rows and locale picks assign location to the per-language URL the
 // build emitted.
-import { computed, defineComponent, ref, type PropType } from "vue";
+import { computed, defineComponent, onMounted, ref, type PropType } from "vue";
 import {
   HkAdaptiveDialog,
   HkAdminHeader,
-  HkConnectionStatus,
   HkFaceShell,
   HkIconButton,
   HkLocalePickerPopup,
@@ -99,6 +103,20 @@ export const LagrangeDocsShell = defineComponent({
     provideMenuGroupState();
     const { t } = useI18n();
     const chromeSize = useChromeActionSize();
+    // The header's action size is viewport-derived, and the server has no
+    // viewport — so SSR renders the desktop size. Binding the live value on
+    // the FIRST client pass therefore mismatches, and Vue resolves an
+    // attribute mismatch by KEEPING the server's value: the language and
+    // theme buttons stayed 32px on a phone (correct 28px only after a
+    // resize), while the search trigger — rendered after mount — showed
+    // the true 28. One row, two sizes, at rest (round 15 of #124).
+    // First pass = the server's value; after mount the whole row flips
+    // together on a normal reactive update, and hydration stays clean.
+    const mounted = ref(false);
+    onMounted(() => {
+      mounted.value = true;
+    });
+    const headerActionSize = computed<28 | 32>(() => (mounted.value ? chromeSize.value : 32));
 
     const page = computed(() => props.page);
     const site = computed(() => props.page.site);
@@ -156,8 +174,6 @@ export const LagrangeDocsShell = defineComponent({
     // ── theme button → rail-less settings dialog (theme only) ────────
     const themeOpen = ref(false);
 
-    const footerZone = "lagrange-docs-footer";
-
     return () => (
       <HkFaceShell
         sidebarCollapsible
@@ -180,14 +196,19 @@ export const LagrangeDocsShell = defineComponent({
               brandSrc={site.value.logo ?? undefined}
               brandAlt={site.value.title}
               actions={[
-                <DocsSearchBox key="search" lang={page.value.lang} site={site.value} />,
+                <DocsSearchBox
+                  key="search"
+                  lang={page.value.lang}
+                  site={site.value}
+                  size={headerActionSize.value}
+                />,
               ]}
               v-slots={{
                 "theme-toggle": () => (
                   <span class="lagrange-docs-header-end">
                     <span ref={langButtonRef as any}>
                       <HkIconButton
-                        size={chromeSize.value}
+                        size={headerActionSize.value}
                         variant="ghost"
                         aria-label={t("lagrange::docs.language", "Language")}
                         {...{ title: t("lagrange::docs.language", "Language") }}
@@ -199,7 +220,7 @@ export const LagrangeDocsShell = defineComponent({
                       </HkIconButton>
                     </span>
                     <HkIconButton
-                      size={chromeSize.value}
+                      size={headerActionSize.value}
                       variant="ghost"
                       aria-label={t("lagrange::docs.theme", "Theme")}
                       {...{ title: t("lagrange::docs.theme", "Theme") }}
@@ -265,23 +286,6 @@ export const LagrangeDocsShell = defineComponent({
                * arrives with its upstream SSR seed. */}
               <div class="lagrange-docs-body" innerHTML={page.value.html} />
             </article>
-          ),
-          footer: () => (
-            <div class={footerZone}>
-              <span class={`${footerZone}-left`}>
-                {/* A static build has no live connection to report: the
-                 * idle status line, never a fabricated "connected". */}
-                <HkConnectionStatus standalone={false} idle={true} />
-              </span>
-              <span class={`${footerZone}-center`}>
-                {site.value.title} · {site.value.buildStamp}
-              </span>
-              <span class={`${footerZone}-right`}>
-                <a href="https://github.com/celestia-island/lagrange" target="_blank" rel="noreferrer">
-                  Built with Lagrange
-                </a>
-              </span>
-            </div>
           ),
         }}
       </HkFaceShell>

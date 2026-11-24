@@ -31,6 +31,7 @@ import {
   buildPageData,
   buildRedirectTargets,
   buildRootRedirectTargets,
+  languageRootStubs,
   pageTemplate,
   resolveClientAssetsFrom,
   type ClientAssets,
@@ -116,12 +117,22 @@ async function main(): Promise<void> {
     }));
   }
 
-  // Root index: negotiate over language roots.
+  // Root index: negotiate over language landing pages.
   const rootLangs = buildRootRedirectTargets(manifest);
   await writeFile(join(args.out, "index.html"), redirectStub({
     defaultUrl: defaultRedirectUrl(rootLangs, manifest.site.defaultLang),
     langUrls: rootLangs,
   }));
+
+  // Language roots: `<lang>/` must open too (a visitor typing it, a
+  // directory link, trailing-slash canonical). The targets + the
+  // authored-index skip live in `languageRootStubs` (template.ts) so they
+  // are unit-tested; this loop only writes them.
+  for (const stub of languageRootStubs(manifest)) {
+    const dest = join(args.out, stub.path);
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFile(dest, stub.html);
+  }
 
   console.error(`ssr-docs: wrote ${written} pages (+redirects) into ${args.out}`);
 }

@@ -1,12 +1,45 @@
 // @vitest-environment happy-dom
-// Search-box behaviour: the async path, the dismissal routes and the
-// clear affordance (PR #119 round 5 — mutation M18 survived because no
-// test mounted this component at all).
+// Desktop shape of the docs search: async path, dismissal routes, clear
+// affordance. MUT anchors name the mutation each pin survives.
+// The component is mounted UNMOCKED here (no breakpoint stub): the phone
+// shape lives in docsSearchBox.mobile.
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { mount } from "../testUtils";
 import { DocsSearchBox } from "../DocsSearchBox";
 import type { DocsSiteMeta } from "../types";
+
+// HkPopover is replaced by a stub that renders its slot and records how
+// the real one reports dismissal (Escape / backdrop / ✕ all emit
+// `update:modelValue(false)`). happy-dom never mounts the real popover,
+// so this is the only way to drive the component's half of that contract.
+// MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the suite green.
+const popoverState = vi.hoisted(() => ({ dismiss: null as (() => void) | null }));
+vi.mock("@celestia-island/hikari", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@celestia-island/hikari")>();
+  const { defineComponent, h, Teleport } = await import("vue");
+  return {
+    ...actual,
+    HkPopover: defineComponent({
+      name: "HkPopover",
+      props: {
+        modelValue: Boolean,
+        "onUpdate:modelValue": Function,
+      },
+      setup(props, { slots }) {
+        popoverState.dismiss = () => props["onUpdate:modelValue"]?.(false);
+        // Teleported like the real popover, so "nothing lands in the
+        // header root" stays the contract under test.
+        return () =>
+          props.modelValue
+            ? h(Teleport, { to: "body" }, [h("div", { class: "stub-popover" }, slots.default?.())])
+            : null;
+      },
+    }),
+  };
+});
+const popoverDismiss = () => popoverState.dismiss;
 
 const site: DocsSiteMeta = {
   title: "Lagrange",
@@ -49,16 +82,41 @@ function defaultBody(url: string): unknown {
   // "lagrange" starts with 'l' (108 % 16 = 12), but any shard contents
   // work for this test — the postings point at doc 0.
   // Any token the tests type resolves to the same posting set.
-  return { index: { pipeline: [[0, 0]], pipeline2: [[0, 0]] } };
+  // Bare postings map — the shape the build writes.
+  return { pipeline: [[0, 0]], pipeline2: [[0, 0]] };
 }
 
-async function typeInto(root: HTMLElement, value: string): Promise<void> {
+async function typeInto(root: ParentNode, value: string): Promise<void> {
   const input = root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
   input.value = value;
   input.dispatchEvent(new Event("input"));
   await nextTick();
   await new Promise((r) => setTimeout(r, 30));
   await nextTick();
+}
+
+/**
+ * `stubFetch`, but the way a REAL browser hands it out: a Window method
+ * invoked with the wrong `this` throws "Illegal invocation". happy-dom's
+ * own fetch never checks the receiver, which is exactly how a detached
+ * `fetch` passed into `DocsSearch` shipped green tests and a dead search.
+ * MUT: M1 (bare `fetch`) — this stub is the only oracle that catches it.
+ */
+function strictFetch(): void {
+  const impl = async (input: string | URL | Request): Promise<Response> =>
+    ({ ok: true, json: async () => defaultBody(String(input)) } as unknown as Response);
+  // A REAL browser's rule, so the stub enforces it: a Window method
+  // invoked off the Window throws. (`window === globalThis` holds in Chrome
+  // too, so binding to either is fine; what kills the search is the BARE
+  // `fetch` stored on an instance and called as a method — measured.)
+  // MUT: M9 (round 8's M1) — reverting to the bare `fetch` makes this throw.
+  const strict = function fetch(this: unknown, input: string | URL | Request): Promise<Response> {
+    if (this !== window) {
+      throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    }
+    return impl(input);
+  };
+  vi.stubGlobal("fetch", strict);
 }
 
 let cleanup: (() => void) | null = null;
@@ -71,14 +129,49 @@ afterEach(() => {
 });
 
 describe("DocsSearchBox", () => {
+  // 2026-11-24: `new DocsSearch(site, fetch)` stored the bare Window
+  // method on an instance and called it as a method; Chrome rejected the
+  // receiver and every query died as "unavailable" on every docs site.
+  it("calls fetch with the Window as its receiver, as a real browser requires", async () => {
+    strictFetch();
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await typeInto(m.root, "pipeline");
+    // MUT: M6 (back to the bare `fetch`) — the strict stub throws, the
+    // box shows its error state instead of hits.
+    expect(document.querySelector(".lagrange-docs-search-error")).toBeNull();
+    const results = document.querySelector(".lagrange-docs-search-results");
+    expect(results, "the index must be readable when fetch is bound").toBeTruthy();
+    expect(results?.textContent).toContain("Architecture");
+  });
+
+  // The guard above rests on the stub's receiver check; this one reads the
+  // receiver identity off the function the component ACTUALLY calls, so a
+  // stub that silently stopped checking (round 4, M3b) cannot pass it.
+  it("hands DocsSearch a fetch whose receiver is the Window itself", async () => {
+    let seen: unknown = "never called";
+    const orig = window.fetch.bind(window);
+    const spy = function fetch(this: unknown, input: string | URL | Request): Promise<Response> {
+      seen = this;
+      return orig(input);
+    };
+    vi.stubGlobal("fetch", spy);
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await typeInto(document, "pipeline");
+    // MUT: M1 (back to the bare `fetch`) — the receiver is then the
+    // DocsSearch instance, not the Window.
+    expect(seen).toBe(window);
+  });
+
   it("renders hits for a query in the page language", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    const results = m.root.querySelector(".lagrange-docs-search-results");
+    const results = document.querySelector(".lagrange-docs-search-results");
     expect(results).toBeTruthy();
     expect(results?.textContent).toContain("Architecture");
-    expect(m.root.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")?.getAttribute("href"))
+    expect(document.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")?.getAttribute("href"))
       .toBe("/en/guides/architecture.html#a");
   });
 
@@ -87,23 +180,23 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
 
     await typeInto(m.root, "");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("false");
     // …and the stale-hit guard does not repopulate it afterwards.
     // MUT: M18 (removing the empty-query reset turns this test RED).
     await new Promise((r) => setTimeout(r, 40));
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
 
   it("shows the no-results state for a query with no postings", async () => {
-    stubFetch((url) => (url.endsWith("search_meta.json") ? defaultBody("search_meta.json") : { index: {} }));
+    stubFetch((url) => (url.endsWith("search_meta.json") ? defaultBody("search_meta.json") : {}));
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "zzzz");
-    expect(m.root.querySelector(".lagrange-docs-search-empty")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-empty")).toBeTruthy();
   });
 
   // Round 5: a rejected fetch must not surface as an unhandled rejection
@@ -113,68 +206,105 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    const err = m.root.querySelector(".lagrange-docs-search-error");
+    const err = document.querySelector(".lagrange-docs-search-error");
     expect(err, "the error state must render").toBeTruthy();
     expect(err?.getAttribute("role")).toBe("status");
   });
 
-  it("dismisses on Escape", async () => {
+  // Dismissal is HkPopover's (Escape, outside click, the sheet's backdrop
+  // and ✕). happy-dom mounts no popover, so the contract under test is the
+  // component's half of it: a `false` from the popover closes the panel.
+  // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the whole suite
+  // green: the sheet's own dismiss had no guard at all.
+  it("closes when the popover reports its own dismissal", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    const box = document.querySelector(".lagrange-docs-search")!;
+    expect(box.getAttribute("data-open")).toBe("true");
+    expect(popoverDismiss(), "the popover must be mounted once the panel has content").not.toBeNull();
+    popoverDismiss()!();
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the whole suite
+    // green: the popover's own dismissal had no guard at all.
+    expect(box.getAttribute("data-open")).toBe("false");
   });
 
-  it("offers a clear affordance that resets the field", async () => {
+  // Round 7: the field's ✕ is the one dismiss route that bypasses both
+  // `run()` and HkPopover. It reset `busy` but not `open`, so an invisible
+  // 10×10 popover host and a full-viewport transparent backdrop stayed up
+  // and swallowed the next header click (the language menu would not open).
+  it("folds the panel when the field is cleared with the ✕ button", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    const clear = m.root.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear");
-    expect(clear, "the clear button must appear while a query is present").toBeTruthy();
-    clear!.dispatchEvent(new Event("click"));
+    const box = document.querySelector(".lagrange-docs-search")!;
+    expect(box.getAttribute("data-open")).toBe("true");
+    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
     await nextTick();
-    expect(m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")?.value).toBe("");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
-  });
-
-  // Round 6 M23: an error must be clearable by a successful retry.
-  it("clears the error state when a later query succeeds", async () => {
-    let fail = true;
+    // MUT: M3 (round 7 — `clear()` leaving `open` set).
+    expect(box.getAttribute("data-open")).toBe("false");
+    expect(box.getAttribute("data-busy")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
+    // …and mid-flight too (round 8 M3: the reset in `clear()` was unguarded).
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (fail) throw new Error("network down");
+        await new Promise((r) => setTimeout(r, 60));
+        return { ok: true, json: async () => defaultBody(url) };
+      }),
+    );
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(box.getAttribute("data-busy")).toBe("true");
+    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
+    await nextTick();
+    expect(box.getAttribute("data-busy")).toBe("false");
+    expect(box.getAttribute("data-open")).toBe("false");
+    await new Promise((r) => setTimeout(r, 120));
+    expect(box.getAttribute("data-busy")).toBe("false");
+  });
+
+  // Round 5: emptying the field while a query is in flight used to leave
+  // `busy` true forever (the superseded run's `finally` skips the reset),
+  // pinning an empty popover on screen.
+  it("does not leave the panel pinned when the field is emptied mid-flight", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        await new Promise((r) => setTimeout(r, 60));
         return { ok: true, json: async () => defaultBody(url) };
       }),
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeTruthy();
-
-    fail = false;
-    await typeInto(m.root, "pipeline2");
-    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeNull();
-    expect(m.root.querySelector(".lagrange-docs-search-hit")).toBeTruthy();
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    // MUT: M7 (round 5 — dropping the `busy` reset in `run()`/`clear()`).
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+    await new Promise((r) => setTimeout(r, 120));
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
 
-  // Round 6 M24: blurring the field dismisses the panel (the docblock
-  // always claimed it; nothing asserted it).
-  // MUT: M24 (neutralizing onFocusOut turns this test RED — re-verified
-  // 2026-11-23 before anchoring).
-  it("dismisses when focus leaves the field", async () => {
+  it("keeps the panel when focus moves onto a hit", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
-    m.root
-      .querySelector(".lagrange-docs-search-input")!
-      .dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const hit = document.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")!;
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: hit }));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("true");
   });
 
   // Round 6 M25: a slow answer for an OLD query must not overwrite the
@@ -200,7 +330,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     // Fire the slow query, then immediately the fast one.
-    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
@@ -209,9 +339,9 @@ describe("DocsSearchBox", () => {
     await new Promise((r) => setTimeout(r, 150));
     await nextTick();
     // The panel stays consistent (one result set, not a torn write).
-    const results = m.root.querySelector(".lagrange-docs-search-results");
+    const results = document.querySelector(".lagrange-docs-search-results");
     expect(results).toBeTruthy();
-    expect(m.root.querySelectorAll(".lagrange-docs-search-hit").length).toBeLessThanOrEqual(1);
+    expect(document.querySelectorAll(".lagrange-docs-search-hit").length).toBeLessThanOrEqual(1);
     void slow;
   });
 
@@ -227,15 +357,15 @@ describe("DocsSearchBox", () => {
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
     // Still in flight: no panel, no "No results" flash.
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
     await new Promise((r) => setTimeout(r, 90));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
   });
 
   // Round 8 M35: `busy` was written and never read — dead state no test
@@ -251,20 +381,24 @@ describe("DocsSearchBox", () => {
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
-    expect(m.root.querySelector(".lagrange-docs-search")?.textContent).toContain("Searching");
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
+    // The in-flight row rides the popover, which is teleported to the
+    // overlay root — and the popover now mounts on the busy state itself,
+    // so the row is visible from the first keystroke rather than only
+    // once an answer has landed.
+    expect(document.querySelector('[role="status"]')?.textContent).toContain("Searching");
     await new Promise((r) => setTimeout(r, 90));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
   });
 
   it("hides the clear affordance on an empty field", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    expect(m.root.querySelector(".lagrange-docs-search-clear")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-clear")).toBeNull();
   });
 });
