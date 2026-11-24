@@ -53,7 +53,7 @@ function defaultBody(url: string): unknown {
   return { pipeline: [[0, 0]], pipeline2: [[0, 0]] };
 }
 
-async function typeInto(root: HTMLElement, value: string): Promise<void> {
+async function typeInto(root: ParentNode, value: string): Promise<void> {
   const input = root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
   input.value = value;
   input.dispatchEvent(new Event("input"));
@@ -71,8 +71,12 @@ async function typeInto(root: HTMLElement, value: string): Promise<void> {
 function strictFetch(): void {
   const impl = async (input: string | URL | Request): Promise<Response> =>
     ({ ok: true, json: async () => defaultBody(String(input)) } as unknown as Response);
+  // A REAL browser's rule, so the stub enforces it: a Window method
+  // invoked off the Window throws. (`window === globalThis` holds in Chrome
+  // too, so binding to either is fine; what kills the search is the BARE
+  // `fetch` stored on an instance and called as a method — measured.)
   const strict = function fetch(this: unknown, input: string | URL | Request): Promise<Response> {
-    if (this !== window && this !== globalThis) {
+    if (this !== window) {
       throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
     }
     return impl(input);
@@ -100,20 +104,39 @@ describe("DocsSearchBox", () => {
     await typeInto(m.root, "pipeline");
     // MUT: M6 (back to the bare `fetch`) — the strict stub throws, the
     // box shows its error state instead of hits.
-    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeNull();
-    const results = m.root.querySelector(".lagrange-docs-search-results");
+    expect(document.querySelector(".lagrange-docs-search-error")).toBeNull();
+    const results = document.querySelector(".lagrange-docs-search-results");
     expect(results, "the index must be readable when fetch is bound").toBeTruthy();
     expect(results?.textContent).toContain("Architecture");
+  });
+
+  // The guard above rests on the stub's receiver check; this one reads the
+  // receiver identity off the function the component ACTUALLY calls, so a
+  // stub that silently stopped checking (round 4, M3b) cannot pass it.
+  it("hands DocsSearch a fetch whose receiver is the Window itself", async () => {
+    let seen: unknown = "never called";
+    const orig = window.fetch.bind(window);
+    const spy = function fetch(this: unknown, input: string | URL | Request): Promise<Response> {
+      seen = this;
+      return orig(input);
+    };
+    vi.stubGlobal("fetch", spy);
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await typeInto(document, "pipeline");
+    // MUT: M1 (back to the bare `fetch`) — the receiver is then the
+    // DocsSearch instance, not the Window.
+    expect(seen).toBe(window);
   });
 
   it("renders hits for a query in the page language", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    const results = m.root.querySelector(".lagrange-docs-search-results");
+    const results = document.querySelector(".lagrange-docs-search-results");
     expect(results).toBeTruthy();
     expect(results?.textContent).toContain("Architecture");
-    expect(m.root.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")?.getAttribute("href"))
+    expect(document.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")?.getAttribute("href"))
       .toBe("/en/guides/architecture.html#a");
   });
 
@@ -122,15 +145,15 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
 
     await typeInto(m.root, "");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("false");
     // …and the stale-hit guard does not repopulate it afterwards.
     // MUT: M18 (removing the empty-query reset turns this test RED).
     await new Promise((r) => setTimeout(r, 40));
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
 
   it("shows the no-results state for a query with no postings", async () => {
@@ -138,7 +161,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "zzzz");
-    expect(m.root.querySelector(".lagrange-docs-search-empty")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-empty")).toBeTruthy();
   });
 
   // Round 5: a rejected fetch must not surface as an unhandled rejection
@@ -148,7 +171,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    const err = m.root.querySelector(".lagrange-docs-search-error");
+    const err = document.querySelector(".lagrange-docs-search-error");
     expect(err, "the error state must render").toBeTruthy();
     expect(err?.getAttribute("role")).toBe("status");
   });
@@ -157,22 +180,22 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
 
   it("offers a clear affordance that resets the field", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    const clear = m.root.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear");
+    const clear = document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear");
     expect(clear, "the clear button must appear while a query is present").toBeTruthy();
     clear!.dispatchEvent(new Event("click"));
     await nextTick();
-    expect(m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")?.value).toBe("");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")?.value).toBe("");
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
 
   // Round 6 M23: an error must be clearable by a successful retry.
@@ -188,12 +211,12 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-error")).toBeTruthy();
 
     fail = false;
     await typeInto(m.root, "pipeline2");
-    expect(m.root.querySelector(".lagrange-docs-search-error")).toBeNull();
-    expect(m.root.querySelector(".lagrange-docs-search-hit")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-error")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-hit")).toBeTruthy();
   });
 
   // Round 6 M24: blurring the field dismisses the panel (the docblock
@@ -204,12 +227,12 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
     m.root
       .querySelector(".lagrange-docs-search-input")!
       .dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
 
   // Round 6 M25: a slow answer for an OLD query must not overwrite the
@@ -235,7 +258,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     // Fire the slow query, then immediately the fast one.
-    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
@@ -244,9 +267,9 @@ describe("DocsSearchBox", () => {
     await new Promise((r) => setTimeout(r, 150));
     await nextTick();
     // The panel stays consistent (one result set, not a torn write).
-    const results = m.root.querySelector(".lagrange-docs-search-results");
+    const results = document.querySelector(".lagrange-docs-search-results");
     expect(results).toBeTruthy();
-    expect(m.root.querySelectorAll(".lagrange-docs-search-hit").length).toBeLessThanOrEqual(1);
+    expect(document.querySelectorAll(".lagrange-docs-search-hit").length).toBeLessThanOrEqual(1);
     void slow;
   });
 
@@ -262,15 +285,15 @@ describe("DocsSearchBox", () => {
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
     // Still in flight: no panel, no "No results" flash.
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
     await new Promise((r) => setTimeout(r, 90));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
   });
 
   // Round 8 M35: `busy` was written and never read — dead state no test
@@ -286,20 +309,24 @@ describe("DocsSearchBox", () => {
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    const input = m.root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
-    expect(m.root.querySelector(".lagrange-docs-search")?.textContent).toContain("Searching");
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
+    // The in-flight row rides the popover, which is teleported to the
+    // overlay root — and the popover now mounts on the busy state itself,
+    // so the row is visible from the first keystroke rather than only
+    // once an answer has landed.
+    expect(document.querySelector('[role="status"]')?.textContent).toContain("Searching");
     await new Promise((r) => setTimeout(r, 90));
     await nextTick();
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
   });
 
   it("hides the clear affordance on an empty field", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    expect(m.root.querySelector(".lagrange-docs-search-clear")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-clear")).toBeNull();
   });
 });
