@@ -190,6 +190,14 @@ async function load(path, width, height, mobile) {
     const s = await safe(`document.querySelector('.lagrange-docs-search')?.dataset.shape ?? null`);
     return s && s !== "null" ? s : null;
   });
+  // No settle delay here on purpose: the console oracle below needs Vue's
+  // hydration-mismatch line, and hydration runs BEFORE the mounted hook
+  // that sets `dataset.shape` — so by the time this poll succeeds the line
+  // has already been emitted. Verified, not assumed: collapsing the old
+  // 2.5s sleep to 0 still captures the real phone mismatch line
+  // (`HkFaceShell`'s, exactly 1), so the oracle is intact and this file
+  // does not re-introduce the fixed-sleep pattern that caused the
+  // false-reds it replaces (round 5 of #124 made that line an oracle).
 }
 
 try {
