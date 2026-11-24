@@ -32,7 +32,9 @@
 //                 `search.ts` applies is applied here, so a discovered
 //                 word cannot answer zero hits.
 // Reuses the CDP endpoint on 127.0.0.1:9222 (never starts a browser), opens
-// one tab, and closes it. Exit code 1 on any failed check.
+// one tab, and closes it. Exit 1 = at least one check failed; exit 2 =
+// the run could not start (no base URL, undiscoverable page/word, shard
+// count mismatch, or no reachable CDP endpoint).
 import { unlinkSync, writeFileSync } from "node:fs";
 
 const base = process.argv[2];
@@ -183,7 +185,11 @@ async function closeTab() {
   }
 }
 const send = (method, params = {}) =>
-  new Promise((res) => {
+  new Promise((res, reject) => {
+    if (!sock || sock.readyState !== 1) {
+      reject(new Error(`debugger socket is not open (readyState=${sock?.readyState}) — cannot send ${method}`));
+      return;
+    }
     const i = ++id;
     pending.set(i, res);
     sock.send(JSON.stringify({ id: i, method, params }));
@@ -401,8 +407,10 @@ try {
   // Attribution: the poll below accepts focus arriving from ANY source, so
   // prove the field did not already hold it — otherwise a poll after the tap
   // would pass on focus that preceded it.
-  // Clear any focus the popover itself placed, so the focus poll below can
-  // only be satisfied by THIS tap (attribution rather than a state assert).
+  // Clear any focus the popover itself placed. No "was unfocused" read is
+  // asserted here on purpose: this branch blurs first, so such an assertion
+  // could only fail when the field is absent. The attribution comes from the
+  // sequence — focus observed after this point can only be the tap's.
   await safe(`(() => { document.activeElement?.blur?.(); return true; })()`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
@@ -476,7 +484,7 @@ try {
   // field unfocused, and asserting that makes the click the only
   // explanation for the focus the poll below waits for.
   const fPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-input'); return el ? document.activeElement === el : null; })()`);
-  check("desktop: the field is unfocused before the click", fPreexisting === false && fPreexisting !== null, `preFocused=${fPreexisting}`);
+  check("desktop: the field is unfocused before the click", fPreexisting === false, `preFocused=${fPreexisting}`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: f.x, y: f.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: f.x, y: f.y, button: "left", clickCount: 1 });
   const focused = await poll(async () => {
