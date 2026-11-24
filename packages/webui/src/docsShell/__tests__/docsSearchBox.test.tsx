@@ -15,31 +15,31 @@ import type { DocsSiteMeta } from "../types";
 // `update:modelValue(false)`). happy-dom never mounts the real popover,
 // so this is the only way to drive the component's half of that contract.
 // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the suite green.
-const popoverState = vi.hoisted(() => ({ dismiss: null as (() => void) | null }));
+const modalState = vi.hoisted(() => ({ dismiss: null as (() => void) | null }));
 vi.mock("@celestia-island/hikari", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@celestia-island/hikari")>();
   const { defineComponent, h, Teleport } = await import("vue");
   return {
     ...actual,
-    HkPopover: defineComponent({
-      name: "HkPopover",
+    HkModal: defineComponent({
+      name: "HkModal",
       props: {
         modelValue: Boolean,
         "onUpdate:modelValue": Function,
       },
       setup(props, { slots }) {
-        popoverState.dismiss = () => props["onUpdate:modelValue"]?.(false);
+        modalState.dismiss = () => props["onUpdate:modelValue"]?.(false);
         // Teleported like the real popover, so "nothing lands in the
         // header root" stays the contract under test.
         return () =>
           props.modelValue
-            ? h(Teleport, { to: "body" }, [h("div", { class: "stub-popover" }, slots.default?.())])
+            ? h(Teleport, { to: "body" }, [h("div", { class: "stub-modal" }, slots.default?.())])
             : null;
       },
     }),
   };
 });
-const popoverDismiss = () => popoverState.dismiss;
+const modalDismiss = () => modalState.dismiss;
 
 const site: DocsSiteMeta = {
   title: "Lagrange",
@@ -192,15 +192,22 @@ describe("DocsSearchBox", () => {
   });
 
   // M18: the empty-query path must reset BOTH the hits and the panel.
-  it("clears the panel and the hits when the query is emptied", async () => {
+  it("clears the hits when the query is emptied, and keeps the modal open", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
     expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
 
     await typeInto(m.root, "");
+    // The results fold; the SURFACE does not. 2026-11-24: the search is a
+    // second-level window now, and a modal that closes the moment the field
+    // empties would strand the user (round 7 of #124's rule — no invisible
+    // backdrop to fold away — now applies on every viewport).
     expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
-    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("false");
+    expect(
+      document.querySelector(".stub-modal"),
+      "the modal itself stays up so the user can keep typing",
+    ).toBeTruthy();
     // …and the stale-hit guard does not repopulate it afterwards.
     // MUT: M18 (removing the empty-query reset turns this test RED).
     await new Promise((r) => setTimeout(r, 40));
@@ -238,8 +245,8 @@ describe("DocsSearchBox", () => {
     await typeInto(m.root, "pipeline");
     const box = document.querySelector(".lagrange-docs-search")!;
     expect(box.getAttribute("data-open")).toBe("true");
-    expect(popoverDismiss(), "the popover must be mounted once the panel has content").not.toBeNull();
-    popoverDismiss()!();
+    expect(modalDismiss(), "the popover must be mounted once the panel has content").not.toBeNull();
+    modalDismiss()!();
     await nextTick();
     // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the whole suite
     // green: the popover's own dismissal had no guard at all.
@@ -258,8 +265,9 @@ describe("DocsSearchBox", () => {
     expect(box.getAttribute("data-open")).toBe("true");
     document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
     await nextTick();
-    // MUT: M3 (round 7 — `clear()` leaving `open` set).
-    expect(box.getAttribute("data-open")).toBe("false");
+    // MUT: M3 (round 7 — `clear()` leaving `open` set). The RESULT list and
+    // the busy flag are what `clear()` must reset; the modal's own state is
+    // HkModal's (2026-11-24 — a modal stays up while the user is in it).
     expect(box.getAttribute("data-busy")).toBe("false");
     expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
     // …and mid-flight too (round 8 M3: the reset in `clear()` was unguarded).
@@ -279,7 +287,6 @@ describe("DocsSearchBox", () => {
     document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
     await nextTick();
     expect(box.getAttribute("data-busy")).toBe("false");
-    expect(box.getAttribute("data-open")).toBe("false");
     await new Promise((r) => setTimeout(r, 120));
     expect(box.getAttribute("data-busy")).toBe("false");
   });
