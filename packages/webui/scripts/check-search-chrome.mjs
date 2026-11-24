@@ -168,7 +168,7 @@ const pending = new Map();
 async function closeTab() {
   try {
     if (sock) sock.close();
-    await fetch(`${CDP}/json/close/${tab.id}`);
+    await fetch(`${CDP}/json/close/${tab.id}`, { signal: AbortSignal.timeout(3000) });
   } catch {
     /* tab already gone */
   }
@@ -200,7 +200,11 @@ async function safe(expression) {
 const consoleErrors = [];
 function collectConsole(ev) {
   const m = JSON.parse(ev.data);
-  if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") {
+  // Vue's hydration complaints are warnings in some builds and errors in
+  // others; collecting both keeps the "no mismatch" oracle independent of
+  // which level the framework picks (a level change must not silently make
+  // the oracle vacuous).
+  if (m.method === "Runtime.consoleAPICalled" && (m.params.type === "error" || m.params.type === "warning")) {
     consoleErrors.push(m.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
   }
 }
@@ -289,7 +293,9 @@ try {
   const l = layout ? JSON.parse(layout) : { count: 0, overflow: true, maxRight: -1, vw: 0 };
   // Precondition, not decoration: with no buttons rendered `maxRight` is -1
   // and "does not overflow" would pass with the header missing entirely.
-  check("phone header does not overflow", l.count >= 2 && !l.overflow && l.maxRight <= l.vw, `buttons=${l.count} maxRight=${l.maxRight} vw=${l.vw}`);
+  // One action is enough for THIS check (a header may legitimately carry a
+  // single action); the size check below needs ≥2 because it compares.
+  check("phone header does not overflow", l.count >= 1 && !l.overflow && l.maxRight <= l.vw, `buttons=${l.count} maxRight=${l.maxRight} vw=${l.vw}`);
   // The shape flip after mount must not cost a hydration mismatch: Vue's
   // own report is the oracle (round 5 of #124 found the server subtree
   // being replaced on every phone load while every other check passed).
@@ -357,6 +363,11 @@ try {
     return p && p.inVp ? { x: p.x, y: p.y } : null;
   });
   const sf = sfield ?? { x: 0, y: 0 };
+  // Attribution: the poll below accepts focus arriving from ANY source, so
+  // prove the field did not already hold it — otherwise a poll after the tap
+  // would pass on focus that preceded it.
+  const sfPreexisting = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-sheet input')`);
+  check("phone: the sheet's field starts unfocused", sfPreexisting === false, `preFocused=${sfPreexisting}`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   // Focus is synchronous on mousedown, so poll instead of sleeping: a fixed
@@ -410,6 +421,11 @@ try {
   // the focus was made real (round 8 of #124).
   const field = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2 }); })()`);
   const f = field ? JSON.parse(field) : { x: 0, y: 0 };
+  // Same attribution guard as the phone branch: a fresh load leaves the
+  // field unfocused, and asserting that makes the click the only
+  // explanation for the focus the poll below waits for.
+  const fPreexisting = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-input')`);
+  check("desktop: the field starts unfocused", fPreexisting === false, `preFocused=${fPreexisting}`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: f.x, y: f.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: f.x, y: f.y, button: "left", clickCount: 1 });
   const focused = await poll(async () => {
