@@ -262,23 +262,6 @@ describe("DocsSearchBox", () => {
     expect(box.getAttribute("data-busy")).toBe("false");
   });
 
-  // Round 8 M5: the shell renders NO child before mount, on the server or
-  // on the client's first pass — that is what keeps the two passes
-  // identical. Pinned on the actual SSR string: `renderToString` is the
-  // server's own pass, so this fails the moment a child leaks into it.
-  it("renders an empty shell on the server (no child before mount)", async () => {
-    const { createSSRApp, h } = await import("vue");
-    const { renderToString } = await import("vue/server-renderer");
-    const app = createSSRApp({ render: () => h(DocsSearchBox, { site, lang: "en" }) });
-    const html = await renderToString(app);
-    expect(html).toContain('class="lagrange-docs-search"');
-    // MUT: M5 (round 8 — dropping the `mounted` gate puts the field into
-    // the server's output).
-    expect(html).not.toContain("lagrange-docs-search-input");
-    expect(html).not.toContain("hk-icon-button");
-    expect(html).not.toContain("data-shape");
-  });
-
   // Round 5: emptying the field while a query is in flight used to leave
   // `busy` true forever (the superseded run's `finally` skips the reset),
   // pinning an empty popover on screen.

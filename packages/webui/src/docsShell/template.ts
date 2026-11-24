@@ -170,12 +170,15 @@ export function buildRedirectTargets(
  * every visitor to `<lang>/`, a URL that only resolves when the docs tree
  * gives that language a README/index. Sites without one (the hub) answered
  * GitHub Pages' own 404 for their domain root. MUT: R2 (a language with
- * `intro.html` but no README) — `intro.html` is the convention lagrange's
- * own docs use, so it outranks alphabetical order. MUT: R3 (a language
- * with neither) — falls to its first page rather than a dead URL.
+ * `intro.html` but no README) — `intro.html` is the per-language landing
+ * name the hub standardises on (`docs/<lang>/intro.md`, the SUMMARY's
+ * lead row), so it outranks alphabetical order. MUT: R3 (a language with
+ * neither) — falls to its first page rather than a dead URL.
  *
- * Order: `index.html` (a README/index folded into its directory), then
- * `intro.html`, then the first page the build lists for that language. */
+ * Order: `index.html` (a README/index folded into its directory — the
+ * name lagrange's own docs use), then `intro.html` (only ever at the
+ * language root; a nested `guides/intro.html` is NOT honoured), then the
+ * first page the build lists for that language. */
 export function languageEntryPath(manifest: Manifest, code: string): string | null {
   const existing = manifest.pages.filter((p) => code in p.langs).map((p) => p.path);
   if (existing.includes("index.html")) return "index.html";

@@ -81,6 +81,10 @@ async function load(path, width, height, mobile) {
 
 try {
   await send("Runtime.enable");
+  // Runs before every document's own scripts: by the time Vue hydrates,
+  // the marker is already an attribute on the SSR'd node. If Vue keeps that
+  // node, the marker survives; if it replaces the subtree, the marker goes
+  // with the old node.
   // ── 1. phone, fresh load, NO resize event ───────────────────────────────
   await load(PAGE, 412, 915, true);
   const shape = await send("Runtime.evaluate", {
@@ -104,18 +108,23 @@ try {
   // The shape flip after mount must not cost a hydration mismatch: Vue's
   // own report is the oracle (round 5 of #124 found the server subtree
   // being replaced on every phone load while every other check passed).
-  // Known, pre-existing, NOT this component's: hikari's `useChromeActionSize`
-  // answers 32 on the server (`isDesktop` is hard-coded true there) and 28
-  // on a phone, so the header's language/theme buttons (and the search
-  // trigger, which shares the hook) carry a size class the client takes
-  // back — Vue reports one mismatch line for the whole header. Verified on
-  // the master build (its SSR emits `hk-icon-button-32` for the language
-  // button too). Tracked for hikari; the search's own shell is empty on
-  // both first passes (gated on mount), so it adds no node of its own.
+  // Known, pre-existing, NOT this component's — and bisected to its real
+  // source (round 10 of #124 corrected an earlier wrong attribution):
+  // `HkFaceShell` passes `compact: !isDesktop.value` to the header, and
+  // hikari's `useBreakpoint` answers `isDesktop: true` on the server (no
+  // viewport). So the server emits no hamburger and a phone's first client
+  // pass renders one — a structural mismatch Vue reports as one line. It
+  // persists with the search component removed from the shell entirely,
+  // and the language/theme buttons' `hk-icon-button-32` class is IDENTICAL
+  // in the SSR string and the live DOM (so `useChromeActionSize` is NOT the
+  // cause). The search's own shell is empty on both first passes (gated on
+  // mount), so it adds no node of its own. Tracked for hikari.
   const mismatch = consoleErrors.filter((e) => /hydrat/i.test(e));
-  console.log(`info  phone hydration: ${mismatch.length} mismatch line(s) — the known useChromeActionSize size-class swap`);
-
-
+  console.log(`info  phone hydration: ${mismatch.length} mismatch line(s) — HkFaceShell's compact/hamburger, pre-existing in hikari`);
+  // The mismatch LINE cannot be this component's oracle (see above). Its
+  // guard lives in vitest: `docsSearchBox.ssr.test.ts` renders the shell
+  // with NO mocks in a node environment (the real server branches), so a
+  // leaked child fails there — verified by mutation (rounds 10).
   // ── 2. the receiver: a real query must answer, not error ────────────────
   await send("Runtime.evaluate", {
     expression: `document.querySelector("button[aria-haspopup='dialog']").click()`,
@@ -166,6 +175,20 @@ try {
   check("desktop: the field takes focus from a real click", focused === true, `focused=${focused}`);
   await send("Input.insertText", { text: WORD });
   await new Promise((r) => setTimeout(r, 1800));
+
+  // The clear button must sit INSIDE the field's row on desktop too: it is
+  // absolutely positioned against `.lagrange-docs-search-field`, and moving
+  // it out of that wrapper leaves it floating over the results (round 10 of
+  // #124 measured it outside the field at 1280×800 with nothing noticing).
+  const dclear = await safe(`(() => {
+    const i = document.querySelector('.lagrange-docs-search-input').getBoundingClientRect();
+    const c = document.querySelector('.lagrange-docs-search-clear');
+    if (!c) return JSON.stringify({ present: false });
+    const b = c.getBoundingClientRect();
+    return JSON.stringify({ present: true, inside: b.top >= i.top && b.bottom <= i.bottom && b.right <= i.right + 1, input: [Math.round(i.top), Math.round(i.bottom)], clear: [Math.round(b.top), Math.round(b.bottom)] });
+  })()`);
+  const dc = dclear ? JSON.parse(dclear) : { present: false };
+  check("desktop clear button sits in the input row", dc.present && dc.inside, `input=${dc.input} clear=${dc.clear}`);
 
   const vis = await safe(`(() => {
     const hits = document.querySelectorAll('.lagrange-docs-search-hit');

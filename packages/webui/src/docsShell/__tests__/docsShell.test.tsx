@@ -168,7 +168,15 @@ describe("LagrangeDocsShell", () => {
     const { root } = await mount(LagrangeDocsShell, { page: makePage() });
     // MUT: M5 (restoring the footer slot) — the band is back the moment
     // the slot is, and the shell reserves its height again.
+    // Assert the PROPERTY (no footer surface at all), not one class name:
+    // a footer under any other class also contradicts the rule, and pinning
+    // `.lagrange-docs-footer` let that through (round 10 of #124, M15).
     expect(root.querySelector(".lagrange-docs-footer")).toBeNull();
+    expect(root.querySelector("footer")).toBeNull();
+    expect(
+      [...root.querySelectorAll("[class]")].filter((el) => /footer/i.test(el.className.toString())),
+      "no element may carry a footer class",
+    ).toEqual([]);
     expect(root.querySelector(".s-status-bar")).toBeNull();
     // The connection-status indicator (the bottom-left light) is gone
     // with it.
