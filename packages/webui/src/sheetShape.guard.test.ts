@@ -77,7 +77,29 @@ const SCOPED_SHEETS: ReadonlyArray<{ sheet: string; root: string }> = [
   { sheet: "components/SettingsPage.scss", root: "settings-page" },
 ];
 
+/** Every sheet this guard reads. Kept in one place so the interpolation
+ *  check below cannot drift from the shape checks above. */
+function sheetsInScope(): string[] {
+  return ["App.scss", ...SCOPED_SHEETS.map((entry) => entry.sheet)];
+}
+
 describe("migrated sheets keep their original reach", () => {
+  it("no sheet hides a selector behind SCSS interpolation", () => {
+    // `#{".chunk-span"} { … }` nests a rule for real while the literal text
+    // the scanner looks for never appears — the narrowing G1 exists to catch
+    // would pass unseen (proved by mutation on the real sheet). No sheet
+    // needs interpolation today, so refusing it outright keeps the reader
+    // honest instead of teaching it to parse SassScript.
+    for (const sheet of sheetsInScope()) {
+      const src = readFileSync(resolve(here, sheet), "utf8");
+      expect(
+        src.includes("#{"),
+        `${sheet}: SCSS interpolation (#{…}) hides selectors from this guard's ` +
+          `scanner — write the selector literally so its nesting depth is visible`,
+      ).toBe(false);
+    }
+  });
+
   it("App.scss stays entirely flat (its block was never scoped)", () => {
     const src = readFileSync(resolve(here, "App.scss"), "utf8");
     const all = selectors(src);
