@@ -27,7 +27,8 @@
 //! | Vercel Edge | KV / Postgres | |
 //! | Firebase | Firestore | document model |
 //!
-//! For dev/test, [`lagrange_adapter::MemoryStore`] works out of the box.
+//! For dev/test, `lagrange_adapter::MemoryStore` (a dev-dependency) works out
+//! of the box.
 
 use std::collections::HashMap;
 

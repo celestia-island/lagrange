@@ -32,7 +32,7 @@
 //                 word cannot answer zero hits.
 // Reuses the CDP endpoint on 127.0.0.1:9222 (never starts a browser), opens
 // one tab, and closes it. Exit code 1 on any failed check.
-import { writeFileSync } from "node:fs";
+import { unlinkSync, writeFileSync } from "node:fs";
 
 const base = process.argv[2];
 
@@ -85,7 +85,8 @@ async function discoverWord(base, pagePath) {
   const langDocs = new Set((index.byLang.get(lang) ?? []).map((d) => d.id));
   if (!langDocs.size) return null;
   let best = null;
-  for (const name of index.meta.shards) {
+  const shardCount = index.meta.shards.length;
+  for (const [shardIdx, name] of index.meta.shards.entries()) {
     let shard;
     try {
       const res = await fetch(`${base}/${name}`);
@@ -96,6 +97,13 @@ async function discoverWord(base, pagePath) {
     }
     for (const [word, postings] of Object.entries(shard)) {
       if (!/^[a-z][a-z0-9]+$/.test(word) || !Array.isArray(postings)) continue;
+      // The client looks a word up in `shardFor(word)` = charCodeAt(0) %
+      // shardCount, NOT in the shard it happened to be served from. Require
+      // the two to agree, so the "cannot answer zero hits" guarantee is
+      // proved against the client's own addressing rather than assuming the
+      // build shards words the same way the client reads them.
+      const clientShard = (word.codePointAt(0) ?? 63) % shardCount;
+      if (clientShard !== shardIdx) continue;
       const inLang = postings.filter(([docId]) => langDocs.has(docId)).length;
       if (inLang > 0 && (!best || inLang > best[1])) best = [word, inLang];
     }
@@ -123,8 +131,28 @@ if (!WORD) {
 }
 console.log(`info  query word: ${WORD}`);
 
+// The success sentinel must not survive from an EARLIER run: a crashed or
+// failed run would leave yesterday's passing marker in place and read as
+// green. Removed up front; only a full pass writes it again.
+const OK_SENTINEL = "/tmp/check-search-chrome.ok";
+try {
+  unlinkSync(OK_SENTINEL);
+} catch {
+  /* nothing to clear */
+}
+
 const CDP = "http://127.0.0.1:9222";
-const tab = await (await fetch(`${CDP}/json/new?about:blank`, { method: "PUT" })).json();
+// Acquiring the tab is the first thing that can fail, and it fails fast and
+// LOUD — a raw `fetch failed` stack trace reads as a script bug rather than
+// "no browser is listening", which is the overwhelmingly common cause.
+const tab = await (async () => {
+  try {
+    return await (await fetch(`${CDP}/json/new?about:blank`, { method: "PUT" })).json();
+  } catch (e) {
+    console.error(`cannot reach the CDP endpoint ${CDP} (${e?.cause?.code ?? e?.message ?? e}) — start a browser with --remote-debugging-port=9222 first`);
+    process.exit(2);
+  }
+})();
 const sock = new WebSocket(tab.webSocketDebuggerUrl);
 let id = 0;
 const pending = new Map();
@@ -135,7 +163,20 @@ sock.onmessage = (ev) => {
     pending.delete(m.id);
   }
 };
-await new Promise((r) => (sock.onopen = r));
+// A dead or unresponsive CDP endpoint must fail loud and fast: without a
+// bound this await never settles (the socket neither opens nor errors on
+// some failures) and the run hangs instead of reporting.
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error(`CDP endpoint ${CDP} did not open a websocket within 15s`)), 15000);
+  sock.onopen = () => {
+    clearTimeout(timer);
+    resolve();
+  };
+  sock.onerror = () => {
+    clearTimeout(timer);
+    reject(new Error(`CDP endpoint ${CDP} refused the websocket — is a browser running with --remote-debugging-port=9222?`));
+  };
+});
 const send = (method, params = {}) =>
   new Promise((res) => {
     const i = ++id;
@@ -399,5 +440,5 @@ if (failures.length) {
   console.error(`\n${failures.length} check(s) failed: ${failures.join("; ")}`);
   process.exit(1);
 }
-writeFileSync("/tmp/check-search-chrome.ok", new Date().toISOString());
+writeFileSync(OK_SENTINEL, new Date().toISOString());
 console.log("\nall checks passed");
