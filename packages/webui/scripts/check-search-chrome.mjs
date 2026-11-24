@@ -42,7 +42,7 @@ const base = process.argv[2];
  * one fetch of the meta, shards pulled lazily. */
 async function loadSearchIndex(base) {
   try {
-    const res = await fetch(`${base}/search_meta.json`);
+    const res = await fetch(`${base}/search_meta.json`, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) return null;
     const meta = await res.json();
     if (!Array.isArray(meta?.docs) || !Array.isArray(meta?.shards)) return null;
@@ -99,7 +99,7 @@ async function discoverWord(base, pagePath) {
   for (const [shardIdx, name] of index.meta.shards.entries()) {
     let shard;
     try {
-      const res = await fetch(`${base}/${name}`);
+      const res = await fetch(`${base}/${name}`, { signal: AbortSignal.timeout(10000) });
       if (!res.ok) continue;
       shard = await res.json();
     } catch {
@@ -257,6 +257,12 @@ try {
   // The socket is opened INSIDE the try so `finally` covers a refused or
   // timed-out websocket too — otherwise the tab created above leaks.
   sock = new WebSocket(tab.webSocketDebuggerUrl);
+  sock.onclose = () => {
+    for (const [i, res] of pending) {
+      res(undefined);
+      pending.delete(i);
+    }
+  };
   sock.onmessage = (ev) => {
     collectConsole(ev);
     const m = JSON.parse(ev.data);
@@ -359,9 +365,10 @@ try {
   // verified in rounds 10). But an UNBOUNDED count hides a SECOND, new
   // mismatch — the search's own — behind the tolerated one, so the oracle
   // here is "no more than the tracked defect", not "however many lines".
-  // Not just a count: the tolerated line must be the KNOWN one. A single
-  // search-caused mismatch could otherwise substitute for HkFaceShell's and
-  // still satisfy "at most one".
+  // Not just a count: a SEARCH-caused line is rejected outright, so it
+  // cannot substitute for HkFaceShell's tracked one and still satisfy "at
+  // most one". (Other non-search lines are still tolerated — the tracked
+  // defect is identified by its component, not by exact text.)
   const fromSearch = mismatch.filter((line) => /lagrange-docs-search|DocsSearch|docs-search/i.test(line));
   check(
     "phone: no hydration mismatch beyond the tracked hikari one",
@@ -468,7 +475,7 @@ try {
   // Same attribution guard as the phone branch: a fresh load leaves the
   // field unfocused, and asserting that makes the click the only
   // explanation for the focus the poll below waits for.
-  const fPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-input'); if (!el) return null; document.activeElement?.blur?.(); return document.activeElement === el; })()`);
+  const fPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-input'); return el ? document.activeElement === el : null; })()`);
   check("desktop: the field is unfocused before the click", fPreexisting === false && fPreexisting !== null, `preFocused=${fPreexisting}`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: f.x, y: f.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: f.x, y: f.y, button: "left", clickCount: 1 });
