@@ -54,6 +54,11 @@ pub fn native_language_label(code: &str) -> String {
 pub struct ManifestNavNode {
     pub title: String,
     pub href: String,
+    /// Sidebar glyph: a lucide icon name (`book-open`) or any URL. `None`
+    /// renders the shell's fallback (hollow dot for pages, caret with the
+    /// group dot for sections).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<ManifestNavNode>,
 }
@@ -230,9 +235,11 @@ mod tests {
                 vec![ManifestNavNode {
                     title: "Guides".into(),
                     href: String::new(),
+                    icon: None,
                     children: vec![ManifestNavNode {
                         title: "Architecture".into(),
                         href: "guides/architecture.html".into(),
+                        icon: None,
                         children: Vec::new(),
                     }],
                 }],
