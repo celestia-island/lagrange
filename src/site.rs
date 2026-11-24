@@ -211,7 +211,10 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // Page path → sidebar icon (frontmatter `icon`), keyed by the page's
     // OUTPUT path (the same shape the manifest nav's hrefs use), so the nav
     // builder can look icons up without re-deriving paths.
-    let mut page_icons: BTreeMap<String, String> = BTreeMap::new();
+    // Page path → sidebar icon (frontmatter `icon`), keyed by the page's
+    // OUTPUT path (the same shape the manifest nav's hrefs use) — PER
+    // LANGUAGE, because translations may declare different icons.
+    let mut page_icons: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     // Per-language SUMMARY trees for the webui lane's manifest (converted
     // to manifest navs after the page walk — see webui_navs).
     let mut webui_nav_trees: BTreeMap<String, Vec<NavNode>> = BTreeMap::new();
@@ -424,7 +427,10 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
             // icon (`book-open`) or any URL (`/img/x.svg`, `https://…`).
             // Passed through verbatim — the shell decides how to render it.
             if let Some(icon) = fm.raw.get("icon").and_then(|v| v.as_str()) {
-                page_icons.insert(page_path.clone(), icon.to_string());
+                page_icons
+                    .entry(lang.clone())
+                    .or_default()
+                    .insert(page_path.clone(), icon.to_string());
             }
             let entry = multi.entry(page_path.clone()).or_insert_with(|| MultiPage {
                 pages: BTreeMap::new(),
@@ -477,7 +483,11 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     //      per-language SUMMARY trees.
     let webui_navs: BTreeMap<String, Vec<crate::webui_lane::ManifestNavNode>> = webui_nav_trees
         .into_iter()
-        .map(|(lang, nav)| (lang, to_manifest_nav(&nav, &page_icons)))
+        .map(|(lang, nav)| {
+            let empty = BTreeMap::new();
+            let icons = page_icons.get(&lang).unwrap_or(&empty);
+            (lang.clone(), to_manifest_nav(&nav, icons))
+        })
         .collect();
 
     // 2b. Vendored diagram runtimes (mermaid.js / KaTeX + fonts) — one
@@ -1580,7 +1590,11 @@ fn to_manifest_nav(
             href: rewrite_nav_link(&n.href),
             // Section headers carry no href and therefore no icon — the
             // shell renders group dots for them.
-            icon: icons.get(&rewrite_nav_link(&n.href)).cloned(),
+            // Anchored links (`page.md#frag`) resolve to their page's icon:
+            // the fragment is stripped before the lookup.
+            icon: icons
+                .get(rewrite_nav_link(&n.href).split('#').next().unwrap_or(""))
+                .cloned(),
             children: to_manifest_nav(&n.children, icons),
         })
         .collect()

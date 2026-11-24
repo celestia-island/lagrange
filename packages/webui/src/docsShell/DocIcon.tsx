@@ -17,8 +17,11 @@
 // Lucide names load through a lazy chunk (`lucide-vue-next` is already a
 // dependency for the search button; the dynamic import keeps the full icon
 // set out of the entry bundle until a page actually uses a named icon).
-// SSR renders the async branch as its placeholder — icons pop in on
-// hydration, the same progressive-enhancement contract as search/mermaid.
+// SSR behavior: @vue/server-renderer AWAITS async setup, so the built HTML
+// carries the resolved lucide SVG and the client hydration replaces the
+// async wrapper's placeholder — the icon "pops in" on hydration. A
+// frontmatter name with no lucide counterpart degrades to an empty glyph
+// (loud console warning) rather than failing the SSR render.
 import { defineComponent, defineAsyncComponent, h, type Component } from "vue";
 
 /** A filled circle — the GROUP glyph (sections have children). */
@@ -80,7 +83,10 @@ function lucideIcon(name: string): Component {
       import("lucide-vue-next").then((mod) => {
         const icon = (mod as Record<string, unknown>)[pascal];
         if (typeof icon !== "function" && typeof icon !== "object") {
-          throw new Error(`lucide icon not found: ${pascal}`);
+          // A declared-but-unknown name must not fail the SSR render —
+          // degrade to an empty glyph (the row keeps its label).
+          console.warn(`lucide icon not found: ${pascal}`);
+          return defineComponent({ render: () => h("span", { "aria-hidden": "true" }) });
         }
         return icon as Component;
       }),
