@@ -467,7 +467,7 @@ try {
   // ── 3. desktop: results must be visible, not clipped by the header ─────
   await load(PAGE, 1280, 800, false);
   const dshape = await safe(`document.querySelector('.lagrange-docs-search')?.dataset.shape`);
-  check("desktop keeps the inline field", dshape === "inline", `shape=${dshape}`);
+  check("desktop wears the trigger (compact action row)", dshape === "trigger", `shape=${dshape}`);
   // "no mismatch" is only meaningful if the client actually hydrated:
   // consoleErrors is empty both when hydration is clean AND when no bundle
   // ran at all (round 12 measured the check printing ok with the client JS

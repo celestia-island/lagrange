@@ -16,6 +16,12 @@ export interface DocsNavNode {
    * segment when navigating.
    */
   href: string;
+  /**
+   * Sidebar glyph: a lucide icon name (`book-open`) or any URL (page
+   * frontmatter `icon`). Absent → the shell's fallback — a hollow dot for
+   * pages, a solid dot riding the caret for sections.
+   */
+  icon?: string;
   children?: DocsNavNode[];
 }
 

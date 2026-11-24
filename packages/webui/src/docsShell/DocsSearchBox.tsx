@@ -1,20 +1,11 @@
-// The header's search — the docs face of the family's top-right action
-// area, in the two shapes the family's chrome wears:
-//
-//   - desktop (≥ the shell's mobile breakpoint): the inline field in the
-//     header's end wing, its results in a panel anchored under the field;
-//   - mobile: a single Search icon button — the SAME 32/24px slot the
-//     language and theme buttons occupy — opening a bottom sheet
-//     (HkPopover's `sheetOnMobile`) that holds the field and the hits.
-//
-// Why two shapes: an always-present field is a fixed-width resident in
-// the end wing, and on a phone it squeezed the language and theme
-// buttons past the viewport edge (2026-11-24: the language button was
-// cut off at the right edge). The family's own search affordances
-// (HkSearchTrigger) collapse to a trigger + sheet for exactly this
-// reason; the docs search keeps an inline desktop field because a docs
-// site is read more than it is acted on, and a visible field is the
-// affordance readers look for.
+// The header's search — ONE shape on every viewport, per user direction
+// (2026-11-24, after seeing the desktop face): a Search icon button in
+// the SAME slot the language and theme buttons occupy, opening a popup —
+// an anchored panel on desktop, a bottom sheet (`sheetOnMobile`) on a
+// phone — that holds the field and the hits. The earlier design kept a
+// permanently-visible inline field on desktop; the user's call reverses
+// that: the field lives in the popup, the header stays a compact action
+// row on every viewport.
 //
 // Queries the build's sharded static index (DocsSearch) in the CURRENT
 // page language and renders the hits as plain anchors (real links,
@@ -183,7 +174,7 @@ export const DocsSearchBox = defineComponent({
     watchEffect(() => {
       const el = rootRef.value;
       if (!el || !mounted.value) return;
-      el.dataset.shape = isMobile.value ? "sheet" : "inline";
+      el.dataset.shape = isMobile.value ? "sheet" : "trigger";
       el.dataset.open = open.value ? "true" : "false";
       el.dataset.busy = busy.value ? "true" : "false";
     });
@@ -270,23 +261,19 @@ export const DocsSearchBox = defineComponent({
       <span class="lagrange-docs-search" ref={rootRef}>
         {mounted.value && (
           <>
-            {isMobile.value ? (
-              <HkIconButton
-                size={props.size}
-                variant="ghost"
-                aria-label={t("lagrange::docs.search", "Search…")}
-                {...{ title: t("lagrange::docs.search", "Search…") }}
-                aria-haspopup="dialog"
-                aria-expanded={open.value ? "true" : "false"}
-                onClick={() => {
-                  open.value = !open.value;
-                }}
-              >
-                {{ icon: () => <Search size={16} /> }}
-              </HkIconButton>
-            ) : (
-              field()
-            )}
+            <HkIconButton
+              size={props.size}
+              variant="ghost"
+              aria-label={t("lagrange::docs.search", "Search…")}
+              {...{ title: t("lagrange::docs.search", "Search…") }}
+              aria-haspopup="dialog"
+              aria-expanded={open.value ? "true" : "false"}
+              onClick={() => {
+                open.value = !open.value;
+              }}
+            >
+              {{ icon: () => <Search size={16} /> }}
+            </HkIconButton>
             <HkPopover
               modelValue={panelUp.value}
               onUpdate:modelValue={onSheetUpdate}
@@ -306,7 +293,10 @@ export const DocsSearchBox = defineComponent({
                   {results()}
                 </div>
               ) : (
-                results()
+                <div class="lagrange-docs-search-panel">
+                  {field()}
+                  {results()}
+                </div>
               )}
             </HkPopover>
           </>
