@@ -32,7 +32,9 @@
 //                 `search.ts` applies is applied here, so a discovered
 //                 word cannot answer zero hits.
 // Reuses the CDP endpoint on 127.0.0.1:9222 (never starts a browser), opens
-// one tab, and closes it. Exit 1 = at least one check failed; exit 2 =
+// one tab, and closes it. On a full pass it writes /tmp/check-search-chrome.ok
+// (cleared at start, so it never survives a failed or crashed run).
+// Exit 1 = at least one check failed; exit 2 =
 // the run could not start (no base URL, undiscoverable page/word, shard
 // count mismatch, or no reachable CDP endpoint).
 import { unlinkSync, writeFileSync } from "node:fs";
@@ -164,7 +166,12 @@ const tab = await (async () => {
   try {
     const res = await fetch(`${CDP}/json/new?about:blank`, { method: "PUT", signal: AbortSignal.timeout(15000) });
     const created = await res.json();
-    if (!created?.webSocketDebuggerUrl) throw new Error("the CDP tab reply carried no webSocketDebuggerUrl");
+    if (!created?.webSocketDebuggerUrl) {
+      // The tab exists but is unusable — close it before bailing out, since
+      // this exit happens before the `finally` that owns cleanup.
+      await fetch(`${CDP}/json/close/${created?.id}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
+      throw new Error("the CDP tab reply carried no webSocketDebuggerUrl");
+    }
     return created;
   } catch (e) {
     console.error(`cannot reach the CDP endpoint ${CDP} (${e?.cause?.code ?? e?.message ?? e}) — start a browser with --remote-debugging-port=9222 first`);
@@ -409,8 +416,9 @@ try {
   // would pass on focus that preceded it.
   // Clear any focus the popover itself placed. No "was unfocused" read is
   // asserted here on purpose: this branch blurs first, so such an assertion
-  // could only fail when the field is absent. The attribution comes from the
-  // sequence — focus observed after this point can only be the tap's.
+  // would mostly measure our own blur. Attribution comes from the sequence —
+  // any focus observed from here on arrived after the tap (the poll accepts a
+  // re-focus, which is the one thing this cannot rule out).
   await safe(`(() => { document.activeElement?.blur?.(); return true; })()`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
@@ -457,6 +465,15 @@ try {
   // the bundle never ran even when a server-rendered shell looks right.
   const dhydrated = await safe(`!!document.querySelector('#app')?.__vue_app__`);
   check("desktop: the client bundle actually hydrated", dhydrated === true, `vueApp=${dhydrated}`);
+  // Re-control the console channel for THIS phase: `load()` cleared the
+  // collector, so the phone-phase control says nothing about desktop.
+  await send("Runtime.evaluate", { expression: `console.error('${CONSOLE_PROBE}')` });
+  const dProbe = await poll(async () => {
+    const hit = consoleErrors.some((e) => e.includes(CONSOLE_PROBE));
+    return hit ? hit : null;
+  }, 6, 200);
+  check("desktop: console channel delivers (control for the mismatch oracle)", dProbe === true, `probeSeen=${dProbe}`);
+  consoleErrors.length = 0;
   check("desktop hydration reports no mismatch", !consoleErrors.some((e) => /hydrat/i.test(e)), consoleErrors.find((e) => /hydrat/i.test(e)) ?? "");
 
   const dSizes = await safe(`JSON.stringify([...document.querySelectorAll('.s-admin-header-actions button')].map((b) => String(b.className).match(/hk-icon-button-(\\d+)/)?.[1] ?? '?'))`);
