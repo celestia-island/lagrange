@@ -137,8 +137,9 @@ export const LagrangeDocsShell = defineComponent({
     onMounted(() => {
       mounted.value = true;
     });
-    const headerActionSize = computed<28 | 32>(() => (mounted.value ? chromeSize.value : 32));
-
+    // `useChromeActionSize` (hikari 0.55.480+) carries its own mounted gate
+    // (narrow-first: 28 on SSR + first client pass, real size after mount).
+    
     const page = computed(() => props.page);
     const site = computed(() => props.page.site);
 
@@ -222,7 +223,7 @@ export const LagrangeDocsShell = defineComponent({
                   key="search"
                   lang={page.value.lang}
                   site={site.value}
-                  size={headerActionSize.value}
+                  size={chromeSize.value}
                 />,
               ]}
               v-slots={{
@@ -230,7 +231,7 @@ export const LagrangeDocsShell = defineComponent({
                   <span class="lagrange-docs-header-end">
                     <span ref={langButtonRef as any}>
                       <HkIconButton
-                        size={headerActionSize.value}
+                        size={chromeSize.value}
                         variant="ghost"
                         aria-label={t("lagrange::docs.language", "Language")}
                         {...{ title: t("lagrange::docs.language", "Language") }}
@@ -242,7 +243,7 @@ export const LagrangeDocsShell = defineComponent({
                       </HkIconButton>
                     </span>
                     <HkIconButton
-                      size={headerActionSize.value}
+                      size={chromeSize.value}
                       variant="ghost"
                       aria-label={t("lagrange::docs.theme", "Theme")}
                       {...{ title: t("lagrange::docs.theme", "Theme") }}
