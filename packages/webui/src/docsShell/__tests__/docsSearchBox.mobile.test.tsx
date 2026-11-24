@@ -197,16 +197,17 @@ describe("DocsSearchBox (mobile)", () => {
     expect(document.body.querySelector(".lagrange-docs-search-sheet")).toBeNull();
   });
 
-  it("returns to the inline field when the viewport grows past the breakpoint", async () => {
+  it("keeps the trigger and switches the popup lane when the viewport grows past the breakpoint", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-shape")).toBe("sheet");
     bp.ref!.value = false;
     await nextTick();
     // MUT: M4 (a shape decided once at mount) — rotating a phone to
-    // landscape must bring the field back without a reload.
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-shape")).toBe("inline");
-    expect(m.root.querySelector(".lagrange-docs-search-input")).toBeTruthy();
-    expect(m.root.querySelector("button[aria-haspopup='dialog']")).toBeNull();
+    // landscape must re-evaluate the lane without a reload. The trigger
+    // stays (both viewports are trigger-first, 2026-11-24); what flips is
+    // the popup lane: sheet on a phone, anchored panel on desktop.
+    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-shape")).toBe("trigger");
+    expect(m.root.querySelector("button[aria-haspopup='dialog']")).toBeTruthy();
   });
 });

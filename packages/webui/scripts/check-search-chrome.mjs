@@ -467,7 +467,9 @@ try {
   // ── 3. desktop: results must be visible, not clipped by the header ─────
   await load(PAGE, 1280, 800, false);
   const dshape = await safe(`document.querySelector('.lagrange-docs-search')?.dataset.shape`);
-  check("desktop keeps the inline field", dshape === "inline", `shape=${dshape}`);
+  check("desktop wears the trigger (compact action row)", dshape === "trigger", `shape=${dshape}`);
+  const dTrigRaw = await safe(`(() => { const b = document.querySelector(".lagrange-docs-search button[aria-haspopup='dialog']")?.getBoundingClientRect(); if (!b) return null; return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2 }); })()`);
+  const dTrig = dTrigRaw ? JSON.parse(dTrigRaw) : { x: 0, y: 0 };
   // "no mismatch" is only meaningful if the client actually hydrated:
   // consoleErrors is empty both when hydration is clean AND when no bundle
   // ran at all (round 12 measured the check printing ok with the client JS
@@ -505,13 +507,25 @@ try {
     `phone=${sizeList[0]} desktop=${dSizeList[0]}`,
   );
 
-  // A REAL pointer focus on the field, then real typed text. The focus
-  // matters: the hit-click regression is a blur-then-close sequence, and a
-  // panel opened by a programmatic value change (no focused input) can
-  // never blur — a mutant with the old bug passed this very check until
-  // the focus was made real (round 8 of #124).
-  const field = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2 }); })()`);
-  const f = field ? JSON.parse(field) : { x: 0, y: 0 };
+  // A REAL pointer focus on the field, then real typed text. The field now
+  // lives INSIDE the trigger's popup (trigger-first, 2026-11-24): open the
+  // popup with a real click on the trigger, wait for the field to mount in
+  // the viewport, then click IT. The focus still matters: the hit-click
+  // regression is a blur-then-close sequence, and a panel opened by a
+  // programmatic value change (no focused input) can never blur — a mutant
+  // with the old bug passed this very check until the focus was made real
+  // (round 8 of #124).
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: dTrig.x, y: dTrig.y });
+  await new Promise((r) => setTimeout(r, 150));
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: dTrig.x, y: dTrig.y, button: "left", clickCount: 1 });
+  await new Promise((r) => setTimeout(r, 80));
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: dTrig.x, y: dTrig.y, button: "left", clickCount: 1 });
+  const field = await poll(async () => {
+    const s = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-input')?.getBoundingClientRect(); if (!b || b.width === 0) return null; return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2, inVp: b.top >= 0 && b.bottom <= innerHeight }); })()`);
+    const p = s ? JSON.parse(s) : null;
+    return p && p.inVp ? { x: p.x, y: p.y } : null;
+  });
+  const f = field ?? { x: 0, y: 0 };
   // Same attribution guard as the phone branch: a fresh load leaves the
   // field unfocused, and asserting that makes the click the only
   // explanation for the focus the poll below waits for.

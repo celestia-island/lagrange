@@ -44,6 +44,7 @@ import {
 import { Languages, Moon } from "lucide-vue-next";
 import type { DocsNavNode, DocsPageData } from "./types";
 import { DocsSearchBox } from "./DocsSearchBox";
+import { docIconGlyph, docIconDotSolid, docIconDotHollow } from "./DocIcon";
 import "./docsShell.scss";
 
 const RAIL_STORAGE_KEY = "lagrange.docs.sidebar";
@@ -61,13 +62,27 @@ interface FaceShellSidebarSlot {
 }
 
 /** SUMMARY tree → HkMenu items: sections become collapsible groups,
- * leaves become rows keyed by their language-relative href. */
+ * leaves become rows keyed by their language-relative href.
+ *
+ * Glyphs: a page's frontmatter `icon` (lucide name or URL) wins; without
+ * one the dot language applies — SOLID dot for group rows, HOLLOW dot for
+ * page rows — so the collapsed rail reads as a real table of contents
+ * instead of a wall of label initials. */
 export function navToMenuItems(nav: DocsNavNode[]): HkMenuItem[] {
-  return nav.map((node, i) => ({
-    key: node.href || `section:${i}:${node.title}`,
-    label: node.title,
-    children: node.children?.length ? navToMenuItems(node.children) : undefined,
-  }));
+  return nav.map((node, i) => {
+    const isGroup = node.children?.length;
+    const icon = node.icon
+      ? docIconGlyph(node.icon)
+      : isGroup
+        ? docIconDotSolid()
+        : docIconDotHollow();
+    return {
+      key: node.href || `section:${i}:${node.title}`,
+      label: node.title,
+      icon,
+      children: node.children?.length ? navToMenuItems(node.children) : undefined,
+    };
+  });
 }
 
 /**
@@ -177,6 +192,7 @@ export const LagrangeDocsShell = defineComponent({
     return () => (
       <HkFaceShell
         sidebarCollapsible
+        sidebarWidth="248px"
         sidebarRailStyle={railStyle.value}
         onUpdate:sidebarRailStyle={(v: string) => onRailStyleChange(v === "rail" ? "rail" : "expanded")}
         navTitle={t("lagrange::docs.navTitle", "Contents")}

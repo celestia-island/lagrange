@@ -208,8 +208,16 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     // ── 1. For each language, parse its SUMMARY and render every markdown
     //      page into a LangPage. Collect them into per-page-path MultiPages.
     let mut multi: BTreeMap<String, MultiPage> = BTreeMap::new();
-    // Per-language SUMMARY trees for the webui lane's manifest.
-    let mut webui_navs: BTreeMap<String, Vec<crate::webui_lane::ManifestNavNode>> = BTreeMap::new();
+    // Page path → sidebar icon (frontmatter `icon`), keyed by the page's
+    // OUTPUT path (the same shape the manifest nav's hrefs use), so the nav
+    // builder can look icons up without re-deriving paths.
+    // Page path → sidebar icon (frontmatter `icon`), keyed by the page's
+    // OUTPUT path (the same shape the manifest nav's hrefs use) — PER
+    // LANGUAGE, because translations may declare different icons.
+    let mut page_icons: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    // Per-language SUMMARY trees for the webui lane's manifest (converted
+    // to manifest navs after the page walk — see webui_navs).
+    let mut webui_nav_trees: BTreeMap<String, Vec<NavNode>> = BTreeMap::new();
     // Knowledge collection: one entry per (document, language) translation,
     // folded into knowledge.json after the page loop.
     let mut collected: Vec<knowledge::CollectedDoc> = Vec::new();
@@ -261,8 +269,10 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         // The webui lane's sidebar tree: the SAME POST-FALLBACK nav the
         // legacy sidebar renders (a language without its own SUMMARY.md
         // inherits the default language's tree — exporting before this
-        // point gave it an empty sidebar; round 8 of PR #119).
-        webui_navs.insert(lang.clone(), to_manifest_nav(&nav));
+        // point gave it an empty sidebar; round 8 of PR #119). The
+        // manifest conversion happens after the page walk: nav icons come
+        // from each page's frontmatter, which the page walk collects.
+        webui_nav_trees.insert(lang.clone(), nav.clone());
 
         for md_path in walk_md(&lang_dir)? {
             if md_path.file_name().is_some_and(|f| f == "SUMMARY.md") {
@@ -413,6 +423,15 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
                 blocks: &blocks,
             }));
 
+            // Sidebar icon (webui lane): frontmatter `icon` names a lucide
+            // icon (`book-open`) or any URL (`/img/x.svg`, `https://…`).
+            // Passed through verbatim — the shell decides how to render it.
+            if let Some(icon) = fm.raw.get("icon").and_then(|v| v.as_str()) {
+                page_icons
+                    .entry(lang.clone())
+                    .or_default()
+                    .insert(page_path.clone(), icon.to_string());
+            }
             let entry = multi.entry(page_path.clone()).or_insert_with(|| MultiPage {
                 pages: BTreeMap::new(),
                 page_path: page_path.clone(),
@@ -460,6 +479,17 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
         page_count += 1;
     }
 
+    // 2a+. Manifest navs: now that page icons are collected, convert the
+    //      per-language SUMMARY trees.
+    let webui_navs: BTreeMap<String, Vec<crate::webui_lane::ManifestNavNode>> = webui_nav_trees
+        .into_iter()
+        .map(|(lang, nav)| {
+            let empty = BTreeMap::new();
+            let icons = page_icons.get(&lang).unwrap_or(&empty);
+            (lang.clone(), to_manifest_nav(&nav, icons))
+        })
+        .collect();
+
     // 2b. Vendored diagram runtimes (mermaid.js / KaTeX + fonts) — one
     //     emission for the whole build, only when some page in some
     //     language actually uses a ```mermaid / ```math fence.
@@ -498,28 +528,20 @@ pub fn build(opts: &BuildOptions) -> Result<()> {
     //        and turns the flat legacy pages into redirect stubs. When
     //        the webui build or Node is absent this keeps the legacy
     //        chrome as the site's surface (warned inside webui_lane).
-    let logo_url = config.site.logo.as_ref().map(|path| {
-        let name = std::path::Path::new(path)
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.clone());
-        if base.is_empty() {
-            format!("/{name}")
-        } else {
-            format!("{base}/{name}")
-        }
-    });
-    let favicon_url = config.site.favicon.as_ref().map(|path| {
-        let name = std::path::Path::new(path)
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.clone());
-        if base.is_empty() {
-            format!("/{name}")
-        } else {
-            format!("{base}/{name}")
-        }
-    });
+    let logo_url = config
+        .site
+        .logo
+        .as_deref()
+        .map(ToOwned::to_owned)
+        .or_else(|| auto_detect_asset(&opts.src, LOGO_CANDIDATES))
+        .map(|path| root_asset_url(&path, &base));
+    let favicon_url = config
+        .site
+        .favicon
+        .as_deref()
+        .map(ToOwned::to_owned)
+        .or_else(|| auto_detect_asset(&opts.src, FAVICON_CANDIDATES))
+        .map(|path| root_asset_url(&path, &base));
     let manifest_inputs = crate::webui_lane::ManifestInputs {
         site: crate::webui_lane::ManifestSite {
             title: config
@@ -1557,13 +1579,32 @@ fn rewrite_nav_link(url: &str) -> String {
 
 /// SUMMARY tree → the webui lane's manifest nav (lang-relative hrefs —
 /// the shell prefixes the language segment itself).
-fn to_manifest_nav(nodes: &[NavNode]) -> Vec<crate::webui_lane::ManifestNavNode> {
+fn to_manifest_nav(
+    nodes: &[NavNode],
+    icons: &BTreeMap<String, String>,
+) -> Vec<crate::webui_lane::ManifestNavNode> {
     nodes
         .iter()
-        .map(|n| crate::webui_lane::ManifestNavNode {
-            title: n.title.clone(),
-            href: rewrite_nav_link(&n.href),
-            children: to_manifest_nav(&n.children),
+        .map(|n| {
+            // Section headers carry no href and therefore no icon — the
+            // shell renders group dots for them.
+            // Anchored links (`page.md#frag`) resolve to their page's icon
+            // (fragment stripped). Directory links (`guide/`, written without
+            // an extension in the SUMMARY) resolve to that directory's
+            // `index.html` — the same landing page the link serves.
+            let href = rewrite_nav_link(&n.href);
+            let bare = href.split('#').next().unwrap_or("");
+            let lookup = if !bare.is_empty() && !bare.ends_with(".html") && !bare.contains('.') {
+                format!("{bare}index.html")
+            } else {
+                bare.to_string()
+            };
+            crate::webui_lane::ManifestNavNode {
+                title: n.title.clone(),
+                href,
+                icon: icons.get(&lookup).cloned(),
+                children: to_manifest_nav(&n.children, icons),
+            }
         })
         .collect()
 }
@@ -1627,6 +1668,35 @@ fn walk_md_inner(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 // ── assets ────────────────────────────────────────────────────────────────
+
+/// Favicon auto-detection: when `[site] favicon` is not configured, the
+/// first of these src-root files becomes the site icon (a root asset is
+/// copied to the output root wholesale, so detection is enough — no extra
+/// copy step).
+const FAVICON_CANDIDATES: &[&str] = &["favicon.svg", "favicon.png", "favicon.ico", "favicon.webp"];
+/// Same auto-detection for the brand logo (the admin header's brand slot).
+const LOGO_CANDIDATES: &[&str] = &["logo.svg", "logo.webp", "logo.png"];
+
+/// The first candidate that exists as a file under `src`, else `None`.
+fn auto_detect_asset(src: &Path, candidates: &[&str]) -> Option<String> {
+    candidates
+        .iter()
+        .find(|c| src.join(c).is_file())
+        .map(|c| (*c).to_string())
+}
+
+/// A src-root asset name → its root-absolute served URL.
+fn root_asset_url(path: &str, base: &str) -> String {
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string());
+    if base.is_empty() {
+        format!("/{name}")
+    } else {
+        format!("{base}/{name}")
+    }
+}
 
 fn copy_root_assets(src: &Path, out: &Path) -> Result<()> {
     for entry in fs::read_dir(src)? {

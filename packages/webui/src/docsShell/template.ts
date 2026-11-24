@@ -27,6 +27,10 @@ export interface Manifest {
 export interface ManifestNavNode {
   title: string;
   href: string;
+  /** Sidebar glyph: a lucide icon name (`book-open`) or any URL. Absent →
+   *  the shell's fallback (hollow dot for pages, caret + group dot for
+   *  sections). */
+  icon?: string;
   children?: ManifestNavNode[];
 }
 

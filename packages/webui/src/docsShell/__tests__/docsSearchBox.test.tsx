@@ -86,8 +86,24 @@ function defaultBody(url: string): unknown {
   return { pipeline: [[0, 0]], pipeline2: [[0, 0]] };
 }
 
-async function typeInto(root: ParentNode, value: string): Promise<void> {
-  const input = root.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+/** Open the trigger's popup if it is not already open (clicking an OPEN
+ * trigger toggles the panel shut). */
+async function openPanel(): Promise<void> {
+  if (document.querySelector(".lagrange-docs-search-input")) return;
+  const trigger = document.querySelector<HTMLButtonElement>(
+    ".lagrange-docs-search button[aria-haspopup='dialog']",
+  )!;
+  trigger.click();
+  await nextTick();
+}
+async function typeInto(_root: ParentNode, value: string): Promise<void> {
+  // Trigger-first (2026-11-24): the field lives inside the trigger's popup.
+  // Open it only when not already open — clicking an OPEN trigger toggles
+  // the panel shut — then type wherever the popover stub rendered the field.
+  // MUT:mut-openpanel-toggle (an open-panel trigger click closes the panel,
+  // which is exactly what this helper must not do).
+  await openPanel();
+  const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
   input.value = value;
   input.dispatchEvent(new Event("input"));
   await nextTick();
@@ -254,6 +270,7 @@ describe("DocsSearchBox", () => {
         return { ok: true, json: async () => defaultBody(url) };
       }),
     );
+    await openPanel();
     const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
@@ -280,6 +297,7 @@ describe("DocsSearchBox", () => {
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
+    await openPanel();
     const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
@@ -299,6 +317,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
+    await openPanel();
     const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     const hit = document.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")!;
     input.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: hit }));
@@ -330,6 +349,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     // Fire the slow query, then immediately the fast one.
+    await openPanel();
     const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
@@ -357,6 +377,7 @@ describe("DocsSearchBox", () => {
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
+    await openPanel();
     const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
@@ -381,6 +402,7 @@ describe("DocsSearchBox", () => {
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
+    await openPanel();
     const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
