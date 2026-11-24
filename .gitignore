@@ -16,9 +16,7 @@ Thumbs.db
 /.just/
 /celestia-devtools.just
 _site/
-node_modules/
-node_modules/
-node_modules/
-node_modules/
-node_modules/
+node_modules
 pnpm-workspace.yaml
+
+# worktree-local cache symlink (wt_link) — never commit
