@@ -198,7 +198,13 @@ const send = (method, params = {}) =>
       return;
     }
     const i = ++id;
-    pending.set(i, res);
+    const timer = setTimeout(() => {
+      if (pending.delete(i)) reject(new Error(`debugger reply to ${method} timed out after 15s`));
+    }, 15000);
+    pending.set(i, (v) => {
+      clearTimeout(timer);
+      res(v);
+    });
     sock.send(JSON.stringify({ id: i, method, params }));
   });
 
@@ -439,13 +445,20 @@ try {
   });
   const search = await safe(`JSON.stringify({
     hits: document.querySelectorAll('.lagrange-docs-search-hit').length,
+    anyHitHasWord: [...document.querySelectorAll('.lagrange-docs-search-hit')].some((h) => (h.textContent ?? '').toLowerCase().includes(${JSON.stringify(WORD.toLowerCase())})),
     error: !!document.querySelector('.lagrange-docs-search-error'),
     input: (() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
     clear: (() => { const e = document.querySelector('.lagrange-docs-search-sheet .lagrange-docs-search-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.right)]; })(),
     inputRight: (() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return Math.round(b.right); })(),
   })`);
   const s = search ? JSON.parse(search) : { hits: 0, error: true, input: null, clear: null };
-  check("phone search answers with hits", s.hits > 0 && !s.error, `hits=${s.hits} error=${s.error}`);
+  // Bind the answer to the QUESTION: a box that lists every doc regardless of
+  // the typed word would otherwise satisfy a bare "hits > 0".
+  check(
+    "phone search answers with hits for the typed word",
+    s.hits > 0 && !s.error && s.anyHitHasWord === true,
+    `hits=${s.hits} error=${s.error} anyHitHasWord=${s.anyHitHasWord}`,
+  );
   check(
     "phone clear button sits in the input row",
     s.clear !== null && s.clear[0] >= s.input[0] && s.clear[1] <= s.input[1] && s.clear[2] <= s.inputRight + 1,
@@ -473,7 +486,10 @@ try {
     return hit ? hit : null;
   }, 6, 200);
   check("desktop: console channel delivers (control for the mismatch oracle)", dProbe === true, `probeSeen=${dProbe}`);
-  consoleErrors.length = 0;
+  // Do NOT clear the collector here: this phase's own console output (the
+  // hydration-mismatch oracle below reads it) was collected by `load()`.
+  // The probe text does not match `/hydrat/i`, so it needs no removal —
+  // clearing here would make the oracle read an empty array and pass blind.
   check("desktop hydration reports no mismatch", !consoleErrors.some((e) => /hydrat/i.test(e)), consoleErrors.find((e) => /hydrat/i.test(e)) ?? "");
 
   const dSizes = await safe(`JSON.stringify([...document.querySelectorAll('.s-admin-header-actions button')].map((b) => String(b.className).match(/hk-icon-button-(\\d+)/)?.[1] ?? '?'))`);
