@@ -36,7 +36,7 @@ import {
   watchEffect,
   type PropType,
 } from "vue";
-import { HkIconButton, HkPopover, useBreakpoint, useChromeActionSize, useI18n } from "@celestia-island/hikari";
+import { HkIconButton, HkPopover, useBreakpoint, useI18n } from "@celestia-island/hikari";
 import { Search } from "lucide-vue-next";
 import type { DocsSiteMeta } from "./types";
 import { DocsSearch, type Hit } from "./search";
@@ -46,6 +46,13 @@ export const DocsSearchBox = defineComponent({
   props: {
     site: { type: Object as PropType<DocsSiteMeta>, required: true },
     lang: { type: String, required: true },
+    /** The header's action size, passed down by the shell. hikari's
+     * `useChromeActionSize` keeps its OWN `useBreakpoint` instance (its own
+     * width snapshot), so a second instance here read a different width on
+     * a cold phone load and the trigger rendered 28px beside two 32px
+     * neighbours — at rest, not just first paint (round 15 of #124).
+     * One source, one row. */
+    size: { type: Number as PropType<28 | 32>, default: 32 },
   },
   setup(props) {
     const { t } = useI18n();
@@ -60,7 +67,6 @@ export const DocsSearchBox = defineComponent({
     // shape once (rounds 3 and 5 of #124).
     const mounted = ref(false);
     const isMobile = computed(() => breakpointMobile.value);
-    const chromeSize = useChromeActionSize();
     const query = ref("");
     const hits = ref<Hit[] | null>(null);
     /** Results are on screen (desktop: the anchored panel; mobile: the
@@ -153,7 +159,16 @@ export const DocsSearchBox = defineComponent({
     // panel, handles Escape, and owns the phone's backdrop. The family's
     // HkSearchTrigger registers no listener of its own for the same reason.
     function onSheetUpdate(v: boolean) {
-      if (!v) close();
+      if (v) return;
+      close();
+      // A dismissal must also CANCEL the in-flight query. Otherwise its
+      // answer lands, `run()` sets `open = true`, and the panel comes back
+      // on its own — the user closed it and it reappeared (round 14 of
+      // #124, measured on a phone with the query held mid-flight). Same
+      // two resets `clear()` does, for the same reason: the superseded
+      // run's `finally` skips both once the token moves.
+      seq += 1;
+      busy.value = false;
     }
 
     onMounted(() => {
@@ -257,7 +272,7 @@ export const DocsSearchBox = defineComponent({
           <>
             {isMobile.value ? (
               <HkIconButton
-                size={chromeSize.value}
+                size={props.size}
                 variant="ghost"
                 aria-label={t("lagrange::docs.search", "Search…")}
                 {...{ title: t("lagrange::docs.search", "Search…") }}

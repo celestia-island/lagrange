@@ -28,8 +28,10 @@ repo root (`packages/webui/dist-docs`), or anywhere via `LAGRANGE_WEBUI_DIR`;
 `just docs` / CI build the bundles via pnpm first: every page renders through the real
 hikari component tree — the same `HkFaceShell` / `HkAdminHeader` shell the
 family's consoles wear, with the site logo in the brand slot, the language
-and theme buttons in the top-right action area, the SUMMARY sidebar with
-rail collapse, and a single footer status band. Pages live at per-language
+and theme buttons in the top-right action area, and the SUMMARY sidebar
+with rail collapse. The search is an inline field on desktop and one icon
+button opening a bottom sheet below 768px; there is no footer band (a
+static, account-free site has no status to report). Pages live at per-language
 URLs (`<lang>/<path>.html`); the legacy flat URLs become language-negotiated
 redirects. The **legacy lane** stays as the no-Node fallback.
 

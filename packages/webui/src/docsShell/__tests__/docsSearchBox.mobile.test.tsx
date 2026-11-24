@@ -159,6 +159,40 @@ describe("DocsSearchBox (mobile)", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
+  // Round 14: dismissing the sheet while a query is in flight used to be
+  // undone — the answer landed, `run()` set `open = true`, and the sheet
+  // came back on its own. happy-dom's desktop suites never see this (they
+  // mock the breakpoint), so it lives here, in the mobile shape.
+  it("stays closed when the sheet is dismissed mid-flight", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        await new Promise((r) => setTimeout(r, 80));
+        return { ok: true, json: async () => ({ pipeline: [[0, 0]] }) };
+      }),
+    );
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    const trigger = m.root.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']")!;
+    trigger.click();
+    await nextTick();
+    await nextTick();
+    const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-sheet input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    // In flight: the panel is up because `panelUp = busy || open`.
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
+    bp.dismiss!(); // the user closes it
+    await nextTick();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    await new Promise((r) => setTimeout(r, 200)); // the answer lands
+    // MUT: M20 (round 14 — `onSheetUpdate` not cancelling the run).
+    expect(trigger.getAttribute("aria-expanded"), "a dismissal must not be undone by the answer").toBe("false");
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+    expect(document.body.querySelector(".lagrange-docs-search-sheet")).toBeNull();
+  });
+
   it("returns to the inline field when the viewport grows past the breakpoint", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;

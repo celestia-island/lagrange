@@ -36,7 +36,7 @@ export interface DocsSiteMeta {
   defaultLang: string;
   /** All build languages in configured order, with native labels. */
   langs: { code: string; label: string }[];
-  /** Version + date stamp for the footer. */
+  /** Version + date stamp (shown by hosts that render one; the docs shell has no footer). */
   buildStamp: string;
 }
 

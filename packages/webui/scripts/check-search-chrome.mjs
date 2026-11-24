@@ -115,6 +115,19 @@ try {
   // in the SSR string and the live DOM (so `useChromeActionSize` is NOT the
   // cause). The search's own shell is empty on both first passes (gated on
   // mount), so it adds no node of its own. Tracked for hikari.
+  // One row, one size. The header's action size is viewport-derived and the
+  // server has none, so a live value on the first client pass mismatches and
+  // Vue keeps the server's class — the language/theme buttons stayed 32px
+  // while the post-mount search trigger showed the true 28 (round 15 of
+  // #124). All three must agree at rest.
+  const sizes = await safe(`JSON.stringify([...document.querySelectorAll('.s-admin-header-actions button')].map((b) => String(b.className).match(/hk-icon-button-(\\d+)/)?.[1] ?? '?'))`);
+  const sizeList = sizes ? JSON.parse(sizes) : [];
+  check(
+    "phone: every header action renders the same size",
+    sizeList.length >= 2 && new Set(sizeList).size === 1,
+    `sizes=${sizeList.join(",")}`,
+  );
+
   const mismatch = consoleErrors.filter((e) => /hydrat/i.test(e));
   console.log(`info  phone hydration: ${mismatch.length} mismatch line(s) — HkFaceShell's compact/hamburger, pre-existing in hikari`);
   // The mismatch LINE cannot be this component's oracle (see above). Its

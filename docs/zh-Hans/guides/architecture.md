@@ -28,7 +28,8 @@ markdown -> pest parser -> AST (Block / Inline)
 `just docs` 与 CI 都先经 pnpm 构建产物：每个页面都由真正的 hikari 组件树
 渲染——与家族各控制台同一套 `HkFaceShell` / `HkAdminHeader` 外壳，
 站点 logo 占品牌槽、语言与主题按钮在右上角动作区、SUMMARY 侧栏带
-轨道折叠、页脚单一状态带。页面使用按语言的 URL
+轨道折叠。搜索在桌面是内联输入框，768px 以下收成一枚图标按钮并弹出底部面板；
+没有页脚状态带（静态、无账号的站点没有状态可报）。页面使用按语言的 URL
 （`<lang>/<path>.html`）；旧的扁平 URL 变为按语言协商的重定向。
 **旧车道**保留为无 Node 环境的回退。
 

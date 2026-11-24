@@ -26,7 +26,7 @@
 // Multi-page navigation is real page loads, not SPA routing: sidebar
 // rows and locale picks assign location to the per-language URL the
 // build emitted.
-import { computed, defineComponent, ref, type PropType } from "vue";
+import { computed, defineComponent, onMounted, ref, type PropType } from "vue";
 import {
   HkAdaptiveDialog,
   HkAdminHeader,
@@ -103,6 +103,20 @@ export const LagrangeDocsShell = defineComponent({
     provideMenuGroupState();
     const { t } = useI18n();
     const chromeSize = useChromeActionSize();
+    // The header's action size is viewport-derived, and the server has no
+    // viewport — so SSR renders the desktop size. Binding the live value on
+    // the FIRST client pass therefore mismatches, and Vue resolves an
+    // attribute mismatch by KEEPING the server's value: the language and
+    // theme buttons stayed 32px on a phone (correct 28px only after a
+    // resize), while the search trigger — rendered after mount — showed
+    // the true 28. One row, two sizes, at rest (round 15 of #124).
+    // First pass = the server's value; after mount the whole row flips
+    // together on a normal reactive update, and hydration stays clean.
+    const mounted = ref(false);
+    onMounted(() => {
+      mounted.value = true;
+    });
+    const headerActionSize = computed<28 | 32>(() => (mounted.value ? chromeSize.value : 32));
 
     const page = computed(() => props.page);
     const site = computed(() => props.page.site);
@@ -182,14 +196,19 @@ export const LagrangeDocsShell = defineComponent({
               brandSrc={site.value.logo ?? undefined}
               brandAlt={site.value.title}
               actions={[
-                <DocsSearchBox key="search" lang={page.value.lang} site={site.value} />,
+                <DocsSearchBox
+                  key="search"
+                  lang={page.value.lang}
+                  site={site.value}
+                  size={headerActionSize.value}
+                />,
               ]}
               v-slots={{
                 "theme-toggle": () => (
                   <span class="lagrange-docs-header-end">
                     <span ref={langButtonRef as any}>
                       <HkIconButton
-                        size={chromeSize.value}
+                        size={headerActionSize.value}
                         variant="ghost"
                         aria-label={t("lagrange::docs.language", "Language")}
                         {...{ title: t("lagrange::docs.language", "Language") }}
@@ -201,7 +220,7 @@ export const LagrangeDocsShell = defineComponent({
                       </HkIconButton>
                     </span>
                     <HkIconButton
-                      size={chromeSize.value}
+                      size={headerActionSize.value}
                       variant="ghost"
                       aria-label={t("lagrange::docs.theme", "Theme")}
                       {...{ title: t("lagrange::docs.theme", "Theme") }}
