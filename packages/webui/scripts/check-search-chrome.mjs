@@ -321,7 +321,7 @@ try {
     expression: `document.querySelector('.lagrange-docs-search')?.dataset.shape`,
     returnByValue: true,
   });
-  check("phone hydration switches to the trigger after mount", shape.result.value === "sheet", `shape=${shape.result.value}`);
+  check("phone hydration switches to the trigger after mount", shape.result.value === "trigger", `shape=${shape.result.value}`);
 
   const trigger = await send("Runtime.evaluate", {
     // Present but collapsed (0×0, hidden) is the failure mode an
@@ -397,21 +397,20 @@ try {
   await send("Runtime.evaluate", {
     expression: `document.querySelector(".lagrange-docs-search button[aria-haspopup='dialog']").click()`,
   });
-  // HkPopover opens synchronously on the click; poll for the sheet's field
+  // The modal opens synchronously on the click; poll for the search field
   // instead of assuming a fixed open latency on a cold tab. Budget 8s: a
-  // tap fired before the sheet exists lands at (0,0) and fails everything
+  // tap fired before the field exists lands at (0,0) and fails everything
   // downstream (measured: a cold sandbox needed >4s here once).
   await poll(async () => {
-    const p = await safe(`!!document.querySelector('.lagrange-docs-search-sheet input')`);
+    const p = await safe(`!!document.querySelector('.lagrange-docs-search-panel input')`);
     return p === true ? p : null;
   }, 16);
-  // HkPopover focuses its own panel when it opens, so a real click on the
-  // sheet's field is what gives it focus; then real typed text. The sheet
-  // mounts its input before the slide-in animation finishes — a rect read
-  // mid-animation is off-screen and the tap lands on nothing, so poll
-  // until the field is inside the viewport and settle before tapping.
+  // HkModal focuses its own surface when it opens, so a real click on the
+  // search field is what gives it focus; then real typed text. The modal's
+  // field is inside the dialog body — poll until it is inside the viewport
+  // and settle before tapping.
   const sfield = await poll(async () => {
-    const s = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2, inVp: b.top >= 0 && b.bottom <= innerHeight && b.width > 0 }); })()`);
+    const s = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-panel input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2, inVp: b.top >= 0 && b.bottom <= innerHeight && b.width > 0 }); })()`);
     const p = s ? JSON.parse(s) : null;
     return p && p.inVp ? { x: p.x, y: p.y } : null;
   });
@@ -430,10 +429,10 @@ try {
   // Focus is synchronous on mousedown, so poll instead of sleeping: a fixed
   // settle here is the same false-red class this PR removes elsewhere.
   const sfocused = await poll(async () => {
-    const f = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-sheet input')`);
+    const f = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-panel input')`);
     return f === true ? f : null;
   }, 8);
-  check("phone: the sheet's field takes focus from a real tap", sfocused === true, `focused=${sfocused}`);
+  check("phone: the search field takes focus from a real tap", sfocused === true, `focused=${sfocused}`);
   await send("Input.insertText", { text: WORD });
   // The answer lands after debounce + shard fetch — poll for either
   // outcome (hits or the error state) instead of a fixed sleep.
@@ -446,9 +445,9 @@ try {
     hits: document.querySelectorAll('.lagrange-docs-search-hit').length,
     anyHitHasWord: [...document.querySelectorAll('.lagrange-docs-search-hit')].some((h) => (h.textContent ?? '').toLowerCase().includes(${JSON.stringify(WORD.toLowerCase())})),
     error: !!document.querySelector('.lagrange-docs-search-error'),
-    input: (() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
-    clear: (() => { const e = document.querySelector('.lagrange-docs-search-sheet .lagrange-docs-search-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.right)]; })(),
-    inputRight: (() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return Math.round(b.right); })(),
+    input: (() => { const b = document.querySelector('.lagrange-docs-search-panel input').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
+    clear: (() => { const e = document.querySelector('.lagrange-docs-search-panel .lagrange-docs-search-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.right)]; })(),
+    inputRight: (() => { const b = document.querySelector('.lagrange-docs-search-panel input').getBoundingClientRect(); return Math.round(b.right); })(),
   })`);
   const s = search ? JSON.parse(search) : { hits: 0, error: true, input: null, clear: null };
   // Bind the answer to the QUESTION: a box that lists every doc regardless of

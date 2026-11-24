@@ -1,17 +1,18 @@
 // The header's search — ONE shape on every viewport, per user direction
-// (2026-11-24, after seeing the desktop face): a Search icon button in
-// the SAME slot the language and theme buttons occupy, opening a popup —
-// an anchored panel on desktop, a bottom sheet (`sheetOnMobile`) on a
-// phone — that holds the field and the hits. The earlier design kept a
-// permanently-visible inline field on desktop; the user's call reverses
-// that: the field lives in the popup, the header stays a compact action
-// row on every viewport.
+// (2026-11-24, twice refined after seeing the deployed face): a Search
+// icon button in the SAME slot the language and theme buttons occupy,
+// opening a SECOND-LEVEL WINDOW (HkModal — the family's global-search
+// grammar, the same surface shittim-chest uses) that holds the field and
+// the hits. Two earlier drafts were rejected by the user: a permanently
+// visible inline field (first), then an anchored popover on desktop
+// (second — "仍然不是直接打开二级窗口"). The header therefore stays a
+// compact action row, and the search gets a real dialog.
 //
 // Queries the build's sharded static index (DocsSearch) in the CURRENT
 // page language and renders the hits as plain anchors (real links,
 // open-in-new-tab works).
 //
-// Dismissal is HkPopover's alone — Escape, an outside click, the phone's
+// Dismissal is the modal's alone — Escape, an outside click, its
 // scrim, its ✕ — all arriving as `update:modelValue(false)`. This
 // component registers NO listener of its own: a `focusout` containment
 // test made clicking a result impossible, because the panel is teleported
@@ -27,7 +28,7 @@ import {
   watchEffect,
   type PropType,
 } from "vue";
-import { HkIconButton, HkPopover, useBreakpoint, useI18n } from "@celestia-island/hikari";
+import { HkIconButton, HkModal, useI18n } from "@celestia-island/hikari";
 import { Search } from "lucide-vue-next";
 import type { DocsSiteMeta } from "./types";
 import { DocsSearch, type Hit } from "./search";
@@ -47,17 +48,13 @@ export const DocsSearchBox = defineComponent({
   },
   setup(props) {
     const { t } = useI18n();
-    const { isMobile: breakpointMobile } = useBreakpoint();
     // NOTHING inside the shell renders before mount, on the server or on
-    // the client's first pass: SSR has no viewport, so any shape it picks
-    // is a guess the client must then take back, and the two shapes are
-    // different elements (a field vs an icon button) — a swap, which Vue
-    // reports as a hydration mismatch and resolves by replacing the server
-    // subtree. Gating every child on `mounted` makes the two first passes
-    // identical (an empty shell), and the mounted pass paints the right
-    // shape once (rounds 3 and 5 of #124).
+    // the client's first pass: SSR has no viewport, and the trigger's
+    // action size is viewport-derived — a live value on the first client
+    // pass mismatches the server's. Gating every child on `mounted` makes
+    // the two first passes identical (an empty shell), and the mounted
+    // pass paints once (rounds 3 and 5 of #124).
     const mounted = ref(false);
-    const isMobile = computed(() => breakpointMobile.value);
     const query = ref("");
     const hits = ref<Hit[] | null>(null);
     /** Results are on screen (desktop: the anchored panel; mobile: the
@@ -99,13 +96,11 @@ export const DocsSearchBox = defineComponent({
       // the token), so reset it here — otherwise `busy` leaks true and
       // `panelUp` pins an empty popover on screen (round 5 of #124).
       busy.value = false;
-      // …and `open` too: with nothing to show, an open popover is a 10×10
-      // invisible host plus a full-viewport transparent backdrop that
-      // swallowed the next header click (the language menu would not
-      // open) — round 7 of #124. The phone's sheet stays up (the user is
-      // still typing into it), the same rule `run()` applies to an
-      // emptied field.
-      if (!isMobile.value) close();
+      // `open` stays TRUE: the surface is a modal now, and a modal that
+      // closes itself the moment the field empties is unusable — the user
+      // is still standing in front of it (round 7 of #124's rule, which
+      // the modal makes universal: nothing to fold away, no invisible
+      // backdrop to trap a header click).
       inputRef.value?.focus();
     }
 
@@ -120,10 +115,7 @@ export const DocsSearchBox = defineComponent({
       busy.value = false;
       if (!query.value.trim()) {
         hits.value = null;
-        // Desktop: an emptied field folds its panel. Mobile: the sheet
-        // stays up — the user is still typing into it, and a sheet that
-        // closed on each backspace would be unusable.
-        if (!isMobile.value) close();
+        // The modal stays open on every viewport (see `clear()`).
         return;
       }
       busy.value = true;
@@ -142,14 +134,12 @@ export const DocsSearchBox = defineComponent({
       }
     }
 
-    // Dismissal is HkPopover's, not ours. The panel is teleported outside
-    // `rootRef`, so a containment test against `rootRef` called a search
-    // hit "outside" — mousedown on a hit blurred the input, the panel
-    // closed, and the anchor was gone before `click` could navigate
-    // (round 5 of #124). HkPopover's own shield exempts its anchor AND its
-    // panel, handles Escape, and owns the phone's backdrop. The family's
-    // HkSearchTrigger registers no listener of its own for the same reason.
-    function onSheetUpdate(v: boolean) {
+    // Dismissal is the MODAL's, not ours: HkModal owns Escape, the
+    // backdrop and its own ✕, and it teleports its surface outside
+    // `rootRef` — the containment-test trap of round 5 of #124 (a click on
+    // a hit read as "outside" and closed the surface before `click` could
+    // navigate) cannot recur, because nothing here tests containment.
+    function onModalUpdate(v: boolean) {
       if (v) return;
       close();
       // A dismissal must also CANCEL the in-flight query. Otherwise its
@@ -170,11 +160,12 @@ export const DocsSearchBox = defineComponent({
     // binding them in the template would emit a shape from the server (no
     // viewport there) that the client would then contradict — an attribute
     // mismatch on every load. They exist for tests and the Chrome checks,
-    // not for styling. Shapes: "sheet" (phone) / "trigger" (desktop).
+    // not for styling: the trigger is the only shape now, and `open` /
+    // `busy` are the modal's state.
     watchEffect(() => {
       const el = rootRef.value;
       if (!el || !mounted.value) return;
-      el.dataset.shape = isMobile.value ? "sheet" : "trigger";
+      el.dataset.shape = "trigger";
       el.dataset.open = open.value ? "true" : "false";
       el.dataset.busy = busy.value ? "true" : "false";
     });
@@ -189,7 +180,7 @@ export const DocsSearchBox = defineComponent({
         aria-label={t("lagrange::docs.search", "Search…")}
         autocomplete="off"
         spellcheck={false}
-        // No autofocus: HkPopover focuses its own panel on the tick after
+        // No autofocus: HkModal focuses its own surface on the tick after
         // it opens and would take focus straight back, so the attribute
         // bought nothing (measured in Chrome, round 1 of #124).
         value={query.value}
@@ -249,14 +240,12 @@ export const DocsSearchBox = defineComponent({
       </>
     );
 
-    // ONE structure for both shapes: the header holds the trigger (the
-    // inline field on desktop, the icon button on a phone) and the results
-    // live in an HkPopover teleported to the overlay root. The header's end
-    // wing clips (`overflow: hidden`, hikari's own), so an in-place results
-    // list was invisible on desktop — round 3 of #124 measured a panel
-    // that existed in the layout and never reached the screen. HkPopover
-    // gives desktop an anchored panel and the phone a bottom sheet from
-    // the same element.
+    // ONE structure for both viewports: the header holds the trigger and
+    // the results live in an HkModal — the family's second-level window
+    // (shittim-chest's global search wears exactly this surface). A modal,
+    // not an anchored popover: the user asked twice for a real dialog, and
+    // the modal brings the family's dismissal grammar (Escape, backdrop,
+    // its own ✕) and a surface wide enough for the field plus hits.
     return () => (
       <span class="lagrange-docs-search" ref={rootRef}>
         {mounted.value && (
@@ -269,36 +258,23 @@ export const DocsSearchBox = defineComponent({
               aria-haspopup="dialog"
               aria-expanded={open.value ? "true" : "false"}
               onClick={() => {
-                open.value = !open.value;
+                open.value = true;
               }}
             >
               {{ icon: () => <Search size={16} /> }}
             </HkIconButton>
-            <HkPopover
+            <HkModal
               modelValue={panelUp.value}
-              onUpdate:modelValue={onSheetUpdate}
-              // `.value`, the family's shape (HkColorPicker, HkAdminHeader,
-              // …): the ref is written during the first patch, which
-              // re-runs this render, and HkPopover reads the anchor only
-              // once `modelValue` turns true — by then it is populated.
-              anchorRef={rootRef.value}
-              placement="bottom-end"
-              offset={6}
-              sheetOnMobile
+              onUpdate:modelValue={onModalUpdate}
               title={t("lagrange::docs.search", "Search…")}
+              width="36rem"
+              contentClass="lagrange-docs-search-modal"
             >
-              {isMobile.value ? (
-                <div class="lagrange-docs-search-sheet">
-                  {field()}
-                  {results()}
-                </div>
-              ) : (
-                <div class="lagrange-docs-search-panel">
-                  {field()}
-                  {results()}
-                </div>
-              )}
-            </HkPopover>
+              <div class="lagrange-docs-search-panel">
+                {field()}
+                {results()}
+              </div>
+            </HkModal>
           </>
         )}
       </span>

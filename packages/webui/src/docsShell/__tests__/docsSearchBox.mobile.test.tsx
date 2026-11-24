@@ -30,8 +30,8 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
       bp.ref = isMobile;
       return { isMobile };
     },
-    HkPopover: defineComponent({
-      name: "HkPopover",
+    HkModal: defineComponent({
+      name: "HkModal",
       props: { modelValue: Boolean, "onUpdate:modelValue": Function },
       setup(props, { slots }) {
         bp.dismiss = () => props["onUpdate:modelValue"]?.(false);
@@ -39,7 +39,7 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
         // header root" stays the contract under test.
         return () =>
           props.modelValue
-            ? h(Teleport, { to: "body" }, [h("div", { class: "stub-popover" }, slots.default?.())])
+            ? h(Teleport, { to: "body" }, [h("div", { class: "stub-modal" }, slots.default?.())])
             : null;
       },
     }),
@@ -97,12 +97,17 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("DocsSearchBox (mobile)", () => {
+/** The NARROW-VIEWPORT lane. Since 2026-11-24 the search is one
+ * shape everywhere (trigger + HkModal); these cases keep driving the
+ * box with `useBreakpoint` mocked to a phone so the narrow-viewport
+ * behaviour (and the mid-flight dismissal guard, which only ever had a
+ * phone-side witness) stays under test. */
+describe("DocsSearchBox (narrow viewport)", () => {
   it("renders a trigger button, not a resident field, in the header", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     const box = m.root.querySelector(".lagrange-docs-search")!;
-    expect(box.getAttribute("data-shape")).toBe("sheet");
+    expect(box.getAttribute("data-shape")).toBe("trigger");
     // MUT: M1 (back to the resident field) — a header-resident input is
     // exactly what overflowed the phone's end wing.
     expect(m.root.querySelector(".lagrange-docs-search-input")).toBeNull();
@@ -119,19 +124,19 @@ describe("DocsSearchBox (mobile)", () => {
     await nextTick();
     await nextTick();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    // The sheet is teleported to document.body (happy-dom): the field
+    // The modal is teleported to document.body (happy-dom): the field
     // and the results live INSIDE it, never in the header row.
-    // MUT: M10 (remove the mobile HkPopover) — the assertion below then
+    // MUT: M10 (remove the HkModal) — the assertion below then
     // finds no field, which is how this case earns its keep.
-    const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-sheet input");
-    expect(input, "the sheet must hold the search field").toBeTruthy();
+    const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-panel input");
+    expect(input, "the modal must hold the search field").toBeTruthy();
     expect(m.root.querySelector(".lagrange-docs-search-input")).toBeNull();
     input!.value = "pipeline";
     input!.dispatchEvent(new Event("input"));
     await nextTick();
     await new Promise((r) => setTimeout(r, 30));
     await nextTick();
-    const results = document.body.querySelector(".lagrange-docs-search-sheet .lagrange-docs-search-results");
+    const results = document.body.querySelector(".lagrange-docs-search-panel .lagrange-docs-search-results");
     expect(results?.textContent).toContain("Architecture");
     // MUT: M2 (results anchored to the header instead of the sheet) —
     // a phone has no room for a header-anchored panel.
@@ -145,7 +150,7 @@ describe("DocsSearchBox (mobile)", () => {
     trigger.click();
     await nextTick();
     await nextTick();
-    const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-sheet input")!;
+    const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-panel input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await new Promise((r) => setTimeout(r, 30));
@@ -181,7 +186,7 @@ describe("DocsSearchBox (mobile)", () => {
     trigger.click();
     await nextTick();
     await nextTick();
-    const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-sheet input")!;
+    const input = document.body.querySelector<HTMLInputElement>(".lagrange-docs-search-panel input")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
@@ -194,20 +199,12 @@ describe("DocsSearchBox (mobile)", () => {
     // MUT: M20 (round 14 — `onSheetUpdate` not cancelling the run).
     expect(trigger.getAttribute("aria-expanded"), "a dismissal must not be undone by the answer").toBe("false");
     expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
-    expect(document.body.querySelector(".lagrange-docs-search-sheet")).toBeNull();
+    expect(document.body.querySelector(".lagrange-docs-search-panel")).toBeNull();
   });
 
-  it("keeps the trigger and switches the popup lane when the viewport grows past the breakpoint", async () => {
-    const m = await mount(DocsSearchBox, { site, lang: "en" });
-    cleanup = m.unmount;
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-shape")).toBe("sheet");
-    bp.ref!.value = false;
-    await nextTick();
-    // MUT: M4 (a shape decided once at mount) — rotating a phone to
-    // landscape must re-evaluate the lane without a reload. The trigger
-    // stays (both viewports are trigger-first, 2026-11-24); what flips is
-    // the popup lane: sheet on a phone, anchored panel on desktop.
-    expect(m.root.querySelector(".lagrange-docs-search")?.getAttribute("data-shape")).toBe("trigger");
-    expect(m.root.querySelector("button[aria-haspopup='dialog']")).toBeTruthy();
-  });
+  // The M4 guard ("the shape must re-evaluate past the breakpoint") is
+  // RETIRED with the breakpoint itself: 2026-11-24 made the search one
+  // shape on every viewport (trigger + HkModal), so there is no lane left
+  // for a viewport change to flip. The trigger/field assertions above now
+  // carry the narrow-viewport contract.
 });
