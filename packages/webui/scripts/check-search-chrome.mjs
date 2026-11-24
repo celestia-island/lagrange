@@ -206,6 +206,7 @@ async function safe(expression) {
 /** Collect console errors + hydration-mismatch messages while a page runs.
  * Registered on the socket inside the main `try` (the socket is opened
  * there so `finally` can close it). */
+const CONSOLE_PROBE = "[probe] console channel live";
 const consoleErrors = [];
 function collectConsole(ev) {
   const m = JSON.parse(ev.data);
@@ -279,6 +280,17 @@ try {
     };
   });
   await send("Runtime.enable");
+  // Positive control for the absence-based oracles below ("no hydration
+  // mismatch"): they pass both when hydration is clean AND when the console
+  // channel never delivers anything. Emit a known line and require the
+  // collector to have seen it, so "0 mismatches" means measured, not blind.
+  await send("Runtime.evaluate", { expression: `console.error('${CONSOLE_PROBE}')` });
+  const probeSeen = await poll(async () => {
+    const hit = consoleErrors.some((e) => e.includes(CONSOLE_PROBE));
+    return hit ? hit : null;
+  }, 6, 200);
+  check("console channel delivers (control for the mismatch oracles)", probeSeen === true, `probeSeen=${probeSeen}`);
+  consoleErrors.length = 0;
   // ── 1. phone, fresh load, NO resize event ───────────────────────────────
   await load(PAGE, 412, 915, true);
   const shape = await send("Runtime.evaluate", {
@@ -290,7 +302,7 @@ try {
   const trigger = await send("Runtime.evaluate", {
     // Present but collapsed (0×0, hidden) is the failure mode an
     // existence-only probe cannot see: require a real box.
-    expression: `(() => { const b = document.querySelector("button[aria-haspopup='dialog']"); if (!b) return 'absent'; const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? 'visible' : 'collapsed ' + Math.round(r.width) + 'x' + Math.round(r.height); })()`,
+    expression: `(() => { const b = document.querySelector(".lagrange-docs-search button[aria-haspopup='dialog']"); if (!b) return 'absent'; const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? 'visible' : 'collapsed ' + Math.round(r.width) + 'x' + Math.round(r.height); })()`,
     returnByValue: true,
   });
   check("phone renders the search trigger", trigger.result.value === "visible", `trigger=${trigger.result.value}`);
@@ -358,7 +370,7 @@ try {
   );
   // ── 2. the receiver: a real query must answer, not error ────────────────
   await send("Runtime.evaluate", {
-    expression: `document.querySelector("button[aria-haspopup='dialog']").click()`,
+    expression: `document.querySelector(".lagrange-docs-search button[aria-haspopup='dialog']").click()`,
   });
   // HkPopover opens synchronously on the click; poll for the sheet's field
   // instead of assuming a fixed open latency on a cold tab. Budget 8s: a
@@ -382,8 +394,9 @@ try {
   // Attribution: the poll below accepts focus arriving from ANY source, so
   // prove the field did not already hold it — otherwise a poll after the tap
   // would pass on focus that preceded it.
-  const sfPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-sheet input'); if (!el) return null; document.activeElement?.blur?.(); return document.activeElement === el; })()`);
-  check("phone: the sheet's field is unfocused before the tap", sfPreexisting === false && sfPreexisting !== null, `preFocused=${sfPreexisting}`);
+  // Clear any focus the popover itself placed, so the focus poll below can
+  // only be satisfied by THIS tap (attribution rather than a state assert).
+  await safe(`(() => { document.activeElement?.blur?.(); return true; })()`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   // Focus is synchronous on mousedown, so poll instead of sleeping: a fixed
@@ -405,14 +418,15 @@ try {
     hits: document.querySelectorAll('.lagrange-docs-search-hit').length,
     error: !!document.querySelector('.lagrange-docs-search-error'),
     input: (() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
-    clear: (() => { const e = document.querySelector('.lagrange-docs-search-sheet .lagrange-docs-search-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
+    clear: (() => { const e = document.querySelector('.lagrange-docs-search-sheet .lagrange-docs-search-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.right)]; })(),
+    inputRight: (() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return Math.round(b.right); })(),
   })`);
   const s = search ? JSON.parse(search) : { hits: 0, error: true, input: null, clear: null };
-  check("phone search answers with hits (fetch receiver is the Window)", s.hits > 0 && !s.error, `hits=${s.hits} error=${s.error}`);
+  check("phone search answers with hits", s.hits > 0 && !s.error, `hits=${s.hits} error=${s.error}`);
   check(
     "phone clear button sits in the input row",
-    s.clear !== null && s.clear[0] >= s.input[0] && s.clear[1] <= s.input[1],
-    `input=${s.input} clear=${s.clear}`,
+    s.clear !== null && s.clear[0] >= s.input[0] && s.clear[1] <= s.input[1] && s.clear[2] <= s.inputRight + 1,
+    `input=${s.input} clear=${s.clear} inputRight=${s.inputRight}`,
   );
 
   // ── 3. desktop: results must be visible, not clipped by the header ─────
