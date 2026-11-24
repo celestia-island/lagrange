@@ -52,8 +52,11 @@ describe("redirect stub negotiation (executed)", () => {
   });
 
   // BCP47 Chinese gotcha: browsers send region-form tags (zh-CN, zh-TW),
-  // but the site uses script-form (zh-Hans, zh-Hant). The pick function
-  // maps the region to the script after the primary-subtag walk fails.
+  // but the site uses script-form (zh-Hans, zh-Hant). Without the zh-region
+  // mapping in `pickRedirectUrl` the zh-CN browser NEVER catches its
+  // language and always lands on the default — the exact bug hikari#1531's
+  // user reported. The pick function maps the region to the script after
+  // the primary-subtag walk fails.
   it("maps zh-CN to zh-Hans and zh-TW to zh-Hant", () => {
     const hans = runStub(stub, { languages: ["zh-CN", "en"] });
     expect(hans.url).toContain("/zh-Hans/");
