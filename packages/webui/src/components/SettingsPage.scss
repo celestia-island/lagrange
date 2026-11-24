@@ -1,0 +1,73 @@
+// SettingsPage styles. The .vue source was `<style scoped>`; the rules
+// are nested under the component root class `.settings-page` so they
+// keep applying only within the component (scoped-data-v semantics).
+// Specificity is preserved (`.x[data-v]` 0,2,0 ≡ `.root .x` 0,2,0); the
+// `.settings-section h3` element descendant keeps its shape nested.
+
+.settings-page {
+  padding: 1rem;
+  max-width: 600px;
+
+  .settings-section {
+    margin-bottom: 2rem;
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+  }
+
+  .hint {
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 0.5rem;
+  }
+
+  .settings-select {
+    padding: 0.4rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    min-width: 200px;
+  }
+
+  .settings-field {
+    margin-bottom: 0.75rem;
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+  }
+
+  .settings-input {
+    padding: 0.4rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+    max-width: 400px;
+  }
+
+  .about-grid {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .about-item {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+  }
+
+  .about-label {
+    min-width: 140px;
+    font-weight: 600;
+    color: #555;
+  }
+
+  .mono {
+    font-family: monospace;
+  }
+}

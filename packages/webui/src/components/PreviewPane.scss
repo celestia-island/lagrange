@@ -1,0 +1,42 @@
+// PreviewPane styles. The .vue source was `<style scoped>`; the rules
+// are nested under the component root class `.preview-pane` so they keep
+// applying only within the component (scoped-data-v semantics).
+// Specificity is preserved (`.x[data-v]` 0,2,0 ≡ `.root .x` 0,2,0); the
+// attribute-selector variants gain one class under `.preview-pane`
+// exactly as they gained one scope attribute under scoped CSS.
+
+.preview-pane {
+  padding: 1rem;
+
+  .preview-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .preview-title {
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
+
+  .preview-status[data-status="ok"] { color: #16a34a; }
+
+  .preview-status[data-status="loading"] { color: #d97706; }
+
+  .preview-status[data-status="unavailable"],
+  .preview-status[data-status="idle"] { color: #888; }
+
+  .hint {
+    color: #888;
+    font-size: 0.85rem;
+  }
+
+  .preview-frame {
+    width: 100%;
+    height: 60vh;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fff;
+  }
+}

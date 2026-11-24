@@ -1,0 +1,10 @@
+// App-level console styles. The App.vue style block was NOT scoped, so
+// these selectors were global CSS and stay global here — moved verbatim,
+// no root-class nesting (nesting would narrow what the SFC applied).
+
+.lagrange-render { max-width: 800px; margin: 0 auto; }
+.lagrange-chunk-meta { margin-top: 2rem; }
+.chunk-card { display: flex; gap: 0.5rem; padding: 0.5rem; border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 0.5rem; font-size: 0.85rem; align-items: center; flex-wrap: wrap; }
+.chunk-anchor { font-family: monospace; color: #7aa2f7; }
+.chunk-span { color: #888; }
+.lagrange-footer-text { font-size: 0.8rem; opacity: 0.6; }

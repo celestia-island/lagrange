@@ -14,7 +14,7 @@ import { createSSRApp } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import App from "../src/App.vue";
+import App from "../src/App";
 
 const app = createSSRApp(App);
 const body = await renderToString(app);
