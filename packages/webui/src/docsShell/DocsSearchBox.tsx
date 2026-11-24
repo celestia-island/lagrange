@@ -167,10 +167,10 @@ export const DocsSearchBox = defineComponent({
     });
 
     // The shell's state attributes are written imperatively, after mount:
-    // binding them in the template would emit `data-shape="inline"` from
-    // the server (no viewport there) and `data-shape="sheet"` from a
-    // phone's first client pass — an attribute mismatch on every load.
-    // They exist for tests and the Chrome checks, not for styling.
+    // binding them in the template would emit a shape from the server (no
+    // viewport there) that the client would then contradict — an attribute
+    // mismatch on every load. They exist for tests and the Chrome checks,
+    // not for styling. Shapes: "sheet" (phone) / "trigger" (desktop).
     watchEffect(() => {
       const el = rootRef.value;
       if (!el || !mounted.value) return;

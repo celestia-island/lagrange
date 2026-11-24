@@ -1585,17 +1585,26 @@ fn to_manifest_nav(
 ) -> Vec<crate::webui_lane::ManifestNavNode> {
     nodes
         .iter()
-        .map(|n| crate::webui_lane::ManifestNavNode {
-            title: n.title.clone(),
-            href: rewrite_nav_link(&n.href),
+        .map(|n| {
             // Section headers carry no href and therefore no icon — the
             // shell renders group dots for them.
-            // Anchored links (`page.md#frag`) resolve to their page's icon:
-            // the fragment is stripped before the lookup.
-            icon: icons
-                .get(rewrite_nav_link(&n.href).split('#').next().unwrap_or(""))
-                .cloned(),
-            children: to_manifest_nav(&n.children, icons),
+            // Anchored links (`page.md#frag`) resolve to their page's icon
+            // (fragment stripped). Directory links (`guide/`, written without
+            // an extension in the SUMMARY) resolve to that directory's
+            // `index.html` — the same landing page the link serves.
+            let href = rewrite_nav_link(&n.href);
+            let bare = href.split('#').next().unwrap_or("");
+            let lookup = if !bare.ends_with(".html") && !bare.contains('.') {
+                format!("{bare}index.html")
+            } else {
+                bare.to_string()
+            };
+            crate::webui_lane::ManifestNavNode {
+                title: n.title.clone(),
+                href,
+                icon: icons.get(&lookup).cloned(),
+                children: to_manifest_nav(&n.children, icons),
+            }
         })
         .collect()
 }
