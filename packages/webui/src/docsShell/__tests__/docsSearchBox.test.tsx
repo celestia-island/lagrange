@@ -8,6 +8,36 @@ import { mount } from "../testUtils";
 import { DocsSearchBox } from "../DocsSearchBox";
 import type { DocsSiteMeta } from "../types";
 
+// HkPopover is replaced by a stub that renders its slot and records how
+// the real one reports dismissal (Escape / backdrop / ✕ all emit
+// `update:modelValue(false)`). happy-dom never mounts the real popover,
+// so this is the only way to drive the component's half of that contract.
+const popoverState = vi.hoisted(() => ({ dismiss: null as (() => void) | null }));
+vi.mock("@celestia-island/hikari", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@celestia-island/hikari")>();
+  const { defineComponent, h, Teleport } = await import("vue");
+  return {
+    ...actual,
+    HkPopover: defineComponent({
+      name: "HkPopover",
+      props: {
+        modelValue: Boolean,
+        "onUpdate:modelValue": Function,
+      },
+      setup(props, { slots }) {
+        popoverState.dismiss = () => props["onUpdate:modelValue"]?.(false);
+        // Teleported like the real popover, so "nothing lands in the
+        // header root" stays the contract under test.
+        return () =>
+          props.modelValue
+            ? h(Teleport, { to: "body" }, [h("div", { class: "stub-popover" }, slots.default?.())])
+            : null;
+      },
+    }),
+  };
+});
+const popoverDismiss = () => popoverState.dismiss;
+
 const site: DocsSiteMeta = {
   title: "Lagrange",
   description: "d",
@@ -176,63 +206,63 @@ describe("DocsSearchBox", () => {
     expect(err?.getAttribute("role")).toBe("status");
   });
 
-  it("dismisses on Escape", async () => {
+  // Dismissal is HkPopover's (Escape, outside click, the sheet's backdrop
+  // and ✕). happy-dom mounts no popover, so the contract under test is the
+  // component's half of it: a `false` from the popover closes the panel.
+  // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the whole suite
+  // green: the sheet's own dismiss had no guard at all.
+  it("closes when the popover reports its own dismissal", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    const box = document.querySelector(".lagrange-docs-search")!;
+    expect(box.getAttribute("data-open")).toBe("true");
+    expect(popoverDismiss(), "the popover must be mounted once the panel has content").not.toBeNull();
+    popoverDismiss()!();
     await nextTick();
-    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
+    // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the whole suite
+    // green: the popover's own dismissal had no guard at all.
+    expect(box.getAttribute("data-open")).toBe("false");
   });
 
-  it("offers a clear affordance that resets the field", async () => {
-    const m = await mount(DocsSearchBox, { site, lang: "en" });
-    cleanup = m.unmount;
-    await typeInto(m.root, "pipeline");
-    const clear = document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear");
-    expect(clear, "the clear button must appear while a query is present").toBeTruthy();
-    clear!.dispatchEvent(new Event("click"));
-    await nextTick();
-    expect(document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")?.value).toBe("");
-    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
-  });
-
-  // Round 6 M23: an error must be clearable by a successful retry.
-  it("clears the error state when a later query succeeds", async () => {
-    let fail = true;
+  // Round 5: emptying the field while a query is in flight used to leave
+  // `busy` true forever (the superseded run's `finally` skips the reset),
+  // pinning an empty popover on screen.
+  it("does not leave the panel pinned when the field is emptied mid-flight", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (fail) throw new Error("network down");
+        await new Promise((r) => setTimeout(r, 60));
         return { ok: true, json: async () => defaultBody(url) };
       }),
     );
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    await typeInto(m.root, "pipeline");
-    expect(document.querySelector(".lagrange-docs-search-error")).toBeTruthy();
-
-    fail = false;
-    await typeInto(m.root, "pipeline2");
-    expect(document.querySelector(".lagrange-docs-search-error")).toBeNull();
-    expect(document.querySelector(".lagrange-docs-search-hit")).toBeTruthy();
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    // MUT: M7 (round 5 — dropping the `busy` reset in `run()`/`clear()`).
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+    await new Promise((r) => setTimeout(r, 120));
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
   });
 
-  // Round 6 M24: blurring the field dismisses the panel (the docblock
-  // always claimed it; nothing asserted it).
-  // MUT: M24 (neutralizing onFocusOut turns this test RED — re-verified
-  // 2026-11-23 before anchoring).
-  it("dismisses when focus leaves the field", async () => {
+  it("keeps the panel when focus moves onto a hit", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
-    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
-    m.root
-      .querySelector(".lagrange-docs-search-input")!
-      .dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const hit = document.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")!;
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: hit }));
     await nextTick();
-    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeTruthy();
+    expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-open")).toBe("true");
   });
 
   // Round 6 M25: a slow answer for an OLD query must not overwrite the

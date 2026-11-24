@@ -28,9 +28,9 @@
 import {
   computed,
   defineComponent,
-  onBeforeUnmount,
   onMounted,
   ref,
+  watchEffect,
   type PropType,
 } from "vue";
 import { HkIconButton, HkPopover, useBreakpoint, useChromeActionSize, useI18n } from "@celestia-island/hikari";
@@ -47,14 +47,16 @@ export const DocsSearchBox = defineComponent({
   setup(props) {
     const { t } = useI18n();
     const { isMobile: breakpointMobile } = useBreakpoint();
-    // The shape is decided AFTER mount, never on the first render: SSR has
-    // no viewport and emits the inline field, and a hydration that expects
-    // the sheet instead would mismatch and keep the server's DOM — the
-    // trigger never appeared on a phone until a resize event happened to
-    // fire (round 3 of #124). Rendering inline on the client's first pass
-    // matches the server; the mounted pass below switches to the sheet.
+    // NOTHING inside the shell renders before mount, on the server or on
+    // the client's first pass: SSR has no viewport, so any shape it picks
+    // is a guess the client must then take back, and the two shapes are
+    // different elements (a field vs an icon button) — a swap, which Vue
+    // reports as a hydration mismatch and resolves by replacing the server
+    // subtree. Gating every child on `mounted` makes the two first passes
+    // identical (an empty shell), and the mounted pass paints the right
+    // shape once (rounds 3 and 5 of #124).
     const mounted = ref(false);
-    const isMobile = computed(() => mounted.value && breakpointMobile.value);
+    const isMobile = computed(() => breakpointMobile.value);
     const chromeSize = useChromeActionSize();
     const query = ref("");
     const hits = ref<Hit[] | null>(null);
@@ -93,6 +95,10 @@ export const DocsSearchBox = defineComponent({
       hits.value = null;
       failed.value = false;
       seq += 1; // invalidate any in-flight query
+      // The invalidated run's `finally` will NOT reset `busy` (it checks
+      // the token), so reset it here — otherwise `busy` leaks true and
+      // `panelUp` pins an empty popover on screen (round 5 of #124).
+      busy.value = false;
       inputRef.value?.focus();
     }
 
@@ -101,6 +107,10 @@ export const DocsSearchBox = defineComponent({
       // that resolves after the box was emptied must not repopulate it.
       const token = (seq += 1);
       failed.value = false;
+      // A superseded run leaves `busy` set (its `finally` skips the reset
+      // because the token moved), so every run starts from a quiet state
+      // and raises the flag itself.
+      busy.value = false;
       if (!query.value.trim()) {
         hits.value = null;
         // Desktop: an emptied field folds its panel. Mobile: the sheet
@@ -125,38 +135,32 @@ export const DocsSearchBox = defineComponent({
       }
     }
 
-    /** The sheet's own dismiss (backdrop / Escape / its close control)
-     * closes it. Crossing the breakpoint swaps the shape in the render
-     * function itself (`isMobile` is read there), so no watcher is
-     * needed — one dropped in review survived every mutation. */
+    // Dismissal is HkPopover's, not ours. The panel is teleported outside
+    // `rootRef`, so a containment test against `rootRef` called a search
+    // hit "outside" — mousedown on a hit blurred the input, the panel
+    // closed, and the anchor was gone before `click` could navigate
+    // (round 5 of #124). HkPopover's own shield exempts its anchor AND its
+    // panel, handles Escape, and owns the phone's backdrop. The family's
+    // HkSearchTrigger registers no listener of its own for the same reason.
     function onSheetUpdate(v: boolean) {
       if (!v) close();
     }
 
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-    }
-    function onDocClick(e: MouseEvent) {
-      // Only the desktop panel is outside-click dismissible: the sheet
-      // owns its own backdrop, and clicking into it must not close it.
-      if (isMobile.value) return;
-      if (rootRef.value && !rootRef.value.contains(e.target as Node)) close();
-    }
-    function onFocusOut(e: FocusEvent) {
-      if (isMobile.value) return;
-      // Blur to anywhere outside the field's own box dismisses.
-      const next = e.relatedTarget as Node | null;
-      if (next && rootRef.value?.contains(next)) return;
-      close();
-    }
     onMounted(() => {
       mounted.value = true;
-      document.addEventListener("click", onDocClick);
-      document.addEventListener("keydown", onKey);
     });
-    onBeforeUnmount(() => {
-      document.removeEventListener("click", onDocClick);
-      document.removeEventListener("keydown", onKey);
+
+    // The shell's state attributes are written imperatively, after mount:
+    // binding them in the template would emit `data-shape="inline"` from
+    // the server (no viewport there) and `data-shape="sheet"` from a
+    // phone's first client pass — an attribute mismatch on every load.
+    // They exist for tests and the Chrome checks, not for styling.
+    watchEffect(() => {
+      const el = rootRef.value;
+      if (!el || !mounted.value) return;
+      el.dataset.shape = isMobile.value ? "sheet" : "inline";
+      el.dataset.open = open.value ? "true" : "false";
+      el.dataset.busy = busy.value ? "true" : "false";
     });
 
     const field = () => (
@@ -180,7 +184,6 @@ export const DocsSearchBox = defineComponent({
         onFocus={() => {
           if (hits.value) open.value = true;
         }}
-        onFocusout={onFocusOut}
       />
         {query.value && (
           <button
@@ -239,52 +242,50 @@ export const DocsSearchBox = defineComponent({
     // gives desktop an anchored panel and the phone a bottom sheet from
     // the same element.
     return () => (
-      <span
-        class="lagrange-docs-search"
-        ref={rootRef}
-        data-shape={isMobile.value ? "sheet" : "inline"}
-        data-open={open.value ? "true" : "false"}
-        data-busy={busy.value ? "true" : "false"}
-      >
-        {isMobile.value ? (
-          <HkIconButton
-            size={chromeSize.value}
-            variant="ghost"
-            aria-label={t("lagrange::docs.search", "Search…")}
-            {...{ title: t("lagrange::docs.search", "Search…") }}
-            aria-haspopup="dialog"
-            aria-expanded={open.value ? "true" : "false"}
-            onClick={() => {
-              open.value = !open.value;
-            }}
-          >
-            {{ icon: () => <Search size={16} /> }}
-          </HkIconButton>
-        ) : (
-          field()
+      <span class="lagrange-docs-search" ref={rootRef}>
+        {mounted.value && (
+          <>
+            {isMobile.value ? (
+              <HkIconButton
+                size={chromeSize.value}
+                variant="ghost"
+                aria-label={t("lagrange::docs.search", "Search…")}
+                {...{ title: t("lagrange::docs.search", "Search…") }}
+                aria-haspopup="dialog"
+                aria-expanded={open.value ? "true" : "false"}
+                onClick={() => {
+                  open.value = !open.value;
+                }}
+              >
+                {{ icon: () => <Search size={16} /> }}
+              </HkIconButton>
+            ) : (
+              field()
+            )}
+            <HkPopover
+              modelValue={panelUp.value}
+              onUpdate:modelValue={onSheetUpdate}
+              // `.value`, the family's shape (HkColorPicker, HkAdminHeader,
+              // …): the ref is written during the first patch, which
+              // re-runs this render, and HkPopover reads the anchor only
+              // once `modelValue` turns true — by then it is populated.
+              anchorRef={rootRef.value}
+              placement="bottom-end"
+              offset={6}
+              sheetOnMobile
+              title={t("lagrange::docs.search", "Search…")}
+            >
+              {isMobile.value ? (
+                <div class="lagrange-docs-search-sheet">
+                  {field()}
+                  {results()}
+                </div>
+              ) : (
+                results()
+              )}
+            </HkPopover>
+          </>
         )}
-        <HkPopover
-          modelValue={panelUp.value}
-          onUpdate:modelValue={onSheetUpdate}
-          // `.value`, the family's shape (HkColorPicker, HkAdminHeader, …):
-          // the ref is written during the first patch, which re-runs this
-          // render, and HkPopover reads the anchor only once `modelValue`
-          // turns true — by then it is populated.
-          anchorRef={rootRef.value}
-          placement="bottom-end"
-          offset={6}
-          sheetOnMobile
-          title={t("lagrange::docs.search", "Search…")}
-        >
-          {isMobile.value ? (
-            <div class="lagrange-docs-search-sheet">
-              {field()}
-              {results()}
-            </div>
-          ) : (
-            results()
-          )}
-        </HkPopover>
       </span>
     );
   },

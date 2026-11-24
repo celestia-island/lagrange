@@ -4,20 +4,24 @@
 // past the viewport edge on a phone. Below the shell breakpoint the
 // search collapses to ONE icon button — the same slot its neighbours
 // occupy — and opens a bottom sheet that holds the field and the hits.
-// The breakpoint hook is mocked because happy-dom has no layout.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
-
 import { mount } from "../testUtils";
 
-// `vi.mock` is hoisted above every import. The mocked hook hands the
-// component a REAL `ref` over a plain hoisted flag and records that ref
-// on the same hoisted object, so a test can flip it after mount and
-// watch the shape switch.
-const bp = vi.hoisted(() => ({ flag: true, ref: null as { value: boolean } | null }));
+// `vi.mock` is hoisted above every import. The mocked breakpoint hook
+// hands the component a REAL `ref` over a plain hoisted flag and records
+// that ref on the same hoisted object, so a test can flip it after mount
+// and watch the shape switch. HkPopover is a stub that renders its slot
+// and records how the real one reports dismissal (Escape / backdrop / ✕
+// all emit `update:modelValue(false)`) — happy-dom mounts no real popover.
+const bp = vi.hoisted(() => ({
+  flag: true,
+  ref: null as { value: boolean } | null,
+  dismiss: null as (() => void) | null,
+}));
 vi.mock("@celestia-island/hikari", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@celestia-island/hikari")>();
-  const { ref } = await import("vue");
+  const { ref, defineComponent, h, Teleport } = await import("vue");
   return {
     ...actual,
     useBreakpoint: () => {
@@ -25,6 +29,19 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
       bp.ref = isMobile;
       return { isMobile };
     },
+    HkPopover: defineComponent({
+      name: "HkPopover",
+      props: { modelValue: Boolean, "onUpdate:modelValue": Function },
+      setup(props, { slots }) {
+        bp.dismiss = () => props["onUpdate:modelValue"]?.(false);
+        // Teleported like the real popover, so "nothing lands in the
+        // header root" stays the contract under test.
+        return () =>
+          props.modelValue
+            ? h(Teleport, { to: "body" }, [h("div", { class: "stub-popover" }, slots.default?.())])
+            : null;
+      },
+    }),
   };
 });
 import { DocsSearchBox } from "../DocsSearchBox";
@@ -40,6 +57,7 @@ const site: DocsSiteMeta = {
   buildStamp: "s",
 };
 
+// Bare postings map — the shape the build writes.
 function stubFetch(): void {
   vi.stubGlobal(
     "fetch",
@@ -68,6 +86,7 @@ let cleanup: (() => void) | null = null;
 beforeEach(() => {
   bp.flag = true;
   bp.ref = null;
+  bp.dismiss = null;
   stubFetch();
 });
 afterEach(() => {
@@ -133,7 +152,11 @@ describe("DocsSearchBox (mobile)", () => {
     // MUT: M3 (closing the sheet on an emptied field) — a sheet that
     // shuts on every backspace is unusable.
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    // The sheet's own dismiss (✕ / backdrop) reports `false` through the
+    // popover; drive it the way HkPopover does.
+    // The sheet's own dismiss (✕ / backdrop) reports `false` through the
+    // popover; drive it the way HkPopover does.
+    bp.dismiss!();
     await nextTick();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
