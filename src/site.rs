@@ -1594,7 +1594,7 @@ fn to_manifest_nav(
             // `index.html` — the same landing page the link serves.
             let href = rewrite_nav_link(&n.href);
             let bare = href.split('#').next().unwrap_or("");
-            let lookup = if !bare.ends_with(".html") && !bare.contains('.') {
+            let lookup = if !bare.is_empty() && !bare.ends_with(".html") && !bare.contains('.') {
                 format!("{bare}index.html")
             } else {
                 bare.to_string()

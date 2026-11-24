@@ -44,11 +44,10 @@ body {
 }
 
 // ── header search ─────────────────────────────────────────────────────────
-// Two shapes (see DocsSearchBox.tsx): `[data-shape="inline"]` is the
-// desktop field with an anchored results panel; `[data-shape="sheet"]`
-// is the mobile trigger whose field + results live inside the bottom
-// sheet, laid out in normal flow there (the sheet is the surface — no
-// absolute positioning, no own background).
+// Both viewports are trigger-first (2026-11-24): a Search icon button in
+// the header's action slot, its popup — an anchored panel on desktop, a
+// bottom sheet on phones — carrying the field and results in normal flow
+// (the popup is the surface: no absolute positioning, no own background).
 .lagrange-docs-search {
   position: relative;
   display: inline-flex;
