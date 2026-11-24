@@ -561,6 +561,42 @@ try {
     v.hits > 0 && v.visible && v.anyHasWord === true,
     `hits=${v.hits} anyHasWord=${v.anyHasWord} at=${v.at}`,
   );
+  // NEGATIVE control, placed while results are on screen: a query that cannot
+  // match must answer nothing. Binding the positive case to the word is not
+  // enough — an index that ignores the query and lists every document would
+  // still contain the word in SOME row (`.some()`). The discriminator is the
+  // transition: the list is populated now, a nonsense token must empty it AND
+  // raise the component's own "no results" state.
+  const NONSENSE = "zzzqx" + "zzqx"; // one token of a shape no shard contains
+  await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-input'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
+  await send("Input.insertText", { text: NONSENSE });
+  const negState = await poll(async () => {
+    const s = await safe(`JSON.stringify({
+      h: document.querySelectorAll('.lagrange-docs-search-hit').length,
+      empty: !!document.querySelector('.lagrange-docs-search-empty'),
+      q: document.querySelector('.lagrange-docs-search-input')?.value ?? '',
+    })`);
+    const p2 = s ? JSON.parse(s) : null;
+    // Settled only when the component has ANSWERED with its empty state —
+    // "h === 0" alone is true the instant the field is cleared, which would
+    // let a corpus-listing search pass.
+    return p2 && p2.q === NONSENSE && p2.h === 0 && p2.empty ? p2 : null;
+  }, 20);
+  check(
+    "desktop search filters (a nonsense query answers nothing)",
+    negState !== null && negState.h === 0,
+    negState ? `hits=0 empty=true` : `never reached the empty state (hits/empty unresolved)`,
+  );
+
+  // Restore the positive query so the click test below runs against real hits
+  // again (the negative control emptied the list).
+  await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-input'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
+  await send("Input.insertText", { text: WORD });
+  await poll(async () => {
+    const h = await safe(`document.querySelectorAll('.lagrange-docs-search-hit').length`);
+    return typeof h === "number" && h > 0 ? h : null;
+  });
+
   // The field MUST still hold focus when the hits are on screen — that is
   // the precondition for the blur the click below will cause.
   check("desktop: the field keeps focus while results show", v.hits > 0 && typeof v.focused === "string" && v.focused.includes("lagrange-docs-search-input"), `hits=${v.hits} focused=${v.focused}`);
@@ -573,11 +609,21 @@ try {
   // closed, and the anchor was gone before `click`. Only a real pointer
   // sequence FROM A FOCUSED FIELD (mousedown → blur → mouseup) reproduces
   // it; a synthetic `.click()` does not, and neither does an unfocused field.
+  // Geometry re-read AFTER the re-query: the earlier `v` described a list that
+  // the negative control has since replaced.
+  const v2raw = await safe(`(() => {
+    const hits = document.querySelectorAll('.lagrange-docs-search-hit');
+    if (!hits.length) return JSON.stringify({ hits: 0, cx: 0, cy: 0, href: null, focused: document.activeElement?.className });
+    const b = hits[0].getBoundingClientRect();
+    return JSON.stringify({ hits: hits.length, cx: b.left + b.width / 2, cy: b.top + b.height / 2, href: hits[0].getAttribute('href'), focused: document.activeElement?.className });
+  })()`);
+  const v2 = v2raw ? JSON.parse(v2raw) : { hits: 0, cx: 0, cy: 0, href: null, focused: null };
+  check("desktop: the re-query restored results for the click test", v2.hits > 0 && typeof v2.focused === "string" && v2.focused.includes("lagrange-docs-search-input"), `hits=${v2.hits} focused=${v2.focused}`);
   const before = await safe(`location.pathname + location.hash`);
-  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: v.cx, y: v.cy });
-  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: v.cx, y: v.cy, button: "left", clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: v2.cx, y: v2.cy });
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: v2.cx, y: v2.cy, button: "left", clickCount: 1 });
   await new Promise((r) => setTimeout(r, 60));
-  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: v.cx, y: v.cy, button: "left", clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: v2.cx, y: v2.cy, button: "left", clickCount: 1 });
   const navAfter = await poll(async () => {
     const a = await safe(`location.pathname + location.hash`);
     return a && a !== before ? a : null;
@@ -585,29 +631,10 @@ try {
   const after = navAfter ?? (await safe(`location.pathname + location.hash`));
   // Navigate = the location changed AND it is the hit's own target (the
   // href may carry a hash; the path must match).
-  const hrefPath = (v.href ?? "").split("#")[0];
-  const navigated = !!v.href && after !== before && after.startsWith(hrefPath);
-  check("desktop: clicking a hit navigates to it", navigated, `before=${before} after=${after} href=${v.href}`);
-  // NEGATIVE control: a query that cannot match must answer nothing. Binding
-  // the positive case to the word is not enough on its own — an index that
-  // ignores the query and lists every document would still contain the word
-  // in SOME row (`.some()`). A nonsense token is the discriminator: a search
-  // that filters returns 0, a search that does not returns the corpus.
-  const NONSENSE = "zzzqx" + "zzqx"; // no token of this shape exists in any shard
-  const clearField = await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-input'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
-  if (clearField === true) {
-    await send("Input.insertText", { text: NONSENSE });
-    await poll(async () => {
-      const s = await safe(`JSON.stringify({ h: document.querySelectorAll('.lagrange-docs-search-hit').length, q: document.querySelector('.lagrange-docs-search-input')?.value ?? '' })`);
-      const p2 = s ? JSON.parse(s) : null;
-      // Settled when the box holds the nonsense token and the list is empty.
-      return p2 && p2.q === "${NONSENSE}" && p2.h === 0 ? p2 : null;
-    });
-    const negHits = await safe(`document.querySelectorAll('.lagrange-docs-search-hit').length`);
-    check("desktop search filters (a nonsense query matches nothing)", negHits === 0, `hits=${negHits}`);
-  } else {
-    check("desktop search filters (a nonsense query matches nothing)", false, `could not clear the field (${clearField})`);
-  }
+  const hrefPath = (v2.href ?? "").split("#")[0];
+  const navigated = !!v2.href && after !== before && after.startsWith(hrefPath);
+  check("desktop: clicking a hit navigates to it", navigated, `before=${before} after=${after} href=${v2.href}`);
+
 } finally {
   await closeTab();
 }
