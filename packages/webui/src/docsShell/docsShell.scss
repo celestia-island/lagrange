@@ -43,6 +43,18 @@ body {
   line-height: 1.7;
 }
 
+
+// ── theme dialog ──────────────────────────────────────────────────────────
+// The theme dialog's inner menu caps itself at 22rem and centers — sized
+// for the account face's narrow sheet. The docs theme modal is wider, so
+// the centered menu left a dead band on each side (user-reported, with the
+// empty band circled). Let the docs instance use the modal's width.
+.lagrange-docs-search-modal .s-theme-menu,
+.hk-modal-content .s-theme-menu {
+  max-width: none;
+  width: 100%;
+}
+
 // ── header search ─────────────────────────────────────────────────────────
 
 // The admin header's page title truncates at 8rem — a limit sized for the
