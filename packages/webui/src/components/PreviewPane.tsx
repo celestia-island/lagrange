@@ -5,7 +5,7 @@
 // rendered tree unchanged. The scoped style block is reproduced nested
 // under the component's own root class `.preview-pane` (scoped-data-v
 // semantics).
-import { createCommentVNode, defineComponent, ref, watch, type PropType } from "vue";
+import { defineComponent, ref, watch, type PropType } from "vue";
 import "./PreviewPane.scss";
 
 export default defineComponent({
@@ -49,10 +49,7 @@ export default defineComponent({
         </div>
         {status.value === "unavailable" ? (
           <p class="hint"> This page is not reachable from here. Preview works when the console is served by <code>lagrange dev --port N</code> (which serves the built site, including these pages) or from the deployed site itself. </p>
-        ) : (
-          // Template v-if's false-branch anchor — see App.tsx.
-          createCommentVNode("v-if")
-        )}
+        ) : null}
         {status.value === "ok" ? (
           <iframe
             class="preview-frame"
@@ -60,10 +57,7 @@ export default defineComponent({
             sandbox="allow-same-origin"
             title="Document preview"
           />
-        ) : (
-          // Template v-if's false-branch anchor — see App.tsx.
-          createCommentVNode("v-if")
-        )}
+        ) : null}
       </div>
     );
   },

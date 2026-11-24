@@ -4,7 +4,7 @@
 // form); props contract (`kb`) and rendered tree unchanged. The scoped
 // style block is reproduced nested under the component's own root class
 // `.doc-tree` (scoped-data-v semantics).
-import { computed, createCommentVNode, defineComponent, type PropType } from "vue";
+import { computed, defineComponent, type PropType } from "vue";
 import type { KnowledgeBase } from "../composables/types";
 import "./DocTree.scss";
 
@@ -49,10 +49,7 @@ export default defineComponent({
                   <span key={tag} class="tag">{tag}</span>
                 ))}
               </div>
-            ) : (
-              // Template v-if's false-branch anchor — see App.tsx.
-              createCommentVNode("v-if")
-            )}
+            ) : null}
             <div class="lang-list">
               {doc.langs.map((lang) => (
                 <span key={lang.code} class="lang-item">

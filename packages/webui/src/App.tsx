@@ -4,7 +4,7 @@
 // same slot layout on HkFaceShell. The SFC's style block was NOT scoped
 // (a plain global <style>), so App.scss keeps those selectors verbatim
 // and global; no root-class nesting applies here.
-import { computed, createCommentVNode, defineComponent, ref } from "vue";
+import { computed, defineComponent, ref } from "vue";
 import {
   HkFaceShell,
   HkMenu,
@@ -117,12 +117,7 @@ Open \`target/site/index.html\` — it redirects into the English book.
                     </div>
                   ))}
                 </div>
-              ) : (
-                // The template v-if's false-branch anchor: keeps the SSR
-                // HTML byte-identical to the App.vue source (`<!--v-if-->`
-                // instead of the bare `<!---->` an `&&` expression emits).
-                createCommentVNode("v-if")
-              )}
+              ) : null}
             </div>
           ),
           footer: () => (
