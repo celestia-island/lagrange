@@ -84,8 +84,7 @@ async function discoverWord(base, pagePath) {
   const path = `/${pagePath.replace(/^\/+/, "")}`;
   const lang =
     knownLangs.find((k) => path.toLowerCase().startsWith(`/${k.toLowerCase()}/`)) ??
-    knownLangs.find((k) => path.toLowerCase() === `/${k.toLowerCase()}`) ??
-    path.match(/\/([a-z]{2,8})(?:\/|\.)/i)?.[1]?.toLowerCase();
+    knownLangs.find((k) => path.toLowerCase() === `/${k.toLowerCase()}`);
   if (!lang || !index.byLang.has(lang)) return null;
   const langDocs = new Set((index.byLang.get(lang) ?? []).map((d) => d.id));
   if (!langDocs.size) return null;
@@ -553,10 +552,15 @@ try {
     // itself (or inside it) — the header's overflow:hidden would put the
     // header in the way instead.
     const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-    return JSON.stringify({ hits: hits.length, visible: !!top && hits[0].contains(top), at: top ? String(top.className).slice(0, 40) : null, cx: b.left + b.width / 2, cy: b.top + b.height / 2, href: hits[0].getAttribute('href'), focused: document.activeElement?.className });
+    const anyHasWord = [...hits].some((h) => (h.textContent ?? '').toLowerCase().includes(${JSON.stringify(WORD.toLowerCase())}));
+    return JSON.stringify({ hits: hits.length, anyHasWord, visible: !!top && hits[0].contains(top), at: top ? String(top.className).slice(0, 40) : null, cx: b.left + b.width / 2, cy: b.top + b.height / 2, href: hits[0].getAttribute('href'), focused: document.activeElement?.className });
   })()`);
-  const v = vis ? JSON.parse(vis) : { hits: 0, visible: false, at: null, cx: 0, cy: 0, href: null, focused: null };
-  check("desktop results are on screen, not clipped by the header", v.hits > 0 && v.visible, `hits=${v.hits} at=${v.at}`);
+  const v = vis ? JSON.parse(vis) : { hits: 0, anyHasWord: false, visible: false, at: null, cx: 0, cy: 0, href: null, focused: null };
+  check(
+    "desktop results are on screen, not clipped by the header",
+    v.hits > 0 && v.visible && v.anyHasWord === true,
+    `hits=${v.hits} anyHasWord=${v.anyHasWord} at=${v.at}`,
+  );
   // The field MUST still hold focus when the hits are on screen — that is
   // the precondition for the blur the click below will cause.
   check("desktop: the field keeps focus while results show", v.hits > 0 && typeof v.focused === "string" && v.focused.includes("lagrange-docs-search-input"), `hits=${v.hits} focused=${v.focused}`);
