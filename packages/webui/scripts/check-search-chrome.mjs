@@ -321,7 +321,7 @@ try {
     expression: `document.querySelector('.lagrange-docs-search')?.dataset.shape`,
     returnByValue: true,
   });
-  check("phone hydration switches to the trigger after mount", shape.result.value === "sheet", `shape=${shape.result.value}`);
+  check("phone hydration switches to the trigger after mount", shape.result.value === "trigger", `shape=${shape.result.value}`);
 
   const trigger = await send("Runtime.evaluate", {
     // Present but collapsed (0×0, hidden) is the failure mode an

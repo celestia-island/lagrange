@@ -12,7 +12,7 @@
 // page language and renders the hits as plain anchors (real links,
 // open-in-new-tab works).
 //
-// Dismissal is HkPopover's alone — Escape, an outside click, the phone's
+// Dismissal is the modal's alone — Escape, an outside click, its
 // scrim, its ✕ — all arriving as `update:modelValue(false)`. This
 // component registers NO listener of its own: a `focusout` containment
 // test made clicking a result impossible, because the panel is teleported
@@ -180,7 +180,7 @@ export const DocsSearchBox = defineComponent({
         aria-label={t("lagrange::docs.search", "Search…")}
         autocomplete="off"
         spellcheck={false}
-        // No autofocus: HkPopover focuses its own panel on the tick after
+        // No autofocus: HkModal focuses its own surface on the tick after
         // it opens and would take focus straight back, so the attribute
         // bought nothing (measured in Chrome, round 1 of #124).
         value={query.value}

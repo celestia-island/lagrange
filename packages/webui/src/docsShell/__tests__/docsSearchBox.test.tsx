@@ -245,7 +245,7 @@ describe("DocsSearchBox", () => {
     await typeInto(m.root, "pipeline");
     const box = document.querySelector(".lagrange-docs-search")!;
     expect(box.getAttribute("data-open")).toBe("true");
-    expect(modalDismiss(), "the popover must be mounted once the panel has content").not.toBeNull();
+    expect(modalDismiss(), "the modal must be mounted once the panel has content").not.toBeNull();
     modalDismiss()!();
     await nextTick();
     // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the whole suite
@@ -267,9 +267,15 @@ describe("DocsSearchBox", () => {
     await nextTick();
     // MUT: M3 (round 7 — `clear()` leaving `open` set). The RESULT list and
     // the busy flag are what `clear()` must reset; the modal's own state is
-    // HkModal's (2026-11-24 — a modal stays up while the user is in it).
+    // HkModal's (2026-11-24 — a modal stays up while the user is in it),
+    // and THAT is pinned too: a `clear()` that folded the whole window
+    // would strand the user mid-typing.
     expect(box.getAttribute("data-busy")).toBe("false");
     expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(
+      document.querySelector(".stub-modal"),
+      "clear() must fold the results, never the window",
+    ).toBeTruthy();
     // …and mid-flight too (round 8 M3: the reset in `clear()` was unguarded).
     vi.stubGlobal(
       "fetch",
