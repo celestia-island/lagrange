@@ -67,7 +67,12 @@ interface FaceShellSidebarSlot {
  * Glyphs: a page's frontmatter `icon` (lucide name or URL) wins; without
  * one the dot language applies — SOLID dot for group rows, HOLLOW dot for
  * page rows — so the collapsed rail reads as a real table of contents
- * instead of a wall of label initials. */
+ * instead of a wall of label initials.
+ *
+ * Dots are MARKS: `iconNoScale` opts them out of the density flip's size
+ * tween (hikari #1532) — a dot ballooning between densities reads as a
+ * glitch, not motion. A page's own lucide/URL icon keeps the tween (an
+ * illustration growing between densities is intentional motion). */
 export function navToMenuItems(nav: DocsNavNode[]): HkMenuItem[] {
   return nav.map((node, i) => {
     const isGroup = node.children?.length;
@@ -80,6 +85,7 @@ export function navToMenuItems(nav: DocsNavNode[]): HkMenuItem[] {
       key: node.href || `section:${i}:${node.title}`,
       label: node.title,
       icon,
+      iconNoScale: !node.icon,
       children: node.children?.length ? navToMenuItems(node.children) : undefined,
     };
   });
