@@ -15,11 +15,12 @@
 //
 // Usage: node scripts/check-search-chrome.mjs <served-base-url> [page-path] [query-word]
 //   page-path   — a page that exists in the build. Default: auto-discovered
-//                 from the served search_meta.json (the entry page of the
-//                 index's first language, served at `/<lang><doc.url>`) —
-//                 the hard-coded "/en/intro.html" predates the deployed
-//                 corpus, whose English entry is "/en/index.html", and
-//                 turned every default run into 14 false-reds.
+//                 from the served search_meta.json (the `/index.html`
+//                 document of the index's first language, served at
+//                 `/<lang><doc.url>`; falls back to that language's first
+//                 document when no index.html exists) — the hard-coded
+//                 "/en/intro.html" predates the deployed corpus, whose
+//                 English entry is "/en/index.html".
 //   query-word  — a word that occurs in that build's index. Default:
 //                 auto-discovered from the served search_meta.json — the
 //                 word with the most postings on the page's language, so
@@ -111,6 +112,17 @@ async function discoverWord(base, pagePath) {
   return best?.[0] ?? null;
 }
 
+// The success sentinel must not survive from an EARLIER run: a crashed or
+// failed run would leave a passing marker in place and read as green.
+// Removed before ANY exit path (usage / discovery / CDP failures below), so
+// every way of not finishing clears it; only a full pass writes it again.
+const OK_SENTINEL = "/tmp/check-search-chrome.ok";
+try {
+  unlinkSync(OK_SENTINEL);
+} catch {
+  /* nothing to clear */
+}
+
 if (!base) {
   console.error("usage: check-search-chrome.mjs <served-base-url> [page-path] [query-word]");
   process.exit(2);
@@ -131,52 +143,36 @@ if (!WORD) {
 }
 console.log(`info  query word: ${WORD}`);
 
-// The success sentinel must not survive from an EARLIER run: a crashed or
-// failed run would leave yesterday's passing marker in place and read as
-// green. Removed up front; only a full pass writes it again.
-const OK_SENTINEL = "/tmp/check-search-chrome.ok";
-try {
-  unlinkSync(OK_SENTINEL);
-} catch {
-  /* nothing to clear */
-}
-
 const CDP = "http://127.0.0.1:9222";
 // Acquiring the tab is the first thing that can fail, and it fails fast and
 // LOUD — a raw `fetch failed` stack trace reads as a script bug rather than
-// "no browser is listening", which is the overwhelmingly common cause.
+// "no browser is listening", which is the overwhelmingly common cause. The
+// AbortSignal bounds a connect-then-hang endpoint, which would otherwise
+// stall before any socket exists.
 const tab = await (async () => {
   try {
-    return await (await fetch(`${CDP}/json/new?about:blank`, { method: "PUT" })).json();
+    const res = await fetch(`${CDP}/json/new?about:blank`, { method: "PUT", signal: AbortSignal.timeout(15000) });
+    const created = await res.json();
+    if (!created?.webSocketDebuggerUrl) throw new Error("the CDP tab reply carried no webSocketDebuggerUrl");
+    return created;
   } catch (e) {
     console.error(`cannot reach the CDP endpoint ${CDP} (${e?.cause?.code ?? e?.message ?? e}) — start a browser with --remote-debugging-port=9222 first`);
     process.exit(2);
   }
 })();
-const sock = new WebSocket(tab.webSocketDebuggerUrl);
+let sock;
 let id = 0;
 const pending = new Map();
-sock.onmessage = (ev) => {
-  const m = JSON.parse(ev.data);
-  if (pending.has(m.id)) {
-    pending.get(m.id)(m.result ?? m.error);
-    pending.delete(m.id);
+/** Close the debugger tab we opened; called from the one `finally` so no
+ * path (including a refused websocket) leaves it behind. */
+async function closeTab() {
+  try {
+    if (sock) sock.close();
+    await fetch(`${CDP}/json/close/${tab.id}`);
+  } catch {
+    /* tab already gone */
   }
-};
-// A dead or unresponsive CDP endpoint must fail loud and fast: without a
-// bound this await never settles (the socket neither opens nor errors on
-// some failures) and the run hangs instead of reporting.
-await new Promise((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error(`CDP endpoint ${CDP} did not open a websocket within 15s`)), 15000);
-  sock.onopen = () => {
-    clearTimeout(timer);
-    resolve();
-  };
-  sock.onerror = () => {
-    clearTimeout(timer);
-    reject(new Error(`CDP endpoint ${CDP} refused the websocket — is a browser running with --remote-debugging-port=9222?`));
-  };
-});
+}
 const send = (method, params = {}) =>
   new Promise((res) => {
     const i = ++id;
@@ -198,14 +194,16 @@ async function safe(expression) {
   return r?.result?.value ?? null;
 }
 
-/** Collect console errors + hydration-mismatch messages while a page runs. */
+/** Collect console errors + hydration-mismatch messages while a page runs.
+ * Registered on the socket inside the main `try` (the socket is opened
+ * there so `finally` can close it). */
 const consoleErrors = [];
-sock.addEventListener("message", (ev) => {
+function collectConsole(ev) {
   const m = JSON.parse(ev.data);
   if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") {
     consoleErrors.push(m.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
   }
-});
+}
 
 /** Poll `read()` until it returns truthy, bounded — cold-sandbox first
  * loads hydrate in seconds, not the fixed-sleep 2.5s the warm preview
@@ -242,6 +240,31 @@ async function load(path, width, height, mobile) {
 }
 
 try {
+  // The socket is opened INSIDE the try so `finally` covers a refused or
+  // timed-out websocket too — otherwise the tab created above leaks.
+  sock = new WebSocket(tab.webSocketDebuggerUrl);
+  sock.onmessage = (ev) => {
+    collectConsole(ev);
+    const m = JSON.parse(ev.data);
+    if (pending.has(m.id)) {
+      pending.get(m.id)(m.result ?? m.error);
+      pending.delete(m.id);
+    }
+  };
+  // A dead or unresponsive CDP endpoint must fail loud and fast: without a
+  // bound this await never settles (the socket neither opens nor errors on
+  // some failures) and the run hangs instead of reporting.
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`CDP endpoint ${CDP} did not open a websocket within 15s`)), 15000);
+    sock.onopen = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    sock.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error(`CDP endpoint ${CDP} refused the websocket — is a browser running with --remote-debugging-port=9222?`));
+    };
+  });
   await send("Runtime.enable");
   // ── 1. phone, fresh load, NO resize event ───────────────────────────────
   await load(PAGE, 412, 915, true);
@@ -252,17 +275,21 @@ try {
   check("phone hydration switches to the trigger after mount", shape.result.value === "sheet", `shape=${shape.result.value}`);
 
   const trigger = await send("Runtime.evaluate", {
-    expression: `(() => { const b = document.querySelector("button[aria-haspopup='dialog']"); return b ? 'present' : 'absent'; })()`,
+    // Present but collapsed (0×0, hidden) is the failure mode an
+    // existence-only probe cannot see: require a real box.
+    expression: `(() => { const b = document.querySelector("button[aria-haspopup='dialog']"); if (!b) return 'absent'; const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? 'visible' : 'collapsed ' + Math.round(r.width) + 'x' + Math.round(r.height); })()`,
     returnByValue: true,
   });
-  check("phone renders the search trigger", trigger.result.value === "present");
+  check("phone renders the search trigger", trigger.result.value === "visible", `trigger=${trigger.result.value}`);
 
   const layout = await safe(`(() => {
     const btns = [...document.querySelectorAll('.s-admin-header-actions button')].map((b) => Math.round(b.getBoundingClientRect().right));
-    return JSON.stringify({ overflow: document.documentElement.scrollWidth > innerWidth, maxRight: btns.length ? Math.max(...btns) : -1, vw: innerWidth });
+    return JSON.stringify({ count: btns.length, overflow: document.documentElement.scrollWidth > innerWidth, maxRight: btns.length ? Math.max(...btns) : -1, vw: innerWidth });
   })()`);
-  const l = layout ? JSON.parse(layout) : { overflow: true, maxRight: -1, vw: 0 };
-  check("phone header does not overflow", !l.overflow && l.maxRight <= l.vw, `maxRight=${l.maxRight} vw=${l.vw}`);
+  const l = layout ? JSON.parse(layout) : { count: 0, overflow: true, maxRight: -1, vw: 0 };
+  // Precondition, not decoration: with no buttons rendered `maxRight` is -1
+  // and "does not overflow" would pass with the header missing entirely.
+  check("phone header does not overflow", l.count >= 2 && !l.overflow && l.maxRight <= l.vw, `buttons=${l.count} maxRight=${l.maxRight} vw=${l.vw}`);
   // The shape flip after mount must not cost a hydration mismatch: Vue's
   // own report is the oracle (round 5 of #124 found the server subtree
   // being replaced on every phone load while every other check passed).
@@ -284,18 +311,29 @@ try {
   // #124). All three must agree at rest.
   const sizes = await safe(`JSON.stringify([...document.querySelectorAll('.s-admin-header-actions button')].map((b) => String(b.className).match(/hk-icon-button-(\\d+)/)?.[1] ?? '?'))`);
   const sizeList = sizes ? JSON.parse(sizes) : [];
+  // Every action must carry a READABLE numeric size: a renamed or dropped
+  // `hk-icon-button-<n>` class yields '?' for all of them, and a bare
+  // `new Set(...).size === 1` would then compare one shared '?' and pass —
+  // measuring nothing (round 2 of #125).
+  const numeric = sizeList.length >= 2 && sizeList.every((s) => /^\d+$/.test(s));
   check(
     "phone: every header action renders the same size",
-    sizeList.length >= 2 && new Set(sizeList).size === 1,
+    numeric && new Set(sizeList).size === 1,
     `sizes=${sizeList.join(",")}`,
   );
 
   const mismatch = consoleErrors.filter((e) => /hydrat/i.test(e));
   console.log(`info  phone hydration: ${mismatch.length} mismatch line(s) — HkFaceShell's compact/hamburger, pre-existing in hikari`);
-  // The mismatch LINE cannot be this component's oracle (see above). Its
-  // guard lives in vitest: `docsSearchBox.ssr.test.ts` renders the shell
-  // with NO mocks in a node environment (the real server branches), so a
-  // leaked child fails there — verified by mutation (rounds 10).
+  // The known line cannot be this component's oracle (see above); its guard
+  // lives in vitest (`docsSearchBox.ssr.test.ts`, no-mock node env, mutation-
+  // verified in rounds 10). But an UNBOUNDED count hides a SECOND, new
+  // mismatch — the search's own — behind the tolerated one, so the oracle
+  // here is "no more than the tracked defect", not "however many lines".
+  check(
+    "phone: no hydration mismatch beyond the tracked hikari one",
+    mismatch.length <= 1,
+    `mismatch=${mismatch.length}`,
+  );
   // ── 2. the receiver: a real query must answer, not error ────────────────
   await send("Runtime.evaluate", {
     expression: `document.querySelector("button[aria-haspopup='dialog']").click()`,
@@ -321,8 +359,12 @@ try {
   const sf = sfield ?? { x: 0, y: 0 };
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
-  await new Promise((r) => setTimeout(r, 300));
-  const sfocused = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-sheet input')`);
+  // Focus is synchronous on mousedown, so poll instead of sleeping: a fixed
+  // settle here is the same false-red class this PR removes elsewhere.
+  const sfocused = await poll(async () => {
+    const f = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-sheet input')`);
+    return f === true ? f : null;
+  }, 8);
   check("phone: the sheet's field takes focus from a real tap", sfocused === true, `focused=${sfocused}`);
   await send("Input.insertText", { text: WORD });
   // The answer lands after debounce + shard fetch — poll for either
@@ -353,9 +395,12 @@ try {
   // "no mismatch" is only meaningful if the client actually hydrated:
   // consoleErrors is empty both when hydration is clean AND when no bundle
   // ran at all (round 12 measured the check printing ok with the client JS
-  // deleted). Assert the app mounted first.
-  const dhydrated = await safe(`!!document.querySelector('.lagrange-docs-search')?.dataset.shape`);
-  check("desktop: the client bundle actually hydrated", dhydrated === true, `hydrated=${dhydrated}`);
+  // deleted). Assert the app mounted first — via a signal INDEPENDENT of
+  // the shape attribute the check above already reads: `createSSRApp(...)
+  // .mount("#app")` sets `__vue_app__` on the container, so this fails if
+  // the bundle never ran even when a server-rendered shell looks right.
+  const dhydrated = await safe(`!!document.querySelector('#app')?.__vue_app__`);
+  check("desktop: the client bundle actually hydrated", dhydrated === true, `vueApp=${dhydrated}`);
   check("desktop hydration reports no mismatch", !consoleErrors.some((e) => /hydrat/i.test(e)), consoleErrors.find((e) => /hydrat/i.test(e)) ?? "");
 
   // A REAL pointer focus on the field, then real typed text. The focus
@@ -367,8 +412,10 @@ try {
   const f = field ? JSON.parse(field) : { x: 0, y: 0 };
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: f.x, y: f.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: f.x, y: f.y, button: "left", clickCount: 1 });
-  await new Promise((r) => setTimeout(r, 150));
-  const focused = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-input')`);
+  const focused = await poll(async () => {
+    const v = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-input')`);
+    return v === true ? v : null;
+  }, 8);
   check("desktop: the field takes focus from a real click", focused === true, `focused=${focused}`);
   await send("Input.insertText", { text: WORD });
   await poll(async () => {
@@ -429,11 +476,7 @@ try {
   const navigated = !!v.href && after !== before && after.startsWith(hrefPath);
   check("desktop: clicking a hit navigates to it", navigated, `before=${before} after=${after} href=${v.href}`);
 } finally {
-  try {
-    await fetch(`${CDP}/json/close/${tab.id}`);
-  } catch {
-    /* tab already gone */
-  }
+  await closeTab();
 }
 
 if (failures.length) {
