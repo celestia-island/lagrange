@@ -14,19 +14,105 @@
 //      it with "Illegal invocation" (round 4 of #124).
 //
 // Usage: node scripts/check-search-chrome.mjs <served-base-url> [page-path] [query-word]
-//   page-path   — a page that exists in the build (default /en/intro.html)
-//   query-word  — a word that occurs in that build's index (default "philosophy")
+//   page-path   — a page that exists in the build. Default: auto-discovered
+//                 from the served search_meta.json (the entry page of the
+//                 index's first language, served at `/<lang><doc.url>`) —
+//                 the hard-coded "/en/intro.html" predates the deployed
+//                 corpus, whose English entry is "/en/index.html", and
+//                 turned every default run into 14 false-reds.
+//   query-word  — a word that occurs in that build's index. Default:
+//                 auto-discovered from the served search_meta.json — the
+//                 word with the most postings on the page's language, so
+//                 the default works on ANY corpus (the hard-coded
+//                 "philosophy" predated the tiny 3-page lagrange corpus
+//                 and turned every default run into 3 false-reds).
+//                 Discovery is the index's own lookup, inverted: postings
+//                 are [docId, chunk] pairs and the same lang filter
+//                 `search.ts` applies is applied here, so a discovered
+//                 word cannot answer zero hits.
 // Reuses the CDP endpoint on 127.0.0.1:9222 (never starts a browser), opens
 // one tab, and closes it. Exit code 1 on any failed check.
 import { writeFileSync } from "node:fs";
 
 const base = process.argv[2];
-const PAGE = process.argv[3] ?? "/en/intro.html";
-const WORD = process.argv[4] ?? "philosophy";
+
+/** Everything the served build publishes: docs keyed by language, the
+ * shard names, and each shard's postings. Shared by both discoveries —
+ * one fetch of the meta, shards pulled lazily. */
+async function loadSearchIndex(base) {
+  try {
+    const res = await fetch(`${base}/search_meta.json`);
+    if (!res.ok) return null;
+    const meta = await res.json();
+    if (!Array.isArray(meta?.docs) || !Array.isArray(meta?.shards)) return null;
+    const byLang = new Map();
+    for (const doc of meta.docs) {
+      if (!byLang.has(doc.lang)) byLang.set(doc.lang, []);
+      byLang.get(doc.lang).push(doc);
+    }
+    return { meta, byLang };
+  } catch {
+    return null;
+  }
+}
+
+/** The page the checks should load: the index's own entry document for a
+ * language the build actually ships (the language root `/<lang>/` serves
+ * it). Doc urls are flat (`/index.html`) per the build contract. */
+async function discoverPage(base) {
+  const index = await loadSearchIndex(base);
+  const docs = index?.byLang?.get([...(index?.byLang?.keys() ?? [])][0]);
+  const doc = docs?.find((d) => d.url === "/index.html") ?? docs?.[0];
+  return doc ? `/${doc.lang}${doc.url}` : null;
+}
+
+/** Pick a query word the served build is guaranteed to answer: the
+ * lowercase alphanumeric token (the exact shape `tokenizeQuery` passes
+ * through unchanged) with the most postings on the page language. */
+async function discoverWord(base, pagePath) {
+  const index = await loadSearchIndex(base);
+  if (!index) return null;
+  const lang = pagePath.match(/\/([a-z]{2,8})(?:\/|\.)/i)?.[1]?.toLowerCase() ?? "en";
+  const langDocs = new Set((index.byLang.get(lang) ?? []).map((d) => d.id));
+  if (!langDocs.size) return null;
+  let best = null;
+  for (const name of index.meta.shards) {
+    let shard;
+    try {
+      const res = await fetch(`${base}/${name}`);
+      if (!res.ok) continue;
+      shard = await res.json();
+    } catch {
+      continue;
+    }
+    for (const [word, postings] of Object.entries(shard)) {
+      if (!/^[a-z][a-z0-9]+$/.test(word) || !Array.isArray(postings)) continue;
+      const inLang = postings.filter(([docId]) => langDocs.has(docId)).length;
+      if (inLang > 0 && (!best || inLang > best[1])) best = [word, inLang];
+    }
+  }
+  return best?.[0] ?? null;
+}
+
 if (!base) {
   console.error("usage: check-search-chrome.mjs <served-base-url> [page-path] [query-word]");
   process.exit(2);
 }
+const PAGE = process.argv[3] ?? (await discoverPage(base));
+const WORD = process.argv[4] ?? (PAGE ? await discoverWord(base, PAGE) : null);
+if (!PAGE) {
+  console.error(
+    "no page path given and none could be discovered from the served search_meta.json — pass [page-path] explicitly",
+  );
+  process.exit(2);
+}
+if (!WORD) {
+  console.error(
+    "no query word given and none could be discovered from the served search_meta.json — pass [query-word] explicitly",
+  );
+  process.exit(2);
+}
+console.log(`info  query word: ${WORD}`);
 
 const CDP = "http://127.0.0.1:9222";
 const tab = await (await fetch(`${CDP}/json/new?about:blank`, { method: "PUT" })).json();
@@ -71,12 +157,30 @@ sock.addEventListener("message", (ev) => {
   }
 });
 
+/** Poll `read()` until it returns truthy, bounded — cold-sandbox first
+ * loads hydrate in seconds, not the fixed-sleep 2.5s the warm preview
+ * needed; fixed sleeps turned every cold run into false-reds. */
+async function poll(read, tries = 20, stepMs = 500) {
+  for (let i = 0; i < tries; i++) {
+    const v = await read();
+    if (v) return v;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+  return await read();
+}
+
 async function load(path, width, height, mobile) {
   consoleErrors.length = 0;
   await send("Network.setCacheDisabled", { cacheDisabled: true });
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile });
   await send("Page.navigate", { url: `${base}${path}` });
-  await new Promise((r) => setTimeout(r, 2500));
+  // Hydration oracle: the shell is EMPTY on the server and the shape is
+  // the client's first mount decision — poll until the app has mounted
+  // instead of guessing a fixed duration.
+  await poll(async () => {
+    const s = await safe(`document.querySelector('.lagrange-docs-search')?.dataset.shape ?? null`);
+    return s && s !== "null" ? s : null;
+  });
 }
 
 try {
@@ -138,18 +242,38 @@ try {
   await send("Runtime.evaluate", {
     expression: `document.querySelector("button[aria-haspopup='dialog']").click()`,
   });
-  await new Promise((r) => setTimeout(r, 800));
+  // HkPopover opens synchronously on the click; poll for the sheet's field
+  // instead of assuming a fixed open latency on a cold tab. Budget 8s: a
+  // tap fired before the sheet exists lands at (0,0) and fails everything
+  // downstream (measured: a cold sandbox needed >4s here once).
+  await poll(async () => {
+    const p = await safe(`!!document.querySelector('.lagrange-docs-search-sheet input')`);
+    return p === true ? p : null;
+  }, 16);
   // HkPopover focuses its own panel when it opens, so a real click on the
-  // sheet's field is what gives it focus; then real typed text.
-  const sfield = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2 }); })()`);
-  const sf = sfield ? JSON.parse(sfield) : { x: 0, y: 0 };
+  // sheet's field is what gives it focus; then real typed text. The sheet
+  // mounts its input before the slide-in animation finishes — a rect read
+  // mid-animation is off-screen and the tap lands on nothing, so poll
+  // until the field is inside the viewport and settle before tapping.
+  const sfield = await poll(async () => {
+    const s = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2, inVp: b.top >= 0 && b.bottom <= innerHeight && b.width > 0 }); })()`);
+    const p = s ? JSON.parse(s) : null;
+    return p && p.inVp ? { x: p.x, y: p.y } : null;
+  });
+  const sf = sfield ?? { x: 0, y: 0 };
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
-  await new Promise((r) => setTimeout(r, 150));
+  await new Promise((r) => setTimeout(r, 300));
   const sfocused = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-sheet input')`);
   check("phone: the sheet's field takes focus from a real tap", sfocused === true, `focused=${sfocused}`);
   await send("Input.insertText", { text: WORD });
-  await new Promise((r) => setTimeout(r, 1800));
+  // The answer lands after debounce + shard fetch — poll for either
+  // outcome (hits or the error state) instead of a fixed sleep.
+  await poll(async () => {
+    const s = await safe(`JSON.stringify({ h: document.querySelectorAll('.lagrange-docs-search-hit').length, e: !!document.querySelector('.lagrange-docs-search-error') })`);
+    const p = s ? JSON.parse(s) : null;
+    return p && (p.h > 0 || p.e) ? p : null;
+  });
   const search = await safe(`JSON.stringify({
     hits: document.querySelectorAll('.lagrange-docs-search-hit').length,
     error: !!document.querySelector('.lagrange-docs-search-error'),
@@ -189,7 +313,10 @@ try {
   const focused = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-input')`);
   check("desktop: the field takes focus from a real click", focused === true, `focused=${focused}`);
   await send("Input.insertText", { text: WORD });
-  await new Promise((r) => setTimeout(r, 1800));
+  await poll(async () => {
+    const s = await safe(`document.querySelectorAll('.lagrange-docs-search-hit').length`);
+    return typeof s === "number" && s > 0 ? s : null;
+  });
 
   // The clear button must sit INSIDE the field's row on desktop too: it is
   // absolutely positioned against `.lagrange-docs-search-field`, and moving
@@ -233,8 +360,11 @@ try {
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: v.cx, y: v.cy, button: "left", clickCount: 1 });
   await new Promise((r) => setTimeout(r, 60));
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: v.cx, y: v.cy, button: "left", clickCount: 1 });
-  await new Promise((r) => setTimeout(r, 1500));
-  const after = await safe(`location.pathname + location.hash`);
+  const navAfter = await poll(async () => {
+    const a = await safe(`location.pathname + location.hash`);
+    return a && a !== before ? a : null;
+  }, 6);
+  const after = navAfter ?? (await safe(`location.pathname + location.hash`));
   // Navigate = the location changed AND it is the hit's own target (the
   // href may carry a hash; the path must match).
   const hrefPath = (v.href ?? "").split("#")[0];
