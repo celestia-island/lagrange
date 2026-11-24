@@ -44,6 +44,22 @@ body {
 }
 
 // ── header search ─────────────────────────────────────────────────────────
+
+// The admin header's page title truncates at 8rem — a limit sized for the
+// ACCOUNT-MENU nickname it was built for, not for page titles: a docs page
+// title like "Welcome to celestia-island" needs ~11rem, and unlike the
+// account face the docs header has no centre wing competing for the row.
+// Widen the docs instance; hikari's account faces keep their 8rem.
+// !important is load-bearing: the first draft used the selector
+// `.s-admin-header .s-admin-header-title` — a class the header element does
+// not wear (it is `s-glass-header s-balanced-header`) — so the rule sat in
+// the stylesheet WITHOUT matching anything and the title stayed truncated at
+// 8rem. Same-selector + important both wins the cascade and proves itself in
+// the browser (measured: computed max-width 8rem before, 24rem after).
+.s-admin-header-title {
+  max-width: 24rem !important;
+}
+
 // Both viewports are trigger-first (2026-11-24): a Search icon button in
 // the header's action slot, its popup — an anchored panel on desktop, a
 // bottom sheet on phones — carrying the field and results in normal flow
