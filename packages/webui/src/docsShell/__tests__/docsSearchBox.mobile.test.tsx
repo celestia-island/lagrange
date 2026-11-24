@@ -154,8 +154,6 @@ describe("DocsSearchBox (mobile)", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     // The sheet's own dismiss (✕ / backdrop) reports `false` through the
     // popover; drive it the way HkPopover does.
-    // The sheet's own dismiss (✕ / backdrop) reports `false` through the
-    // popover; drive it the way HkPopover does.
     bp.dismiss!();
     await nextTick();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");

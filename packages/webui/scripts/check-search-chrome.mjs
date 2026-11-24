@@ -81,10 +81,6 @@ async function load(path, width, height, mobile) {
 
 try {
   await send("Runtime.enable");
-  // Runs before every document's own scripts: by the time Vue hydrates,
-  // the marker is already an attribute on the SSR'd node. If Vue keeps that
-  // node, the marker survives; if it replaces the subtree, the marker goes
-  // with the old node.
   // ── 1. phone, fresh load, NO resize event ───────────────────────────────
   await load(PAGE, 412, 915, true);
   const shape = await send("Runtime.evaluate", {
@@ -159,6 +155,12 @@ try {
   await load(PAGE, 1280, 800, false);
   const dshape = await safe(`document.querySelector('.lagrange-docs-search')?.dataset.shape`);
   check("desktop keeps the inline field", dshape === "inline", `shape=${dshape}`);
+  // "no mismatch" is only meaningful if the client actually hydrated:
+  // consoleErrors is empty both when hydration is clean AND when no bundle
+  // ran at all (round 12 measured the check printing ok with the client JS
+  // deleted). Assert the app mounted first.
+  const dhydrated = await safe(`!!document.querySelector('.lagrange-docs-search')?.dataset.shape`);
+  check("desktop: the client bundle actually hydrated", dhydrated === true, `hydrated=${dhydrated}`);
   check("desktop hydration reports no mismatch", !consoleErrors.some((e) => /hydrat/i.test(e)), consoleErrors.find((e) => /hydrat/i.test(e)) ?? "");
 
   // A REAL pointer focus on the field, then real typed text. The focus

@@ -3,7 +3,7 @@
 // handling have an executing unit gate (review round 3 of PR #119:
 // reverting the KaTeX base fix or the asset-prefix strip left every
 // gate green because both lived inside the un-unit-tested orchestrator).
-import { escapeAttr } from "./redirect";
+import { escapeAttr, redirectStub } from "./redirect";
 import type { DocsPageData } from "./types";
 
 /** The subset of the Rust-emitted docs-manifest.json this lane reads.
@@ -184,6 +184,35 @@ export function languageEntryPath(manifest: Manifest, code: string): string | nu
   if (existing.includes("index.html")) return "index.html";
   if (existing.includes("intro.html")) return "intro.html";
   return existing[0] ?? null;
+}
+
+/** The `<lang>/index.html` stubs the build must ALSO write, so a typed
+ * directory URL opens (a language without a README/index has no page
+ * there, and the host answers its own 404).
+ *
+ * The `index.html` arm is load-bearing and easy to lose: when a language
+ * DOES author a landing page, the page loop has already written
+ * `<lang>/index.html`, and a stub written over it replaces real content
+ * with a redirect to itself. MUT: M17 (round 12 — deleting this skip
+ * overwrote a planted authored page with `url=/en/guides/architecture.html`).
+ *
+ * Pure so it can be unit-tested: the script that writes these is not in any
+ * test's import graph, which is how the guard went unguarded for six rounds. */
+export function languageRootStubs(
+  manifest: Manifest,
+): { path: string; html: string }[] {
+  const base = manifest.site.base;
+  const out: { path: string; html: string }[] = [];
+  for (const lang of manifest.site.langs) {
+    const entry = languageEntryPath(manifest, lang.code);
+    if (!entry || entry === "index.html") continue;
+    const url = `${base}/${lang.code}/${entry}`;
+    out.push({
+      path: `${lang.code}/index.html`,
+      html: redirectStub({ defaultUrl: url, langUrls: [{ code: lang.code, url }] }),
+    });
+  }
+  return out;
 }
 
 /** The root index negotiates over the language landing pages. */

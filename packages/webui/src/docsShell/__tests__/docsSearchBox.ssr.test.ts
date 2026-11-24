@@ -6,11 +6,15 @@
 // picks is a guess the client takes back with a swap (rounds 3 and 5 of
 // #124), and the client's first pass is empty too (gated on mount).
 //
-// Why its own file: the desktop/mobile suites mock `useBreakpoint`, and a
-// mocked `isMobile=true` makes the server render the BUTTON branch — the
-// field never reaches the output, so a "no field in SSR" assertion there
-// passes against a real leak (round 10 of #124, M4). Node environment, no
-// happy-dom: `window` is genuinely undefined.
+// Why its own file, in a NODE environment: the happy-dom suites stub
+// `useBreakpoint` (isMobile=true), which makes the server render the BUTTON
+// branch — a "no field in SSR" assertion there is vacuous, and round 10 of
+// #124 measured exactly that passing against a real leak. What is
+// load-bearing is `typeof window === "undefined"`: only then does hikari's
+// real server branch run, so the shell's own gate is the only thing keeping
+// children out of the output. (Round 12 confirmed the node environment is
+// the part that matters; moving the block into a happy-dom file — with the
+// real server branch and the real popover — did not reproduce the gap.)
 import { describe, expect, it } from "vitest";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";

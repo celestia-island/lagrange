@@ -20,8 +20,11 @@
 // page language and renders the hits as plain anchors (real links,
 // open-in-new-tab works).
 //
-// Dismissal: Escape, an outside click, or blurring the field. Every one
-// of those routes through `close()`, and the async query path has an
+// Dismissal is HkPopover's alone — Escape, an outside click, the phone's
+// scrim, its ✕ — all arriving as `update:modelValue(false)`. This
+// component registers NO listener of its own: a `focusout` containment
+// test made clicking a result impossible, because the panel is teleported
+// outside the field's box (round 5 of #124). The async query path has an
 // explicit error state — a rejected fetch or a corrupt shard must not
 // leave the panel frozen on stale results or surface as an unhandled
 // rejection (PR #119 round 5).

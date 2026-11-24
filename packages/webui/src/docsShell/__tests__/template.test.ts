@@ -14,6 +14,7 @@ import {
   buildRootRedirectTargets,
   escapeJsonForScript,
   languageEntryPath,
+  languageRootStubs,
   pageTemplate,
   resolveClientAssetsFrom,
   type ClientAssets,
@@ -225,6 +226,28 @@ describe("redirect target assembly (round 9 M43)", () => {
       ],
     };
     expect(languageEntryPath(m, "en")).toBe("index.html");
+  });
+
+  // Round 12 M17: the stub loop used to live in the un-unit-tested SSR
+  // script, so deleting the authored-index skip clobbered a real page with
+  // a self-redirect and 81 tests stayed green.
+  it("writes a <lang>/index.html stub for a language with no authored index", () => {
+    const stubs = languageRootStubs(manifest);
+    expect(stubs.map((s) => s.path)).toEqual(["en/index.html", "zh-Hans/index.html"]);
+    expect(stubs[0].html).toContain('url=/repo/en/guides/a.html');
+  });
+
+  it("does NOT write a stub over a language that authored index.html", () => {
+    const m: Manifest = {
+      ...manifest,
+      pages: [
+        { path: "index.html", langs: { en: {} as never } },
+        { path: "intro.html", langs: { "zh-Hans": {} as never } },
+      ],
+    };
+    // MUT: M17 (dropping the `entry === "index.html"` skip) — `en` then gets
+    // a stub that redirects to itself, replacing the authored page.
+    expect(languageRootStubs(m).map((s) => s.path)).toEqual(["zh-Hans/index.html"]);
   });
 
   it("a configured language with no pages yields no root target", () => {

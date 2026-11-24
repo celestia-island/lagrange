@@ -31,7 +31,7 @@ import {
   buildPageData,
   buildRedirectTargets,
   buildRootRedirectTargets,
-  languageEntryPath,
+  languageRootStubs,
   pageTemplate,
   resolveClientAssetsFrom,
   type ClientAssets,
@@ -125,20 +125,13 @@ async function main(): Promise<void> {
   }));
 
   // Language roots: `<lang>/` must open too (a visitor typing it, a
-  // directory link, a trailing-slash canonical). When the language has no
-  // README/index the build emits no `<lang>/index.html`, and the host
-  // answers its own 404. Write a stub that lands on the language's entry
-  // page. Skipped when the build already wrote a real page there — the
-  // stub must not clobber authored content.
-  for (const lang of manifest.site.langs) {
-    const entry = languageEntryPath(manifest, lang.code);
-    if (!entry || entry === "index.html") continue;
-    const url = `${manifest.site.base}/${lang.code}/${entry}`;
-    await mkdir(join(args.out, lang.code), { recursive: true });
-    await writeFile(
-      join(args.out, lang.code, "index.html"),
-      redirectStub({ defaultUrl: url, langUrls: [{ code: lang.code, url }] }),
-    );
+  // directory link, trailing-slash canonical). The targets + the
+  // authored-index skip live in `languageRootStubs` (template.ts) so they
+  // are unit-tested; this loop only writes them.
+  for (const stub of languageRootStubs(manifest)) {
+    const dest = join(args.out, stub.path);
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFile(dest, stub.html);
   }
 
   console.error(`ssr-docs: wrote ${written} pages (+redirects) into ${args.out}`);
