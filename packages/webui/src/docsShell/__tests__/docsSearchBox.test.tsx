@@ -100,6 +100,8 @@ async function typeInto(_root: ParentNode, value: string): Promise<void> {
   // Trigger-first (2026-11-24): the field lives inside the trigger's popup.
   // Open it only when not already open — clicking an OPEN trigger toggles
   // the panel shut — then type wherever the popover stub rendered the field.
+  // MUT:mut-openpanel-toggle (an open-panel trigger click closes the panel,
+  // which is exactly what this helper must not do).
   await openPanel();
   const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
   input.value = value;
