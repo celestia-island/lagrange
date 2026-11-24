@@ -99,6 +99,13 @@ export const DocsSearchBox = defineComponent({
       // the token), so reset it here — otherwise `busy` leaks true and
       // `panelUp` pins an empty popover on screen (round 5 of #124).
       busy.value = false;
+      // …and `open` too: with nothing to show, an open popover is a 10×10
+      // invisible host plus a full-viewport transparent backdrop that
+      // swallowed the next header click (the language menu would not
+      // open) — round 7 of #124. The phone's sheet stays up (the user is
+      // still typing into it), the same rule `run()` applies to an
+      // emptied field.
+      if (!isMobile.value) close();
       inputRef.value?.focus();
     }
 

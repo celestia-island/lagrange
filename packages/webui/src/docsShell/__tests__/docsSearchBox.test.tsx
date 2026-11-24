@@ -225,6 +225,60 @@ describe("DocsSearchBox", () => {
     expect(box.getAttribute("data-open")).toBe("false");
   });
 
+  // Round 7: the field's ✕ is the one dismiss route that bypasses both
+  // `run()` and HkPopover. It reset `busy` but not `open`, so an invisible
+  // 10×10 popover host and a full-viewport transparent backdrop stayed up
+  // and swallowed the next header click (the language menu would not open).
+  it("folds the panel when the field is cleared with the ✕ button", async () => {
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await typeInto(m.root, "pipeline");
+    const box = document.querySelector(".lagrange-docs-search")!;
+    expect(box.getAttribute("data-open")).toBe("true");
+    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
+    await nextTick();
+    // MUT: M3 (round 7 — `clear()` leaving `open` set).
+    expect(box.getAttribute("data-open")).toBe("false");
+    expect(box.getAttribute("data-busy")).toBe("false");
+    expect(document.querySelector(".lagrange-docs-search-results")).toBeNull();
+    // …and mid-flight too (round 8 M3: the reset in `clear()` was unguarded).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        await new Promise((r) => setTimeout(r, 60));
+        return { ok: true, json: async () => defaultBody(url) };
+      }),
+    );
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    input.value = "pipeline";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(box.getAttribute("data-busy")).toBe("true");
+    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
+    await nextTick();
+    expect(box.getAttribute("data-busy")).toBe("false");
+    expect(box.getAttribute("data-open")).toBe("false");
+    await new Promise((r) => setTimeout(r, 120));
+    expect(box.getAttribute("data-busy")).toBe("false");
+  });
+
+  // Round 8 M5: the shell renders NO child before mount, on the server or
+  // on the client's first pass — that is what keeps the two passes
+  // identical. Pinned on the actual SSR string: `renderToString` is the
+  // server's own pass, so this fails the moment a child leaks into it.
+  it("renders an empty shell on the server (no child before mount)", async () => {
+    const { createSSRApp, h } = await import("vue");
+    const { renderToString } = await import("vue/server-renderer");
+    const app = createSSRApp({ render: () => h(DocsSearchBox, { site, lang: "en" }) });
+    const html = await renderToString(app);
+    expect(html).toContain('class="lagrange-docs-search"');
+    // MUT: M5 (round 8 — dropping the `mounted` gate puts the field into
+    // the server's output).
+    expect(html).not.toContain("lagrange-docs-search-input");
+    expect(html).not.toContain("hk-icon-button");
+    expect(html).not.toContain("data-shape");
+  });
+
   // Round 5: emptying the field while a query is in flight used to leave
   // `busy` true forever (the superseded run's `finally` skips the reset),
   // pinning an empty popover on screen.

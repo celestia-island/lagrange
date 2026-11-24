@@ -1,26 +1,30 @@
 // Chrome-backed contract checks for the two docs-search properties that
 // happy-dom cannot observe:
 //
-//   1. hydration shape — SSR emits the inline field (no viewport on the
-//      server); the client must keep it on the first pass and switch to the
-//      trigger AFTER mount. A client that decides the shape during setup
-//      renders `sheet` against the server's `inline`, the hydration
-//      mismatch keeps the server DOM, and the trigger never appears until a
-//      resize event happens to fire (round 3 of #124). happy-dom's tests
-//      mock `useBreakpoint`, so they cannot see this.
+//   1. hydration shape — SSR emits an EMPTY shell (no viewport on the
+//      server, so it picks no shape); the client paints the trigger or the
+//      field only after mount. A client that decided the shape during setup
+//      rendered the sheet against the server's field, the hydration
+//      mismatch kept the server DOM, and the trigger never appeared until a
+//      resize event happened to fire (rounds 3 and 5 of #124). happy-dom's
+//      tests mock `useBreakpoint`, so they cannot see this.
 //   2. the fetch receiver — the component must hand DocsSearch a fetch
 //      bound to the Window. In happy-dom `window === globalThis`, so
 //      `bind(globalThis)` passes there while Chrome (its own realm) rejects
 //      it with "Illegal invocation" (round 4 of #124).
 //
-// Usage: node scripts/check-search-chrome.mjs <served-base-url>
+// Usage: node scripts/check-search-chrome.mjs <served-base-url> [page-path] [query-word]
+//   page-path   — a page that exists in the build (default /en/intro.html)
+//   query-word  — a word that occurs in that build's index (default "philosophy")
 // Reuses the CDP endpoint on 127.0.0.1:9222 (never starts a browser), opens
 // one tab, and closes it. Exit code 1 on any failed check.
 import { writeFileSync } from "node:fs";
 
 const base = process.argv[2];
+const PAGE = process.argv[3] ?? "/en/intro.html";
+const WORD = process.argv[4] ?? "philosophy";
 if (!base) {
-  console.error("usage: check-search-chrome.mjs <served-base-url>");
+  console.error("usage: check-search-chrome.mjs <served-base-url> [page-path] [query-word]");
   process.exit(2);
 }
 
@@ -78,7 +82,7 @@ async function load(path, width, height, mobile) {
 try {
   await send("Runtime.enable");
   // ── 1. phone, fresh load, NO resize event ───────────────────────────────
-  await load("/en/intro.html", 412, 915, true);
+  await load(PAGE, 412, 915, true);
   const shape = await send("Runtime.evaluate", {
     expression: `document.querySelector('.lagrange-docs-search')?.dataset.shape`,
     returnByValue: true,
@@ -117,9 +121,16 @@ try {
     expression: `document.querySelector("button[aria-haspopup='dialog']").click()`,
   });
   await new Promise((r) => setTimeout(r, 800));
-  await send("Runtime.evaluate", {
-    expression: `(() => { const i = document.querySelector('.lagrange-docs-search-sheet input'); i.value = 'philosophy'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`,
-  });
+  // HkPopover focuses its own panel when it opens, so a real click on the
+  // sheet's field is what gives it focus; then real typed text.
+  const sfield = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-sheet input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2 }); })()`);
+  const sf = sfield ? JSON.parse(sfield) : { x: 0, y: 0 };
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: sf.x, y: sf.y, button: "left", clickCount: 1 });
+  await new Promise((r) => setTimeout(r, 150));
+  const sfocused = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-sheet input')`);
+  check("phone: the sheet's field takes focus from a real tap", sfocused === true, `focused=${sfocused}`);
+  await send("Input.insertText", { text: WORD });
   await new Promise((r) => setTimeout(r, 1800));
   const search = await safe(`JSON.stringify({
     hits: document.querySelectorAll('.lagrange-docs-search-hit').length,
@@ -136,34 +147,49 @@ try {
   );
 
   // ── 3. desktop: results must be visible, not clipped by the header ─────
-  await load("/en/intro.html", 1280, 800, false);
+  await load(PAGE, 1280, 800, false);
   const dshape = await safe(`document.querySelector('.lagrange-docs-search')?.dataset.shape`);
   check("desktop keeps the inline field", dshape === "inline", `shape=${dshape}`);
   check("desktop hydration reports no mismatch", !consoleErrors.some((e) => /hydrat/i.test(e)), consoleErrors.find((e) => /hydrat/i.test(e)) ?? "");
-  await send("Runtime.evaluate", {
-    expression: `(() => { const i = document.querySelector('.lagrange-docs-search-input'); i.value = 'philosophy'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`,
-  });
+
+  // A REAL pointer focus on the field, then real typed text. The focus
+  // matters: the hit-click regression is a blur-then-close sequence, and a
+  // panel opened by a programmatic value change (no focused input) can
+  // never blur — a mutant with the old bug passed this very check until
+  // the focus was made real (round 8 of #124).
+  const field = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-input').getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2 }); })()`);
+  const f = field ? JSON.parse(field) : { x: 0, y: 0 };
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: f.x, y: f.y, button: "left", clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: f.x, y: f.y, button: "left", clickCount: 1 });
+  await new Promise((r) => setTimeout(r, 150));
+  const focused = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-input')`);
+  check("desktop: the field takes focus from a real click", focused === true, `focused=${focused}`);
+  await send("Input.insertText", { text: WORD });
   await new Promise((r) => setTimeout(r, 1800));
+
   const vis = await safe(`(() => {
     const hits = document.querySelectorAll('.lagrange-docs-search-hit');
-    if (!hits.length) return JSON.stringify({ hits: 0, visible: false, at: null });
+    if (!hits.length) return JSON.stringify({ hits: 0, visible: false, at: null, focused: document.activeElement?.className });
     const b = hits[0].getBoundingClientRect();
     // A hit is ON SCREEN when the topmost element at its centre is the hit
     // itself (or inside it) — the header's overflow:hidden would put the
     // header in the way instead.
     const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-    return JSON.stringify({ hits: hits.length, visible: !!top && hits[0].contains(top), at: top ? String(top.className).slice(0, 40) : null, cx: b.left + b.width / 2, cy: b.top + b.height / 2, href: hits[0].getAttribute('href') });
+    return JSON.stringify({ hits: hits.length, visible: !!top && hits[0].contains(top), at: top ? String(top.className).slice(0, 40) : null, cx: b.left + b.width / 2, cy: b.top + b.height / 2, href: hits[0].getAttribute('href'), focused: document.activeElement?.className });
   })()`);
-  const v = vis ? JSON.parse(vis) : { hits: 0, visible: false, at: null, cx: 0, cy: 0, href: null };
+  const v = vis ? JSON.parse(vis) : { hits: 0, visible: false, at: null, cx: 0, cy: 0, href: null, focused: null };
   check("desktop results are on screen, not clipped by the header", v.hits > 0 && v.visible, `hits=${v.hits} at=${v.at}`);
+  // The field MUST still hold focus when the hits are on screen — that is
+  // the precondition for the blur the click below will cause.
+  check("desktop: the field keeps focus while results show", typeof v.focused === "string" && v.focused.includes("lagrange-docs-search-input"), `focused=${v.focused}`);
 
   // ── 4. desktop: a REAL mouse click on a hit navigates ──────────────────
   // The regression this pins (round 5 of #124): the results are teleported
   // outside the field's box, and a containment test in a `focusout` handler
   // called every hit "outside" — mousedown blurred the input, the panel
   // closed, and the anchor was gone before `click`. Only a real pointer
-  // sequence (mousedown → mouseup, with the blur in between) reproduces it;
-  // a synthetic `.click()` does not.
+  // sequence FROM A FOCUSED FIELD (mousedown → blur → mouseup) reproduces
+  // it; a synthetic `.click()` does not, and neither does an unfocused field.
   const before = await safe(`location.pathname + location.hash`);
   await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: v.cx, y: v.cy });
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: v.cx, y: v.cy, button: "left", clickCount: 1 });
