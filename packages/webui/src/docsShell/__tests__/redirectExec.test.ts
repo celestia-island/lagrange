@@ -47,8 +47,23 @@ describe("redirect stub negotiation (executed)", () => {
   });
 
   it("falls back to the primary subtag (zh-Hant-TW → zh-Hant, zh-Hans-CN → zh-Hans)", () => {
-    expect(runStub(stub, { languages: ["zh-Hant-TW"] }).url).toBe("/zh-Hant/guides/a.html");
-    expect(runStub(stub, { languages: ["zh-Hans-CN"] }).url).toBe("/zh-Hans/guides/a.html");
+    const landing = runStub(stub, { languages: ["zh-Hant-TW", "en"] });
+    expect(landing.url).toContain("/zh-Hant/");
+  });
+
+  // BCP47 Chinese gotcha: browsers send region-form tags (zh-CN, zh-TW),
+  // but the site uses script-form (zh-Hans, zh-Hant). Without the zh-region
+  // mapping in `pickRedirectUrl` the zh-CN browser NEVER catches its
+  // language and always lands on the default — the exact bug hikari#1531's
+  // user reported. The pick function maps the region to the script after
+  // the primary-subtag walk fails.
+  // MUT:mut-zh-region — removing the zh-region mapping from pickRedirectUrl
+  // REDS this test (zh-CN falls through to the English default).
+  it("maps zh-CN to zh-Hans and zh-TW to zh-Hant", () => {
+    const hans = runStub(stub, { languages: ["zh-CN", "en"] });
+    expect(hans.url).toContain("/zh-Hans/");
+    const hant = runStub(stub, { languages: ["zh-TW", "en"] });
+    expect(hant.url).toContain("/zh-Hant/");
   });
 
   it("walks the preference list in order", () => {

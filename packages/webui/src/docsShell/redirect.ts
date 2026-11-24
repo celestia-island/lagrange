@@ -18,7 +18,9 @@ export function defaultRedirectUrl(langUrls: { code: string; url: string }[], de
 /**
  * Resolve one browser language tag against the site's language codes:
  * exact tag → the site language that PREFIXES it (longest first, so
- * `zh-Hant-TW` picks `zh-Hant`, not `zh-Hans`) → the primary subtag.
+ * `zh-Hant-TW` picks `zh-Hant`, not `zh-Hans`) → the primary subtag →
+ * BCP47 Chinese region-to-script (browsers send `zh-CN`, sites tag
+ * `zh-Hans`).
  * Returned to the emitted stub as source text so the page carries the
  * same rule the unit tests execute.
  */
@@ -35,6 +37,16 @@ const NEGOTIATE_SOURCE = `function pick(map, codes) {
       if (best && map[best]) return map[best];
       var short = c.split("-")[0];
       if (map[short]) return map[short];
+      /* BCP47 Chinese gotcha: browsers send zh-CN / zh-TW (region form), but
+       * sites tag zh-Hans / zh-Hant (script form). The prefix and short-subtag
+       * walk above cannot bridge the two — without this, zh-CN always
+       * falls through to English. MUT:mut-zh-region (removing this block
+       * REDS the zh-CN/zh-TW redirect tests). */
+      if (short === "zh") {
+        var rt = c.replace(/^zh-/i, "").toUpperCase();
+        var script = (rt === "TW" || rt === "HK" || rt === "MO") ? "Hant" : "Hans";
+        if (map["zh-" + script]) return map["zh-" + script];
+      }
     }
     return null;
   }`;
@@ -89,6 +101,15 @@ export function pickRedirectUrl(
     if (best && map[best]) return map[best];
     const short = c.split("-")[0];
     if (map[short]) return map[short];
+    // BCP47 Chinese gotcha: browsers send `zh-CN` / `zh-TW` (region), but
+    // sites tag `zh-Hans` / `zh-Hant` (script) — without this mapping a
+    // zh-CN browser never matches and always falls back to the default.
+    // MUT:mut-zh-region (removing this block REDS the zh-CN/zh-TW tests).
+    if (short === "zh") {
+      const rt = c.replace(/^zh-/i, "").toUpperCase();
+      const script = (rt === "TW" || rt === "HK" || rt === "MO") ? "Hant" : "Hans";
+      if (map[`zh-${script}`]) return map[`zh-${script}`];
+    }
   }
   return null;
 }
