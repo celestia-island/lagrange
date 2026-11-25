@@ -1,0 +1,214 @@
+/* lagrange modal system — vanilla JS port of shittim-chest's usePopupManager.
+ * Stack-based popup management with z-index allocation and body-scroll locking.
+ * Supports modals, drawers, popovers, toasts, tooltips.
+ *
+ * `modal.js` beside this file is emitted output (tools/scripts/build-embedded-ts.ts);
+ * edit THIS file. Types are the only change — the body keeps its original
+ * ES5 shapes so the shipped bytes are equivalent.
+ */
+export {};
+
+/** What `register` returns and `window.lgModal` hands back to callers. */
+interface PopupEntry {
+  id: string;
+  kind: string;
+  zIndex: number;
+  locksScroll: boolean;
+  title: string;
+}
+
+/** The stack projection callers introspect. */
+interface PopupStackRow {
+  id: string;
+  kind: string;
+  zIndex: number;
+  title: string;
+}
+
+interface RegisterOptions {
+  locksScroll?: boolean;
+  title?: string;
+}
+
+interface ToastOptions {
+  duration?: number;
+}
+
+interface LgModalApi {
+  createModal(content: string | Node | null, opts?: RegisterOptions & { width?: string }): string;
+  closeModal(id: string): void;
+  createToast(message: string, opts?: ToastOptions): string;
+  register(kind: string, opts?: RegisterOptions): PopupEntry;
+  unregister(id: string): void;
+  getStack(): PopupStackRow[];
+  getTop(): PopupEntry | null;
+}
+
+declare global {
+  interface Window {
+    lgModal?: LgModalApi;
+    /** Set on `document` by createModal so the Escape listener installs once. */
+    lgUI?: {
+      icon?: (name: string, size: number) => string;
+    };
+  }
+  interface Document {
+    /** Guards the one Escape handler this file installs; the page is untrusted
+     * ground for it (no `"use strict"` here, so the property sticks). */
+    _lgModalEsc?: boolean;
+  }
+}
+
+(function () {
+  "use strict";
+
+  var Z_BASE = 1000;
+  var Z_STEP = 2;
+  var registry: PopupEntry[] = [];
+  var scrollLockCount = 0;
+
+  function lockScroll() {
+    scrollLockCount++;
+    if (scrollLockCount === 1) {
+      document.body.style.overflow = "hidden";
+    }
+  }
+
+  function unlockScroll() {
+    scrollLockCount = Math.max(0, scrollLockCount - 1);
+    if (scrollLockCount === 0) {
+      document.body.style.overflow = "";
+    }
+  }
+
+  function register(kind: string, opts?: RegisterOptions): PopupEntry {
+    opts = opts || {};
+    var id = "lg-popup-" + Date.now() + "-" + Math.random().toString(36).substr(2, 6);
+    var z = Z_BASE + registry.length * Z_STEP;
+    var entry: PopupEntry = { id: id, kind: kind, zIndex: z, locksScroll: opts.locksScroll !== false, title: opts.title || "" };
+    registry.push(entry);
+    if (entry.locksScroll) lockScroll();
+    return entry;
+  }
+
+  function unregister(id: string) {
+    var idx = registry.findIndex(function (e) { return e.id === id; });
+    if (idx < 0) return;
+    var entry = registry[idx];
+    registry.splice(idx, 1);
+    if (entry.locksScroll) unlockScroll();
+  }
+
+  function getStack(): PopupStackRow[] {
+    return registry.map(function (e) { return { id: e.id, kind: e.kind, zIndex: e.zIndex, title: e.title }; });
+  }
+
+  function getTop(): PopupEntry | null {
+    return registry.length > 0 ? registry[registry.length - 1] : null;
+  }
+
+  // Create a modal overlay element.
+  function createModal(content: string | Node | null, opts?: RegisterOptions & { width?: string }): string {
+    opts = opts || {};
+    var entry = register("modal", { locksScroll: true, title: opts.title });
+    var overlay = document.createElement("div");
+    overlay.className = "hi-modal-overlay";
+    overlay.style.zIndex = String(entry.zIndex);
+    overlay.dataset.popupId = entry.id;
+
+    var dialog = document.createElement("div");
+    dialog.className = "hi-modal-dialog";
+    if (opts.width) dialog.style.maxWidth = opts.width;
+
+    var header = document.createElement("div");
+    header.className = "hi-modal-header";
+    var titleEl = document.createElement("span");
+    titleEl.className = "hi-modal-title";
+    titleEl.textContent = opts.title || "";
+    var closeBtn = document.createElement("button");
+    closeBtn.className = "hi-modal-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    // Close icon comes from the shared lgUI icon registry (fed by Rust's
+    // mdi_path table at page bootstrap) — no per-widget hard-coded paths.
+    closeBtn.innerHTML = window.lgUI && window.lgUI.icon ? window.lgUI.icon("close", 14) : "";
+    closeBtn.onclick = function () { closeModal(entry.id); };
+    header.appendChild(titleEl);
+    header.appendChild(closeBtn);
+
+    var body = document.createElement("div");
+    body.className = "hi-modal-body hi-scroll-container";
+    if (typeof content === "string") {
+      body.innerHTML = content;
+    } else if (content) {
+      body.appendChild(content);
+    }
+
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    // Overlay click closes (only if clicking the overlay itself, not the dialog).
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) closeModal(entry.id);
+    });
+
+    // ESC closes top modal.
+    if (!document._lgModalEsc) {
+      document._lgModalEsc = true;
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          var top = getTop();
+          if (top) closeModal(top.id);
+        }
+      });
+    }
+
+    return entry.id;
+  }
+
+  function closeModal(id: string) {
+    var overlay = document.querySelector('[data-popup-id="' + id + '"]');
+    if (overlay) {
+      overlay.classList.add("hi-modal-closing");
+      setTimeout(function () {
+        overlay.remove();
+        unregister(id);
+      }, 200);
+    } else {
+      unregister(id);
+    }
+  }
+
+  // Create a toast notification.
+  function createToast(message: string, opts?: ToastOptions): string {
+    opts = opts || {};
+    var entry = register("toast", { locksScroll: false });
+    var el = document.createElement("div");
+    el.className = "hi-toast";
+    el.style.zIndex = String(entry.zIndex);
+    el.dataset.popupId = entry.id;
+    el.textContent = message;
+    document.body.appendChild(el);
+    var duration = opts.duration || 3000;
+    setTimeout(function () {
+      el.classList.add("hi-toast-closing");
+      setTimeout(function () {
+        el.remove();
+        unregister(entry.id);
+      }, 200);
+    }, duration);
+    return entry.id;
+  }
+
+  // Expose API.
+  window.lgModal = {
+    createModal: createModal,
+    closeModal: closeModal,
+    createToast: createToast,
+    register: register,
+    unregister: unregister,
+    getStack: getStack,
+    getTop: getTop,
+  };
+})();

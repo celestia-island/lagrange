@@ -7,7 +7,7 @@
     "build": "vite build",
     "lint": "vue-tsc --noEmit --pretty false 2>&1 | grep -v node_modules || true",
     "test": "vitest run",
-    "build:ssr": "vite build --ssr scripts/ssr-render.mjs --outDir dist/ssr --emptyOutDir && node dist/ssr/ssr-render.js",
+    "build:ssr": "vite build --ssr scripts/ssr-render.ts --outDir dist/ssr --emptyOutDir && node dist/ssr/ssr-render.js",
     "build:docs": "vite build --mode docs-client",
     "build:docs:ssr": "vite build --mode docs-ssr",
     "build:docs:all": "pnpm build:docs && pnpm build:docs:ssr"
@@ -23,6 +23,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6",
     "@vitejs/plugin-vue-jsx": "^5",
+    "esbuild": "^0.28.2",
     "happy-dom": "^20",
     "sass-embedded": "^1.108.2",
     "typescript": "~6.0",

@@ -6,6 +6,10 @@ on:
     paths:
       - 'docs/**'
       - 'src/**'
+      # tools/ holds the compiler that emits the embedded runtime .js
+      # (src/comments/*.js, src/diagram.js) from its .ts sources — a change
+      # there changes the bytes cargo embeds on the next `just embedded`.
+      - 'tools/**'
       # styles/layout.scss is scss!-embedded into the built binary
       # (src/theme.rs) — it IS deployed chrome, so a styles-only change
       # must redeploy. Omitting it is the silent-staleness class this
@@ -16,8 +20,9 @@ on:
       - 'packages/webui/package.json'
       # The workspace file is what killed the #119 deploy: its release-age
       # settings decide WHICH hikari resolves, so it changes the shipped
-      # chrome. (The lockfile is gitignored, so it can never produce a
-      # tracked-diff event — do not list it; round 4 of #120.)
+      # chrome. (packages/webui/pnpm-lock.yaml is gitignored by
+      # packages/webui/.gitignore, so it is never a tracked-diff event —
+      # listing it would thread liveness like this; round 4 of #120.)
       - 'packages/webui/pnpm-workspace.yaml'
       # Build-shape input: outDir, the /assets/docs/ base and the SSR
       # entry all come from here and ship.
