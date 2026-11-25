@@ -445,9 +445,13 @@ try {
     hits: document.querySelectorAll('.lagrange-docs-search-hit').length,
     anyHitHasWord: [...document.querySelectorAll('.lagrange-docs-search-hit')].some((h) => (h.textContent ?? '').toLowerCase().includes(${JSON.stringify(WORD.toLowerCase())})),
     error: !!document.querySelector('.lagrange-docs-search-error'),
-    input: (() => { const b = document.querySelector('.lagrange-docs-search-panel input').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
+    // The ROW is the standard component's box ('.hk-search-input'): the
+    // clear button is a flex item at the box's right edge, past the bare
+    // input element's own rect — measuring the input would false-red the
+    // right-edge comparison on every phone run (PR #146 patrol, 2026-11-25).
+    input: (() => { const b = document.querySelector('.lagrange-docs-search-panel .hk-search-input').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
     clear: (() => { const e = document.querySelector('.lagrange-docs-search-panel .hk-search-input-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.right)]; })(),
-    inputRight: (() => { const b = document.querySelector('.lagrange-docs-search-panel input').getBoundingClientRect(); return Math.round(b.right); })(),
+    inputRight: (() => { const b = document.querySelector('.lagrange-docs-search-panel .hk-search-input').getBoundingClientRect(); return Math.round(b.right); })(),
   })`);
   const s = search ? JSON.parse(search) : { hits: 0, error: true, input: null, clear: null };
   // Bind the answer to the QUESTION: a box that lists every doc regardless of
