@@ -17,7 +17,8 @@ minimumReleaseAgeExclude:
   # Same-day pickup (2026-11-25): brand-as-trigger, hikari#1544.
   # Same-day pickup (2026-11-25): solar system-mode boot asset, hikari#1550.
   # Same-day pickup (2026-11-25): custom-theme memo replay, hikari#1552.
-  - '@celestia-island/hikari@0.55.486'
+  # Same-day pickup (2026-11-25): Rust-derived theme vars, hikari#1557/#1560.
+  - '@celestia-island/hikari@0.55.488'
   # Same-day pickup (2026-11-24): phone nav drawer, hikari#1535.
   - '@celestia-island/hikari@0.55.479'
   - '@celestia-island/tairitsu-host-client@0.1.0'
