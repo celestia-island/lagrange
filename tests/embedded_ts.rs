@@ -151,9 +151,18 @@ fn check_pipeline() -> (bool, String) {
 fn drift_check_reports_nothing() {
     if !node_available() {
         if std::env::var("LAGRANGE_ALLOW_NO_NODE").as_deref() == Ok("1") {
-            eprintln!(
-                "embedded_ts: SKIPPED — node is not on PATH and LAGRANGE_ALLOW_NO_NODE=1. \
-                 The committed artifacts are NOT verified in this run."
+            // A skip that only shows up as a green test is invisible to a
+            // merged-green reader. `cargo test` captures test stdout/stderr
+            // and reprints it only for FAILING tests, so `eprintln!` alone
+            // would still vanish on a green run (measured). stderr is not
+            // part of the test-output channel, so this line reaches the
+            // reader with no flag and stays greppable in any log:
+            // `WARN embedded_ts: SKIPPED`.
+            use std::io::Write as _;
+            let _ = writeln!(
+                std::io::stderr(),
+                "WARN embedded_ts: SKIPPED — node is not on PATH and LAGRANGE_ALLOW_NO_NODE=1: \
+                 the committed embedded artifacts are NOT verified in this run"
             );
             return;
         }

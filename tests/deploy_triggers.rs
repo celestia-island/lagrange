@@ -191,14 +191,22 @@ fn deploy_triggers_cover_every_input_that_changes_the_shipped_site() {
 
 #[test]
 fn deploy_triggers_never_list_an_untracked_path() {
-    // `paths:` matches changed TRACKED files. The webui lockfile is
-    // gitignored (packages/webui/.gitignore), so listing it reads like a
-    // guarantee while delivering nothing — review round 4 of PR #120.
+    // `paths:` matches changed TRACKED files, so a gitignored path listed
+    // there reads like a guarantee while delivering nothing — review round
+    // 4 of PR #120.
+    //
+    // The webui lockfile is one of those: `packages/webui/.gitignore` ignores
+    // it, so it is never tracked (verify with `git ls-files packages/webui | grep lock`
+    // — which returns nothing; `create-lagrange/pnpm-lock.yaml`, a different
+    // package, IS tracked). What resolves lagrange's webui dependency graph is
+    // `packages/webui/pnpm-workspace.yaml` (exact release-age pins), which this
+    // trigger list does carry.
     let triggers = deploy_triggers();
     assert!(
         !triggers.iter().any(|t| t.contains("pnpm-lock")),
-        "pnpm-lock.yaml is gitignored and can never produce a tracked-diff \
-         event; do not list it as a deploy trigger. Parsed: {triggers:?}"
+        "packages/webui/pnpm-lock.yaml is gitignored (packages/webui/.gitignore) \
+         and never tracked, so it can never produce a tracked-diff event; do not \
+         list it as a deploy trigger. Parsed: {triggers:?}"
     );
 
     // Guard the premise: if the lockfile ever becomes tracked, both the
@@ -211,9 +219,9 @@ fn deploy_triggers_never_list_an_untracked_path() {
         if status.code().is_some() {
             assert!(
                 status.success(),
-                "packages/webui/pnpm-lock.yaml is no longer gitignored — it can \
-                 now trigger deploys, so revisit the trigger list and the \
-                 --no-frozen-lockfile choice"
+                "packages/webui/pnpm-lock.yaml is no longer gitignored — it is \
+                 now tracked and can trigger deploys, so revisit the trigger \
+                 list and the --no-frozen-lockfile choice"
             );
         }
     }

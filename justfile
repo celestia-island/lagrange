@@ -44,8 +44,12 @@ build:
 # compares sha256. Different esbuild VERSION between tools/ and packages/webui
 # is a hard failure (one esbuild per tree); install/build are separate steps
 # so the version guard is legible when it fires.
-# [script('python')]: bash is banned from justfile recipes (#66).
-[script('python')]
+# [script('python3')]: bash is banned from justfile recipes (#66). The
+# interpreter is python3, not python: distributions increasingly ship no
+# bare `python`, so a `python` recipe dies with FileNotFoundError the first
+# time the install step has to run (`_ledger/tool-exemptions.md` gates the
+# same expectation for .sh/.ps1 tools).
+[script('python3')]
 embedded:
     import hashlib, json, os, subprocess, sys
 
