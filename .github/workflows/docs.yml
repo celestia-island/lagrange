@@ -6,6 +6,10 @@ on:
     paths:
       - 'docs/**'
       - 'src/**'
+      # tools/ holds the compiler that emits the embedded runtime .js
+      # (src/comments/*.js, src/diagram.js) from its .ts sources — a change
+      # there changes the bytes cargo embeds on the next `just embedded`.
+      - 'tools/**'
       # styles/layout.scss is scss!-embedded into the built binary
       # (src/theme.rs) — it IS deployed chrome, so a styles-only change
       # must redeploy. Omitting it is the silent-staleness class this

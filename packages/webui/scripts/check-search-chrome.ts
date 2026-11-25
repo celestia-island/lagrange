@@ -13,7 +13,7 @@
 //      `bind(globalThis)` passes there while Chrome (its own realm) rejects
 //      it with "Illegal invocation" (round 4 of #124).
 //
-// Usage: node scripts/check-search-chrome.mjs <served-base-url> [page-path] [query-word]
+// Usage: node scripts/check-search-chrome.ts <served-base-url> [page-path] [query-word]
 //   page-path   — a page that exists in the build. Default: auto-discovered
 //                 from the served search_meta.json (the `/index.html`
 //                 document of the index's first language, served at
@@ -37,23 +37,56 @@
 // Exit 1 = at least one check failed; exit 2 =
 // the run could not start (no base URL, undiscoverable page/word, shard
 // count mismatch, or no reachable CDP endpoint).
+//
+// SOURCE is TypeScript, run straight off the tree by Node 24's type stripping
+// (`node scripts/check-search-chrome.ts <base-url>`), so it must stay
+// ERASABLE — no enums, no namespaces, no parameter properties. Note the
+// extension: Node's V8-backed stripper rejects `.tsx` outright
+// (ERR_UNKNOWN_FILE_EXTENSION; measured), and `<…>` casts would be taken for
+// JSX there anyway — this file therefore uses annotations and `as` only.
 import { unlinkSync, writeFileSync } from "node:fs";
 
-const base = process.argv[2];
+/** One document the served index knows about. */
+interface Doc {
+  id: number;
+  lang: string;
+  url: string;
+  title: string;
+  snippet?: string;
+  chunks?: Record<string, { snippet?: string }>;
+}
+
+/** The served `search_meta.json`: docs plus the shard file names. */
+interface SearchMeta {
+  docs: Doc[];
+  shards: string[];
+}
+
+/** The index as this script actually uses it: docs grouped by language. */
+interface SearchIndex {
+  meta: SearchMeta;
+  byLang: Map<string, Doc[]>;
+}
+
+/** One search hit as it appears in a shard: `[docId, chunk]` postings. */
+type Posting = [number, number];
+
+const base: string | undefined = process.argv[2];
 
 /** Everything the served build publishes: docs keyed by language, the
  * shard names, and each shard's postings. Shared by both discoveries —
  * one fetch of the meta, shards pulled lazily. */
-async function loadSearchIndex(base) {
+async function loadSearchIndex(base: string): Promise<SearchIndex | null> {
   try {
     const res = await fetch(`${base}/search_meta.json`, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) return null;
-    const meta = await res.json();
+    const meta = (await res.json()) as SearchMeta;
     if (!Array.isArray(meta?.docs) || !Array.isArray(meta?.shards)) return null;
-    const byLang = new Map();
+    const byLang = new Map<string, Doc[]>();
     for (const doc of meta.docs) {
-      if (!byLang.has(doc.lang)) byLang.set(doc.lang, []);
-      byLang.get(doc.lang).push(doc);
+      const list = byLang.get(doc.lang) ?? [];
+      list.push(doc);
+      byLang.set(doc.lang, list);
     }
     return { meta, byLang };
   } catch {
@@ -64,7 +97,7 @@ async function loadSearchIndex(base) {
 /** The page the checks should load: the index's own entry document for a
  * language the build actually ships (the language root `/<lang>/` serves
  * it). Doc urls are flat (`/index.html`) per the build contract. */
-async function discoverPage(base) {
+async function discoverPage(base: string): Promise<string | null> {
   const index = await loadSearchIndex(base);
   const docs = index?.byLang?.get([...(index?.byLang?.keys() ?? [])][0]);
   const doc = docs?.find((d) => d.url === "/index.html") ?? docs?.[0];
@@ -74,7 +107,7 @@ async function discoverPage(base) {
 /** Pick a query word the served build is guaranteed to answer: the
  * lowercase alphanumeric token (the exact shape `tokenizeQuery` passes
  * through unchanged) with the most postings on the page language. */
-async function discoverWord(base, pagePath) {
+async function discoverWord(base: string, pagePath: string): Promise<string | null> {
   const index = await loadSearchIndex(base);
   if (!index) return null;
   // Match the page against the build's OWN language segments first — a
@@ -88,7 +121,7 @@ async function discoverWord(base, pagePath) {
   if (!lang || !index.byLang.has(lang)) return null;
   const langDocs = new Set((index.byLang.get(lang) ?? []).map((d) => d.id));
   if (!langDocs.size) return null;
-  let best = null;
+  let best: [string, number] | null = null;
   // The CLIENT hard-codes its shard count (`SHARD_COUNT = 16` in
   // `docsShell/search.ts`, mirroring `src/search.rs`'s constant), so
   // addressing parity holds only when the served index really has 16
@@ -100,16 +133,18 @@ async function discoverWord(base, pagePath) {
     process.exit(2);
   }
   for (const [shardIdx, name] of index.meta.shards.entries()) {
-    let shard;
+    let shard: Record<string, unknown> | undefined;
     try {
       const res = await fetch(`${base}/${name}`, { signal: AbortSignal.timeout(10000) });
       if (!res.ok) continue;
-      shard = await res.json();
+      shard = (await res.json()) as Record<string, unknown>;
     } catch {
       continue;
     }
-    for (const [word, postings] of Object.entries(shard)) {
-      if (!/^[a-z][a-z0-9]+$/.test(word) || !Array.isArray(postings)) continue;
+    const shardEntries = Object.entries(shard ?? {});
+    for (const [word, raw] of shardEntries) {
+      if (!/^[a-z][a-z0-9]+$/.test(word) || !Array.isArray(raw)) continue;
+      const postings = raw as Posting[];
       // The client looks a word up in `shardFor(word)` = charCodeAt(0) %
       // shardCount, NOT in the shard it happened to be served from. Require
       // the two to agree, so the "cannot answer zero hits" guarantee is
@@ -136,7 +171,7 @@ try {
 }
 
 if (!base) {
-  console.error("usage: check-search-chrome.mjs <served-base-url> [page-path] [query-word]");
+  console.error("usage: check-search-chrome.ts <served-base-url> [page-path] [query-word]");
   process.exit(2);
 }
 const PAGE = process.argv[3] ?? (await discoverPage(base));
@@ -161,25 +196,36 @@ const CDP = "http://127.0.0.1:9222";
 // "no browser is listening", which is the overwhelmingly common cause. The
 // AbortSignal bounds a connect-then-hang endpoint, which would otherwise
 // stall before any socket exists.
-const tab = await (async () => {
+/** The CDP tab target this run opens and closes. */
+interface TabTarget {
+  id: string;
+  webSocketDebuggerUrl: string;
+}
+
+const tab: TabTarget = await (async (): Promise<TabTarget> => {
   try {
     const res = await fetch(`${CDP}/json/new?about:blank`, { method: "PUT", signal: AbortSignal.timeout(15000) });
-    const created = await res.json();
+    const created = (await res.json()) as Partial<TabTarget>;
     if (!created?.webSocketDebuggerUrl) {
       // The tab exists but is unusable — close it before bailing out, since
       // this exit happens before the `finally` that owns cleanup.
       await fetch(`${CDP}/json/close/${created?.id}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
       throw new Error("the CDP tab reply carried no webSocketDebuggerUrl");
     }
-    return created;
+    return created as TabTarget;
   } catch (e) {
-    console.error(`cannot reach the CDP endpoint ${CDP} (${e?.cause?.code ?? e?.message ?? e}) — start a browser with --remote-debugging-port=9222 first`);
+    const err = e as { cause?: { code?: string }; message?: string };
+    console.error(`cannot reach the CDP endpoint ${CDP} (${err?.cause?.code ?? err?.message ?? e}) — start a browser with --remote-debugging-port=9222 first`);
     process.exit(2);
   }
 })();
-let sock;
+let sock: WebSocket | undefined;
 let id = 0;
-const pending = new Map();
+/** Reply callbacks by request id; a reply or a close resolves them.
+ * A socket close resolves with nothing at all (the request will never be
+ * answered), so the callback must accept `undefined` — that is what keeps a
+ * dead socket from leaving a pending promise unanswered. */
+const pending = new Map<number, (result: any) => void>();
 /** Close the debugger tab we opened; called from the one `finally` so no
  * path (including a refused websocket) leaves it behind. */
 async function closeTab() {
@@ -190,7 +236,7 @@ async function closeTab() {
     /* tab already gone */
   }
 }
-const send = (method, params = {}) =>
+const send = (method: string, params: Record<string, unknown> = {}): Promise<any> =>
   new Promise((res, reject) => {
     if (!sock || sock.readyState !== 1) {
       reject(new Error(`debugger socket is not open (readyState=${sock?.readyState}) — cannot send ${method}`));
@@ -207,8 +253,8 @@ const send = (method, params = {}) =>
     sock.send(JSON.stringify({ id: i, method, params }));
   });
 
-const failures = [];
-const check = (name, ok, detail) => {
+const failures: string[] = [];
+const check = (name: string, ok: boolean | null, detail?: string) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
   if (!ok) failures.push(name);
 };
@@ -216,7 +262,7 @@ const check = (name, ok, detail) => {
 /** Evaluate an expression; a thrown error (e.g. a null deref on a red
  * build) becomes `null` so the check that reads it reports FAIL instead
  * of killing the run before the remaining checks and the tab cleanup. */
-async function safe(expression) {
+async function safe(expression: string): Promise<any> {
   const r = await send("Runtime.evaluate", { expression: `(() => { try { return ${expression}; } catch { return null; } })()`, returnByValue: true });
   return r?.result?.value ?? null;
 }
@@ -225,22 +271,23 @@ async function safe(expression) {
  * Registered on the socket inside the main `try` (the socket is opened
  * there so `finally` can close it). */
 const CONSOLE_PROBE = "[probe] console channel live";
-const consoleErrors = [];
-function collectConsole(ev) {
+const consoleErrors: string[] = [];
+function collectConsole(ev: MessageEvent) {
   const m = JSON.parse(ev.data);
   // Vue's hydration complaints are warnings in some builds and errors in
   // others; collecting both keeps the "no mismatch" oracle independent of
   // which level the framework picks (a level change must not silently make
   // the oracle vacuous).
   if (m.method === "Runtime.consoleAPICalled" && (m.params.type === "error" || m.params.type === "warning")) {
-    consoleErrors.push(m.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
+    const args: Array<{ value?: unknown; description?: string }> = m.params.args ?? [];
+    consoleErrors.push(args.map((a) => a.value ?? a.description ?? "").join(" "));
   }
 }
 
 /** Poll `read()` until it returns truthy, bounded — cold-sandbox first
  * loads hydrate in seconds, not the fixed-sleep 2.5s the warm preview
  * needed; fixed sleeps turned every cold run into false-reds. */
-async function poll(read, tries = 20, stepMs = 500) {
+async function poll(read: () => Promise<any>, tries = 20, stepMs = 500): Promise<any> {
   for (let i = 0; i < tries; i++) {
     const v = await read();
     if (v) return v;
@@ -249,7 +296,7 @@ async function poll(read, tries = 20, stepMs = 500) {
   return await read();
 }
 
-async function load(path, width, height, mobile) {
+async function load(path: string, width: number, height: number, mobile: boolean) {
   consoleErrors.length = 0;
   await send("Network.setCacheDisabled", { cacheDisabled: true });
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile });
@@ -281,24 +328,26 @@ try {
       pending.delete(i);
     }
   };
-  sock.onmessage = (ev) => {
+  sock.onmessage = (ev: MessageEvent) => {
     collectConsole(ev);
     const m = JSON.parse(ev.data);
-    if (pending.has(m.id)) {
-      pending.get(m.id)(m.result ?? m.error);
+    const reply = pending.get(m.id);
+    if (reply) {
+      reply(m.result ?? m.error);
       pending.delete(m.id);
     }
   };
   // A dead or unresponsive CDP endpoint must fail loud and fast: without a
   // bound this await never settles (the socket neither opens nor errors on
   // some failures) and the run hangs instead of reporting.
-  await new Promise((resolve, reject) => {
+  const socket = sock;
+  await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`CDP endpoint ${CDP} did not open a websocket within 15s`)), 15000);
-    sock.onopen = () => {
+    socket.onopen = () => {
       clearTimeout(timer);
       resolve();
     };
-    sock.onerror = () => {
+    socket.onerror = () => {
       clearTimeout(timer);
       reject(new Error(`CDP endpoint ${CDP} refused the websocket — is a browser running with --remote-debugging-port=9222?`));
     };
@@ -366,7 +415,7 @@ try {
   // `hk-icon-button-<n>` class yields '?' for all of them, and a bare
   // `new Set(...).size === 1` would then compare one shared '?' and pass —
   // measuring nothing (round 2 of #125).
-  const numeric = sizeList.length >= 2 && sizeList.every((s) => /^\d+$/.test(s));
+  const numeric = sizeList.length >= 2 && sizeList.every((s: string) => /^\d+$/.test(s));
   const phoneUniform = numeric && new Set(sizeList).size === 1;
   check(
     "phone: every header action renders the same size",
@@ -498,7 +547,7 @@ try {
 
   const dSizes = await safe(`JSON.stringify([...document.querySelectorAll('.s-admin-header-actions button')].map((b) => String(b.className).match(/hk-icon-button-(\\d+)/)?.[1] ?? '?'))`);
   const dSizeList = dSizes ? JSON.parse(dSizes) : [];
-  const dNumeric = dSizeList.length >= 2 && dSizeList.every((s) => /^\d+$/.test(s));
+  const dNumeric = dSizeList.length >= 2 && dSizeList.every((s: string) => /^\d+$/.test(s));
   const desktopUniform = dNumeric && new Set(dSizeList).size === 1;
   // Uniform on both sides is not enough: a phone row stuck at the DESKTOP
   // size is exactly the 28/32 regression class (uniform 32 everywhere would

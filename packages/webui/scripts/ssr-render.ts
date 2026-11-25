@@ -10,6 +10,12 @@
 // This runs inside the webui build (`pnpm build && pnpm build:ssr`).
 // Without Node the plain `vite build` output remains a working SPA —
 // progressive enhancement, no hard dependency.
+//
+// SOURCE is TypeScript; `vite build --ssr` bundles it to
+// dist/ssr/ssr-render.js (the artifact), so the entry here is a .ts module
+// like its sibling scripts/ssr-docs.ts. Nothing in it needs annotations
+// beyond the types the imports already carry — the value is uniform typing
+// with the rest of the lane, and `vue-tsc` now checks this file too.
 import { createSSRApp } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { readFileSync, writeFileSync } from "node:fs";

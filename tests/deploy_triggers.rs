@@ -137,9 +137,23 @@ fn deploy_triggers() -> Vec<String> {
 /// renderer; the vite config owns the output shape and the
 /// `/assets/docs/` base; `LICENSE` is copied into the output by
 /// `copy_root_assets`.
+///
+/// `src/**` also covers the TypeScript sources of the embedded browser
+/// runtime (`src/comments/*.ts`, `src/diagram.ts`): editing one and running
+/// `just embedded` changes the emitted `.js` the binary embeds, so a source
+/// change ships different bytes. `tools/**` holds the compiler that turns
+/// them into the embedded `.js` — a change there changes the artifacts on the
+/// next regen, so it must redeploy for the same reason.
 const REQUIRED: &[(&str, &str)] = &[
     ("docs/**", "content, SUMMARY, site config, logo"),
-    ("src/**", "renderer, site builder, embedded JS/assets"),
+    (
+        "src/**",
+        "renderer, site builder, embedded JS/assets (incl. the .ts sources of the embedded runtime)",
+    ),
+    (
+        "tools/**",
+        "the compiler that emits the embedded runtime .js from its .ts sources",
+    ),
     (
         "styles/**",
         "scss!-embedded chrome (legacy lane inlines it)",
