@@ -26,15 +26,24 @@ jobs:
         # binary inside is static — no runtime libc contract on any user
         # machine, and the runner OS stops mattering.
         include:
+          # archive_target = the triple consumers expect IN THE FILENAME.
+          # The linux leg builds musl but publishes under the GNU triple:
+          # the binstall URL pattern ([package.metadata.binstall]) and
+          # create-lagrange both fetch by the user machine's gnu triple.
+          # Renaming that contract is a breaking change for every consumer,
+          # so the static binary ships under the historical name.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: tar.gz
+            archive_target: x86_64-unknown-linux-gnu
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
+            archive_target: aarch64-apple-darwin
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
+            archive_target: x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v7
@@ -95,22 +104,22 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../lagrange-${{ github.ref_name }}-${{ matrix.target }}.tar.gz lagrange
+          tar czf ../../../lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.tar.gz lagrange
           cd ../../..
 
       - name: Package (windows)
         if: matrix.archive == 'zip'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../lagrange-${{ github.ref_name }}-${{ matrix.target }}.zip lagrange.exe
+          7z a ../../../lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.zip lagrange.exe
           cd ../../..
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            lagrange-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
-            lagrange-${{ github.ref_name }}-${{ matrix.target }}.zip
+            lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.tar.gz
+            lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.zip
 
   release-notes:
     needs: build
