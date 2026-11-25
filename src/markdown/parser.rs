@@ -75,6 +75,7 @@ fn parse_body_spanned_at(input: &str, body_line: usize, list_depth: usize) -> Ve
         stack: Vec::new(),
         ctx: &mut ctx,
         list_depth,
+        container_depth: 0,
     };
     parse_spanned_lines(
         &lines[body_line..],
@@ -155,6 +156,11 @@ struct Scan<'a> {
     /// How many list nesting levels the enclosing item scans already opened.
     /// Bounds `finish_item -> parse -> parse_list -> finish_item` recursion.
     list_depth: usize,
+    /// How many blockquote / div container levels the enclosing scans already
+    /// opened. Bounds `parse_spanned_lines -> parse_blockquote ->
+    /// parse_spanned_lines` recursion (issue #141: `> ` * 900 aborted the
+    /// build with a stack overflow before this existed).
+    container_depth: usize,
 }
 
 /// Content-addressed block id: `b-` + first 8 hex of the SHA-256 of the
@@ -501,6 +507,12 @@ fn parse_center_container(
     if !trimmed.starts_with("<div") {
         return None;
     }
+    // Over the container cap, do not open another container scan: the
+    // dispatcher falls through to `parse_html_block`, which passes the div
+    // through as raw HTML (issue #141).
+    if scan.container_depth >= MAX_CONTAINER_DEPTH {
+        return None;
+    }
     let gt = trimmed.find('>')?;
 
     let attrs = trimmed[4..gt].trim().to_string();
@@ -539,6 +551,7 @@ fn parse_center_container(
         stack: scan.stack.clone(),
         ctx: scan.ctx,
         list_depth: scan.list_depth,
+        container_depth: scan.container_depth + 1,
     };
     let children = parse_spanned_lines(
         &lines[i + 1..j],
@@ -564,9 +577,12 @@ fn parse_blockquote(
     if !lines[i].trim_start().starts_with('>') {
         return None;
     }
+    let over_cap = scan.container_depth >= MAX_CONTAINER_DEPTH;
     // Peel the `>` prefix per line while keeping every inner line's true
     // position in the file: the inner byte tables point at the first byte
     // AFTER the prefix, so inner spans slice the original text correctly.
+    // Over the container cap every ADJACENT `>` marker strips instead, so
+    // the degraded text run cannot re-enter this parser (issue #141).
     let mut inner_lines: Vec<&str> = Vec::new();
     let mut inner_starts: Vec<usize> = Vec::new();
     let mut inner_ends: Vec<usize> = Vec::new();
@@ -574,11 +590,27 @@ fn parse_blockquote(
     while j < lines.len() {
         let t = lines[j].trim_start();
         if let Some(rest) = t.strip_prefix('>') {
-            let rest = rest.strip_prefix(' ').unwrap_or(rest);
+            // Under the cap one marker peels per pass (the inner scan sees
+            // the next level); over it adjacent markers (with their single
+            // space) strip so the degraded text run cannot re-enter this
+            // parser.
+            let rest = if over_cap {
+                let mut r = rest;
+                while let Some(deeper) = r.strip_prefix('>') {
+                    r = deeper.strip_prefix(' ').unwrap_or(deeper);
+                }
+                r
+            } else {
+                rest.strip_prefix(' ').unwrap_or(rest)
+            };
             let prefix_len = lines[j].len() - rest.len();
             inner_lines.push(rest);
-            inner_starts.push(starts[j] + prefix_len);
-            inner_ends.push(starts[j] + prefix_len + rest.len());
+            // The over-cap branch never reads the byte tables (it emits one
+            // dedented paragraph), so skip the bookkeeping there.
+            if !over_cap {
+                inner_starts.push(starts[j] + prefix_len);
+                inner_ends.push(starts[j] + prefix_len + rest.len());
+            }
             j += 1;
         } else if !lines[j].trim().is_empty() {
             // lazy continuation
@@ -589,6 +621,19 @@ fn parse_blockquote(
         } else {
             break;
         }
+    }
+    if over_cap {
+        // Degrade to a plain paragraph: every marker is already stripped, so
+        // re-scanning the lines cannot recurse again. Content survives as
+        // text; only the (absurdly deep) quoting structure is dropped.
+        let mut buf = String::new();
+        for line in &inner_lines {
+            if !buf.is_empty() {
+                buf.push('\n');
+            }
+            buf.push_str(line);
+        }
+        return Some((Block::Paragraph(parse_inline(&buf)), j));
     }
     // Same line-offset discipline as the div/center container: the peeled
     // inner line array starts at the blockquote's OWN first line (`i`), so
@@ -601,6 +646,7 @@ fn parse_blockquote(
         stack: scan.stack.clone(),
         ctx: scan.ctx,
         list_depth: scan.list_depth,
+        container_depth: scan.container_depth + 1,
     };
     let children = parse_spanned_lines(&inner_lines, &inner_starts, &inner_ends, &mut inner);
     Some((Block::Blockquote(children), j))
@@ -670,6 +716,16 @@ struct RawItem {
 /// markers degrade to text. Real docs nest two or three levels; the cap only
 /// exists so pathological input (`"- " * 1000`) cannot overflow the stack.
 const MAX_LIST_DEPTH: usize = 8;
+
+/// How many blockquote / div container levels may nest before further markers
+/// degrade to text (quotes) or raw HTML (divs). Real docs nest two or three;
+/// the cap exists so pathological input cannot overflow the stack (#141).
+///
+/// This is NOT the total scan ceiling on its own: `finish_item`'s item
+/// re-scan resets `container_depth` to 0, so the effective worst case is
+/// `MAX_LIST_DEPTH` re-scan passes × this cap. Raising either constant
+/// multiplies into the stack budget.
+const MAX_CONTAINER_DEPTH: usize = 16;
 
 /// Parse one list block starting at line `i` (at nesting level `depth`).
 ///
@@ -1450,6 +1506,115 @@ mod list_tests {
         let src: String = std::iter::repeat_n("- ", 2000).collect::<String>() + "x\n";
         let blocks = parse(&src);
         assert!(!blocks.is_empty(), "deep nesting produced nothing");
+    }
+
+    #[test]
+    fn deep_blockquotes_degrade_instead_of_overflowing() {
+        // Issue #141: `> ` * 900 used to recurse parse_spanned_lines ->
+        // parse_blockquote once per level until the stack aborted the whole
+        // build (builds run in-process for MCP, so the session died too).
+        let src: String = std::iter::repeat_n("> ", 2000).collect::<String>() + "deep text\n";
+        let blocks = parse(&src);
+        assert!(!blocks.is_empty(), "deep quoting produced nothing");
+        assert!(
+            joined_blocks_text(&blocks).contains("deep text"),
+            "content lost: {blocks:?}"
+        );
+    }
+
+    #[test]
+    fn deep_divs_degrade_instead_of_overflowing() {
+        // The div/center cap mirrors the quote cap: `parse_center_container`
+        // refuses past it and the dispatcher falls through to raw-HTML
+        // handling, which must not recurse either.
+        let body: String = std::iter::repeat_n("<div>\n", 300).collect::<String>()
+            + "kept div text\n"
+            + &"</div>\n".repeat(300);
+        let blocks = parse(&body);
+        assert!(
+            joined_blocks_text(&blocks).contains("kept div text"),
+            "div content lost: {blocks:?}"
+        );
+    }
+
+    #[test]
+    fn quote_ladders_inside_list_rescans_stay_bounded() {
+        // Worst case is the PRODUCT of the two caps (each item re-scan resets
+        // container_depth); keep a mixture test pinned to that shape.
+        let unit = "- ".to_string() + &"> ".repeat(MAX_CONTAINER_DEPTH + 1);
+        let src: String = std::iter::repeat_n(unit + "\n", 20).collect();
+        let blocks = parse(&src);
+        assert!(!blocks.is_empty(), "mixed ladder produced nothing");
+    }
+
+    #[test]
+    fn blockquotes_within_the_cap_still_nest() {
+        // `>>` after `> a` is a sibling block inside the outer quote (the peel
+        // strips one marker per pass), so the deeper level hangs off the last
+        // child of each enclosing quote, not off the item paragraph.
+        let blocks = parse("> a\n>> b\n>>> c\n");
+        let mut inner = &blocks[0];
+        for _ in 0..2 {
+            let Block::Blockquote(children) = inner else {
+                panic!("expected nested blockquote, got {inner:?}");
+            };
+            inner = &children.last().expect("non-empty").block;
+        }
+        let Block::Blockquote(leaf) = inner else {
+            panic!("expected the third level, got {inner:?}");
+        };
+        assert!(matches!(leaf[0].block, Block::Paragraph(_)));
+    }
+
+    #[test]
+    fn blockquotes_past_the_cap_flatten_to_text() {
+        // MAX_CONTAINER_DEPTH + 3 levels: still bounded, still keeps content.
+        let src: String =
+            std::iter::repeat_n("> ", MAX_CONTAINER_DEPTH + 3).collect::<String>() + "kept text\n";
+        let blocks = parse(&src);
+        assert!(
+            joined_blocks_text(&blocks).contains("kept text"),
+            "content lost past the cap: {blocks:?}"
+        );
+    }
+
+    /// Flatten every text run out of a block tree (test helper).
+    fn joined_blocks_text(blocks: &[Block]) -> String {
+        let mut out = String::new();
+        for b in blocks {
+            match b {
+                Block::Paragraph(inlines) => {
+                    for i in inlines {
+                        if let Inline::Text(t) = i {
+                            out.push_str(t);
+                        }
+                    }
+                }
+                Block::Blockquote(inner) | Block::Center(inner) => {
+                    let owned: Vec<Block> = inner.iter().map(|sb| sb.block.clone()).collect();
+                    out.push_str(&joined_blocks_text(&owned));
+                }
+                Block::List { items, .. } => {
+                    for item in items {
+                        for i in &item.inlines {
+                            if let Inline::Text(t) = i {
+                                out.push_str(t);
+                            }
+                        }
+                        out.push_str(&joined_blocks_text(&item.children));
+                    }
+                }
+                // Over-cap divs degrade to raw HTML: count the passthrough
+                // text too, or the degradation looks like content loss.
+                Block::Html(raw) => out.push_str(raw),
+                Block::Div { children, .. } => {
+                    let owned: Vec<Block> = children.iter().map(|sb| sb.block.clone()).collect();
+                    out.push_str(&joined_blocks_text(&owned));
+                }
+                _ => {}
+            }
+        }
+        out
     }
 
     #[test]
