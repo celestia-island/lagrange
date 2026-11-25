@@ -8,6 +8,19 @@
 // (second — "仍然不是直接打开二级窗口"). The header therefore stays a
 // compact action row, and the search gets a real dialog.
 //
+// The FIELD is the upstream standard part (2026-11-25 user direction:
+// the hand-rolled input+× pair was visibly not a library component) —
+// HkSearchInput, the same search box every family surface uses: leading
+// glyph, the family's input chrome, and the built-in clear ✕ with its
+// own refocus. Its undeclared attributes land on the FIELD element (the
+// HkInput contract), so the focus wiring rides through.
+//
+// The modal's TITLE and the trigger's accessible name are nouns WITHOUT
+// an ellipsis (2026-11-25 user direction — "标题那个搜索后面不要带省略
+// 号"): `searchTitle` ("Search" / "搜索"). The FIELD's placeholder keeps
+// the typing affordance (`search` — "Search…" / "搜索…", the same
+// convention hikari's own HkSearchInput placeholder ships).
+//
 // Queries the build's sharded static index (DocsSearch) in the CURRENT
 // page language and renders the hits as plain anchors (real links,
 // open-in-new-tab works).
@@ -28,7 +41,7 @@ import {
   watchEffect,
   type PropType,
 } from "vue";
-import { HkIconButton, HkModal, useI18n } from "@celestia-island/hikari";
+import { HkIconButton, HkModal, HkSearchInput, useI18n } from "@celestia-island/hikari";
 import { Search } from "lucide-vue-next";
 import type { DocsSiteMeta } from "./types";
 import { DocsSearch, type Hit } from "./search";
@@ -72,7 +85,6 @@ export const DocsSearchBox = defineComponent({
      * stay visible until the new answer lands). */
     const busy = ref(false);
     const rootRef = ref<HTMLElement | null>(null);
-    const inputRef = ref<HTMLInputElement | null>(null);
     // `fetch` must be bound to `window`: DocsSearch stores it on an
     // instance field and calls it as a method, which makes `this` the
     // DocsSearch instance — and Chrome throws "Illegal invocation" for a
@@ -101,7 +113,9 @@ export const DocsSearchBox = defineComponent({
       // is still standing in front of it (round 7 of #124's rule, which
       // the modal makes universal: nothing to fold away, no invisible
       // backdrop to trap a header click).
-      inputRef.value?.focus();
+      // Refocusing is HkSearchInput's own clear contract: its ✕ hands
+      // focus back to the field, so a clear keeps typing alive without
+      // this component holding an input ref.
     }
 
     async function run() {
@@ -170,42 +184,6 @@ export const DocsSearchBox = defineComponent({
       el.dataset.busy = busy.value ? "true" : "false";
     });
 
-    const field = () => (
-      <span class="lagrange-docs-search-field">
-      <input
-        class="lagrange-docs-search-input"
-        ref={inputRef}
-        type="search"
-        placeholder={t("lagrange::docs.search", "Search…")}
-        aria-label={t("lagrange::docs.search", "Search…")}
-        autocomplete="off"
-        spellcheck={false}
-        // No autofocus: HkModal focuses its own surface on the tick after
-        // it opens and would take focus straight back, so the attribute
-        // bought nothing (measured in Chrome, round 1 of #124).
-        value={query.value}
-        onInput={(e: Event) => {
-          query.value = (e.target as HTMLInputElement).value;
-          void run();
-        }}
-        onFocus={() => {
-          if (hits.value) open.value = true;
-        }}
-      />
-        {query.value && (
-          <button
-            class="lagrange-docs-search-clear"
-            type="button"
-            aria-label={t("lagrange::docs.clearSearch", "Clear search")}
-            title={t("lagrange::docs.clearSearch", "Clear search")}
-            onClick={clear}
-          >
-            ×
-          </button>
-        )}
-      </span>
-    );
-
     const results = () => (
       <>
         {/* In-flight row: its OWN surface, so it never reads as the
@@ -253,8 +231,8 @@ export const DocsSearchBox = defineComponent({
             <HkIconButton
               size={props.size}
               variant="ghost"
-              aria-label={t("lagrange::docs.search", "Search…")}
-              {...{ title: t("lagrange::docs.search", "Search…") }}
+              aria-label={t("lagrange::docs.searchTitle", "Search")}
+              {...{ title: t("lagrange::docs.searchTitle", "Search") }}
               aria-haspopup="dialog"
               aria-expanded={open.value ? "true" : "false"}
               onClick={() => {
@@ -266,12 +244,26 @@ export const DocsSearchBox = defineComponent({
             <HkModal
               modelValue={panelUp.value}
               onUpdate:modelValue={onModalUpdate}
-              title={t("lagrange::docs.search", "Search…")}
+              title={t("lagrange::docs.searchTitle", "Search")}
               width="36rem"
               contentClass="lagrange-docs-search-modal"
             >
               <div class="lagrange-docs-search-panel">
-                {field()}
+                <HkSearchInput
+                  modelValue={query.value}
+                  onUpdate:modelValue={(v: string) => {
+                    query.value = v;
+                    void run();
+                  }}
+                  onClear={clear}
+                  placeholder={t("lagrange::docs.search", "Search…")}
+                  aria-label={t("lagrange::docs.searchTitle", "Search")}
+                  clearAriaLabel={t("lagrange::docs.clearSearch", "Clear search")}
+                  // Enter in a live-search box must not wait on the
+                  // debounce path the standard component offers — the
+                  // query already ran on every keystroke.
+                  debounce={0}
+                />
                 {results()}
               </div>
             </HkModal>

@@ -76,67 +76,14 @@ body {
 // the header's action slot, its popup — an anchored panel on desktop, a
 // bottom sheet on phones — carrying the field and results in normal flow
 // (the popup is the surface: no absolute positioning, no own background).
+// The FIELD is hikari's HkSearchInput (2026-11-25: the hand-rolled
+// input+× pair retired — it was visibly not a library component); it
+// paints its own box, glyph and clear ✕, so only the modal-width fit
+// rules remain here.
 .lagrange-docs-search {
   position: relative;
   display: inline-flex;
   align-items: center;
-}
-
-// The field's own positioned box: the clear button anchors to THIS, not to
-// the outer search span — inside the sheet the results list sits between
-// them, and the button drifted onto the third hit (2026-11-24).
-.lagrange-docs-search-field {
-  position: relative;
-  display: block;
-}
-
-.lagrange-docs-search-input {
-  display: block;
-  width: 100%;
-  /* Clamped: the header's end wing clips (overflow: hidden) once the
-     start wing's min-content eats the row, and a fixed 200px field plus
-     the two icon buttons overflowed narrow viewports (round 5). */
-  min-width: 0;
-  padding-inline-end: 1.6rem;
-  height: 30px;
-  padding: 0 0.6rem;
-  border-radius: var(--hk-radius-control, 8px);
-  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.2), transparent);
-  background: color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.04), transparent);
-  color: inherit;
-  font-size: 0.85rem;
-  outline: none;
-
-  &:focus-visible {
-    border-color: rgb(var(--hk-color-primary, 60 120 220));
-  }
-}
-
-.lagrange-docs-search-clear {
-  position: absolute;
-  inset-inline-end: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.6;
-
-  &:hover,
-  &:focus-visible {
-    opacity: 1;
-    background: color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.1), transparent);
-  }
 }
 
 .lagrange-docs-search-busy {
@@ -228,10 +175,8 @@ body {
   gap: 8px;
   width: min(360px, 86vw);
 
-  .lagrange-docs-search-input {
+  .hk-search-input {
     width: 100%;
-    height: 34px;
-    font-size: 0.95rem;
   }
 
   .lagrange-docs-search-results {
@@ -249,10 +194,62 @@ body {
     position: static;
     padding: 0.4rem 0;
   }
+}
 
-  .lagrange-docs-search-clear {
-    inset-inline-end: 8px;
-  }
+
+// ── theme dialog: mode-extra strip (DPI block) ───────────────────────────
+// The mode-extra strip is ONE menu column directly under the 主题模式
+// group (the placement chest's settings window established); the DPI
+// collapsible panel is its only child on docs faces. The styles port
+// chest's useThemePanelSlots DPI sheet under the lagrange namespace —
+// the anatomy (title+live value on the collapsed header, slider/actions/
+// hints/warning in the body) is the copied contract.
+.lagrange-docs-mode-extra {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8, 0.5rem);
+}
+
+.lagrange-dpi-panel {
+  width: 100%;
+}
+
+// Auto state reads slightly emphasized on the header's subtitle (the
+// live value "自动" is the state the user is back to, not a stale notch).
+.lagrange-dpi-panel[data-auto] .hk-expansion-panel-subtitle {
+  color: rgb(var(--color-text));
+}
+
+.lagrange-dpi-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8, 0.5rem);
+}
+
+.lagrange-dpi-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 0.5rem);
+}
+
+.lagrange-dpi-panel[data-auto] .lagrange-dpi-slider {
+  opacity: 0.55;
+}
+
+.lagrange-dpi-warning {
+  margin: 0;
+  font-size: var(--text-xs, 0.75rem);
+  color: rgb(var(--color-error));
+  background: rgb(var(--color-error) / 8%);
+  border: 1px solid rgb(var(--color-error) / 20%);
+  border-radius: var(--radius-sm);
+  padding: var(--space-8) var(--space-10);
+}
+
+.lagrange-dpi-hint {
+  margin: 0;
+  font-size: var(--text-xs, 0.75rem);
+  opacity: 0.7;
 }
 
 

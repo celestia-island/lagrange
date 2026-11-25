@@ -102,6 +102,34 @@ describe("LagrangeDocsShell", () => {
     expect(panel ?? document.body.textContent).toBeTruthy();
   });
 
+  // 2026-11-25 user direction (the circled theme dialog): the docs shell
+  // must wire the SAME batteries the chest host does — the sun-clock
+  // entry on the AUTO option (hover ⋯ → the built-in HkSolarLocationEditor)
+  // and the DPI block in the mode-extra strip. MUT: dropping `solarEditor`
+  // (or the v-slots bag — a children-position slots object compiles into
+  // the DEFAULT slot and `slots["mode-extra"]` silently misses, the chest
+  // lesson) makes one of these two assertions red.
+  it("wires the chest batteries into the theme panel: solar entry + DPI block", async () => {
+    const { root } = await mount(LagrangeDocsShell, { page: makePage() });
+    const themeBtn = [...root.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === "Theme",
+    );
+    themeBtn!.dispatchEvent(new Event("click"));
+    await nextTick();
+    await nextTick();
+    // The ⋯ affordance on the auto cell (the red-circled missing piece).
+    expect(
+      document.querySelector('[data-test="hk-tabs-action-system-solar"]'),
+      "the AUTO option must carry the solar-clock entry",
+    ).toBeTruthy();
+    // The DPI collapsible panel under the mode group (copied from chest).
+    const dpi = document.querySelector<HTMLElement>(".lagrange-dpi-panel");
+    expect(dpi, "the mode-extra strip must carry the DPI block").toBeTruthy();
+    // The block is the collapsed HkExpansionPanel with title + live value.
+    expect(dpi!.textContent).toContain("Display scale (DPI)");
+    expect(dpi!.textContent).toContain("Auto");
+  });
+
   it("renders the sidebar menu with the active row keyed by page path", async () => {
     const { root } = await mount(LagrangeDocsShell, { page: makePage() });
     const menu = root.querySelector(".hk-menu, [class*='hk-menu']");

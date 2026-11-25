@@ -39,11 +39,13 @@ import {
   provideMenuGroupState,
   useI18n,
   useChromeActionSize,
+  useToast,
   type HkMenuItem,
 } from "@celestia-island/hikari";
 import { Languages, Moon } from "lucide-vue-next";
 import type { DocsNavNode, DocsPageData } from "./types";
 import { DocsSearchBox } from "./DocsSearchBox";
+import DpiSliderBlock from "./DpiSliderBlock";
 import { docIconGlyph, docIconDotSolid, docIconDotHollow } from "./DocIcon";
 import "./docsShell.scss";
 
@@ -194,6 +196,10 @@ export const LagrangeDocsShell = defineComponent({
 
     // ── theme button → rail-less settings dialog (theme only) ────────
     const themeOpen = ref(false);
+    // The sun-clock editor's applied toast (chest wiring): the panel's
+    // `solarEditor` entry (hover ⋯ / right-click on the auto option)
+    // opens hikari's built-in editor; `solar-applied` confirms it landed.
+    const toast = useToast();
 
     return () => (
       <HkFaceShell
@@ -267,7 +273,19 @@ export const LagrangeDocsShell = defineComponent({
                       onSelect={onLocaleSelect}
                     />
                     {/* The chest settings window's anatomy minus the
-                     * section rail: one dialog, one pane, theme only. */}
+                     * section rail: one dialog, one pane, theme only —
+                     * with the SAME batteries the chest host wires:
+                     * the sun-clock entry on the auto option
+                     * (`solarEditor`, hover ⋯ + right-click → the
+                     * built-in HkSolarLocationEditor, 2026-11-25 user
+                     * direction "直接可以引用的") and the DPI block in
+                     * the mode-extra strip (copied from chest's
+                     * DpiSliderBlock). The slots ride v-slots — the JSX
+                     * plugin compiles a non-identifier children object
+                     * into the DEFAULT slot without the runtime isSlot
+                     * dispatch, so a children-position slots bag makes
+                     * `slots["mode-extra"]` silently miss (the chest
+                     * lesson, DesktopSettingsDialog v-slots note). */}
                     <HkAdaptiveDialog
                       modelValue={themeOpen.value}
                       title={t("lagrange::docs.theme", "Theme")}
@@ -275,7 +293,19 @@ export const LagrangeDocsShell = defineComponent({
                         themeOpen.value = v;
                       }}
                     >
-                      <HkThemePanelContent />
+                      <HkThemePanelContent
+                        solarEditor
+                        onSolar-applied={() => {
+                          toast.success(t("lagrange::docs.themeSaved", "Theme settings saved"));
+                        }}
+                        v-slots={{
+                          "mode-extra": () => (
+                            <div class="lagrange-docs-mode-extra">
+                              <DpiSliderBlock />
+                            </div>
+                          ),
+                        }}
+                      />
                     </HkAdaptiveDialog>
                   </span>
                 ),
