@@ -16,6 +16,11 @@ import { createApp, createSSRApp } from "vue";
 import { HkMermaidDiagram, initTheme } from "@celestia-island/hikari";
 import { mermaidParser } from "@celestia-island/hikari/mermaid";
 import "@celestia-island/hikari/styles";
+// Pre-hydration theme vars (hikari#1546): the static stock-preset sheet,
+// bundled into docsMain css so the SSR <head> link carries it before any
+// JS. The inline bootstrap in template.ts sets data-theme/data-mode; this
+// sheet supplies the colors those attributes select.
+import "@celestia-island/hikari/styles/theme-vars.css";
 import { DocsPage } from "./DocsPage";
 import { installDocsLocale } from "./i18n";
 import type { DocsPageData } from "./types";
