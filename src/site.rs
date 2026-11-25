@@ -709,50 +709,61 @@ struct LinkRef {
 /// containers and inline nests). Image URLs are skipped: they reference
 /// assets, not pages.
 fn collect_inline_link_urls(blocks: &[markdown::SpannedBlock]) -> Vec<String> {
-    fn from_inlines(inlines: &[markdown::Inline], out: &mut Vec<String>) {
-        for i in inlines {
-            match i {
-                markdown::Inline::Link { text, url } => {
-                    out.push(url.clone());
-                    from_inlines(text, out);
-                }
-                markdown::Inline::Strong(inner) | markdown::Inline::Emphasis(inner) => {
-                    from_inlines(inner, out);
-                }
-                _ => {}
-            }
-        }
-    }
     let mut out = Vec::new();
     for sb in blocks {
-        match &sb.block {
-            crate::markdown::Block::Paragraph(inlines) => from_inlines(inlines, &mut out),
-            crate::markdown::Block::Heading { text, .. } => from_inlines(text, &mut out),
-            crate::markdown::Block::List { items, .. } => {
+        collect_block_link_urls(std::slice::from_ref(&sb.block), &mut out);
+    }
+    out
+}
+
+/// Push the link URLs of one inline run, recursing into nested spans.
+fn link_urls_in_inlines(inlines: &[markdown::Inline], out: &mut Vec<String>) {
+    for i in inlines {
+        match i {
+            markdown::Inline::Link { text, url } => {
+                out.push(url.clone());
+                link_urls_in_inlines(text, out);
+            }
+            markdown::Inline::Strong(inner) | markdown::Inline::Emphasis(inner) => {
+                link_urls_in_inlines(inner, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Push the link URLs of bare blocks — list item children carry `Block`s
+/// rather than `SpannedBlock`s, so the walk needs a span-free entry.
+fn collect_block_link_urls(blocks: &[markdown::Block], out: &mut Vec<String>) {
+    for block in blocks {
+        match block {
+            markdown::Block::Paragraph(inlines) => link_urls_in_inlines(inlines, out),
+            markdown::Block::Heading { text, .. } => link_urls_in_inlines(text, out),
+            markdown::Block::List { items, .. } => {
                 for item in items {
-                    from_inlines(item, &mut out);
+                    link_urls_in_inlines(&item.inlines, out);
+                    collect_block_link_urls(&item.children, out);
                 }
             }
-            crate::markdown::Block::Table { headers, rows } => {
+            markdown::Block::Table { headers, rows } => {
                 for cell in headers {
-                    from_inlines(cell, &mut out);
+                    link_urls_in_inlines(cell, out);
                 }
                 for row in rows {
                     for cell in row {
-                        from_inlines(cell, &mut out);
+                        link_urls_in_inlines(cell, out);
                     }
                 }
             }
-            crate::markdown::Block::Blockquote(inner) | crate::markdown::Block::Center(inner) => {
+            markdown::Block::Blockquote(inner) | markdown::Block::Center(inner) => {
                 out.extend(collect_inline_link_urls(inner));
             }
-            crate::markdown::Block::Div { children, .. } => {
+            markdown::Block::Div { children, .. } => {
                 out.extend(collect_inline_link_urls(children));
             }
             _ => {}
         }
     }
-    out
 }
 
 /// Collect hrefs from a parsed SUMMARY nav tree (recursively; section nodes

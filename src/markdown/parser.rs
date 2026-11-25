@@ -21,7 +21,7 @@ use pest::{iterators::Pair, Parser as _};
 use pest_derive::Parser;
 use sha2::{Digest, Sha256};
 
-use super::ast::{Block, Inline, SourceSpan, SpannedBlock};
+use super::ast::{Block, Inline, ListItem, SourceSpan, SpannedBlock};
 
 #[derive(Parser)]
 #[grammar = "markdown/grammar.pest"]
@@ -32,7 +32,15 @@ pub struct InlineParser;
 /// Coordinates are computed and then stripped; use [`parse_doc`] when the
 /// source coordinates matter.
 pub fn parse(input: &str) -> Vec<Block> {
-    strip_spans(parse_body_spanned(input, 0))
+    parse_with_depth(input, 0)
+}
+
+/// [`parse`] with the list-nesting depth the scan starts at. `finish_item`
+/// re-scans an item's dedented lines, so every nesting level is a fresh
+/// `parse` pass; carrying the depth across passes is what bounds recursion on
+/// pathological input (`"- " * 1000`).
+fn parse_with_depth(input: &str, list_depth: usize) -> Vec<Block> {
+    strip_spans(parse_body_spanned_at(input, 0, list_depth))
 }
 
 /// Parse a full markdown source file (frontmatter included) into blocks with
@@ -47,13 +55,13 @@ pub fn parse_doc(input: &str) -> Vec<SpannedBlock> {
     // coordinates need no compensation; only the scan start (line index) and
     // the 1-based line shift move past the frontmatter.
     let body_line = input[..body_offset].matches('\n').count();
-    parse_body_spanned(input, body_line)
+    parse_body_spanned_at(input, body_line, 0)
 }
 
 /// Scan `input`'s line tables starting at line `body_line` (0-based). The
 /// tables carry full-file byte coordinates; the shift adds `body_line` to
 /// turn slice-relative indices back into 1-based file line numbers.
-fn parse_body_spanned(input: &str, body_line: usize) -> Vec<SpannedBlock> {
+fn parse_body_spanned_at(input: &str, body_line: usize, list_depth: usize) -> Vec<SpannedBlock> {
     let (lines, starts, ends) = line_tables(input);
     if body_line >= lines.len() {
         return Vec::new();
@@ -66,6 +74,7 @@ fn parse_body_spanned(input: &str, body_line: usize) -> Vec<SpannedBlock> {
         },
         stack: Vec::new(),
         ctx: &mut ctx,
+        list_depth,
     };
     parse_spanned_lines(
         &lines[body_line..],
@@ -143,6 +152,9 @@ struct Scan<'a> {
     shift: TableShift,
     stack: Vec<(usize, String)>,
     ctx: &'a mut Ctx,
+    /// How many list nesting levels the enclosing item scans already opened.
+    /// Bounds `finish_item -> parse -> parse_list -> finish_item` recursion.
+    list_depth: usize,
 }
 
 /// Content-addressed block id: `b-` + first 8 hex of the SHA-256 of the
@@ -217,7 +229,7 @@ fn parse_spanned_lines(
             pair
         } else if let Some(pair) = parse_table(lines, i) {
             pair
-        } else if let Some(pair) = parse_list(lines, i) {
+        } else if let Some(pair) = parse_list(lines, i, scan.list_depth) {
             pair
         } else {
             parse_paragraph(lines, i)
@@ -526,6 +538,7 @@ fn parse_center_container(
         },
         stack: scan.stack.clone(),
         ctx: scan.ctx,
+        list_depth: scan.list_depth,
     };
     let children = parse_spanned_lines(
         &lines[i + 1..j],
@@ -587,6 +600,7 @@ fn parse_blockquote(
         },
         stack: scan.stack.clone(),
         ctx: scan.ctx,
+        list_depth: scan.list_depth,
     };
     let children = parse_spanned_lines(&inner_lines, &inner_starts, &inner_ends, &mut inner);
     Some((Block::Blockquote(children), j))
@@ -631,33 +645,219 @@ fn split_row(line: &str) -> Vec<String> {
     line.split('|').map(|c| c.trim().to_string()).collect()
 }
 
-fn parse_list(lines: &[&str], i: usize) -> Option<(Block, usize)> {
-    let first = list_item_marker(lines[i])?;
-    let ordered = first.0;
-    let mut items = Vec::new();
-    let mut j = i;
-    while j < lines.len() {
-        if let Some((ordered_item, text)) = list_item_marker(lines[j]) {
-            if ordered_item != ordered {
-                break;
-            }
-            items.push(parse_inline(&text));
-            j += 1;
-        } else if !lines[j].trim().is_empty() && items.last().is_some() && !starts_block(lines[j]) {
-            // lazy continuation of the last item
-            if let Some(last) = items.last_mut() {
-                last.push(Inline::Text(format!("\n{}", lines[j].trim())));
-            }
-            j += 1;
-        } else {
-            break;
-        }
-    }
-    Some((Block::List { ordered, items }, j))
+/// A parsed list marker: kind, ordinal, the marker's column, and the item
+/// text that follows it.
+struct ListMarker {
+    ordered: bool,
+    /// The item's number (`1` for bullets).
+    number: usize,
+    /// Column of the marker's first character, in expanded spaces.
+    indent: usize,
+    /// Column where the item's own content starts (marker + its trailing
+    /// space), the width continuation lines get stripped by.
+    content_indent: usize,
+    /// Item text after the marker.
+    text: String,
 }
 
-/// Returns `Some(ordered)` and the item text if the line begins a list item.
-fn list_item_marker(line: &str) -> Option<(bool, String)> {
+/// One item's raw lines while the list scan is still collecting them.
+struct RawItem {
+    content_indent: usize,
+    lines: Vec<String>,
+}
+
+/// How many list levels deep the item re-scan may recurse before deeper
+/// markers degrade to text. Real docs nest two or three levels; the cap only
+/// exists so pathological input (`"- " * 1000`) cannot overflow the stack.
+const MAX_LIST_DEPTH: usize = 8;
+
+/// Parse one list block starting at line `i` (at nesting level `depth`).
+///
+/// The scan keeps a list together across the shapes docs actually use, none
+/// of which the flat "marker lines only" version handled:
+///
+/// - **loose lists** — a blank line between items does not close the list
+///   (closing it restarted `<ol>` numbering at 1 for every item);
+/// - **lazy continuation** — a wrapped line at or left of the marker column
+///   still continues the open item's paragraph (CommonMark lazy continuation;
+///   dropping it truncated every hard-wrapped item mid-sentence);
+/// - **nested blocks** — any line indented past the marker column belongs to
+///   the open item (its content column only decides how far continuation lines
+///   are dedented): child lists keep their hierarchy, and a table / fence /
+///   paragraph under an item stays a table / fence / paragraph instead of
+///   being spliced into the item's text or pushed out as a sibling;
+/// - **explicit start** — the first item's number travels on the block so a
+///   list that begins at `3.` renders `<ol start="3">`.
+///
+/// Each item's collected lines are dedented by its content column and re-parsed
+/// by the same block scan, so the item's first paragraph becomes its own
+/// inline run and everything else becomes child blocks.
+fn parse_list(lines: &[&str], i: usize, depth: usize) -> Option<(Block, usize)> {
+    let first = list_item_marker(lines[i])?;
+    let ordered = first.ordered;
+    let base = first.indent;
+    let mut raw: Vec<RawItem> = Vec::new();
+    let mut j = i;
+    while j < lines.len() {
+        let line = lines[j];
+        if line.trim().is_empty() {
+            // Loose list: a blank line only ends the list when what follows
+            // cannot belong to it any more.
+            let mut k = j + 1;
+            while k < lines.len() && lines[k].trim().is_empty() {
+                k += 1;
+            }
+            if k >= lines.len() || !list_continues(lines[k], base, ordered) {
+                break;
+            }
+            // Keep the break inside the open item so it splits its blocks.
+            if let Some(last) = raw.last_mut() {
+                last.lines.push(String::new());
+            }
+            j = k;
+            continue;
+        }
+        if let Some(m) = list_item_marker(line) {
+            if m.indent == base && m.ordered == ordered {
+                raw.push(RawItem {
+                    content_indent: m.content_indent,
+                    lines: vec![m.text],
+                });
+                j += 1;
+                continue;
+            }
+            if m.indent > base && !raw.is_empty() {
+                let item = raw.last_mut().expect("raw is non-empty");
+                if depth + 1 < MAX_LIST_DEPTH {
+                    item.lines.push(strip_indent(line, item.content_indent));
+                } else {
+                    // Past the nesting cap: keep the marker literal rather
+                    // than opening another item re-scan level.
+                    item.lines.push(line.trim().to_string());
+                }
+                j += 1;
+                continue;
+            }
+            // Same column, different kind — a new list block starts here.
+            break;
+        }
+        if !raw.is_empty() && leading_indent(line) > base {
+            let item = raw.last_mut().expect("raw is non-empty");
+            item.lines.push(strip_indent(line, item.content_indent));
+            j += 1;
+            continue;
+        }
+        // Lazy continuation: a wrapped line at the marker column (or left of
+        // it) continues the open item's paragraph. Only a block opener ends
+        // the list here — the old flat parser had this branch and removing it
+        // truncated hard-wrapped items into stray paragraphs.
+        if !raw.is_empty() && !starts_block(line) {
+            let item = raw.last_mut().expect("raw is non-empty");
+            item.lines.push(line.trim().to_string());
+            j += 1;
+            continue;
+        }
+        break;
+    }
+    if raw.is_empty() {
+        return None;
+    }
+    let items: Vec<ListItem> = raw
+        .into_iter()
+        .map(|item| finish_item(item, depth))
+        .collect();
+    Some((
+        Block::List {
+            ordered,
+            start: if ordered { first.number } else { 1 },
+            items,
+        },
+        j,
+    ))
+}
+
+/// Turn one item's dedented lines into its inline run plus child blocks.
+fn finish_item(item: RawItem, depth: usize) -> ListItem {
+    let mut lines = item.lines;
+    while lines.last().map(|l| l.trim().is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+    if lines.is_empty() {
+        return ListItem {
+            inlines: Vec::new(),
+            children: Vec::new(),
+        };
+    }
+    let joined = lines.join("\n");
+    // Past the nesting cap, stop re-scanning the item as blocks: the cap is
+    // what bounds `finish_item -> parse -> parse_list -> finish_item` on
+    // pathological input (`"- " * 2000` on one line nests once per re-scan).
+    // Real docs nest two or three levels, so only absurd input reaches here.
+    if depth >= MAX_LIST_DEPTH {
+        return ListItem {
+            inlines: parse_inline(&joined),
+            children: Vec::new(),
+        };
+    }
+    let mut blocks = parse_with_depth(&joined, depth + 1);
+    // The item's own text is the leading paragraph; rendering it unwrapped
+    // keeps a tight `<li>text</li>` instead of `<li><p>text</p></li>`.
+    let inlines = match blocks.first() {
+        Some(Block::Paragraph(_)) => match blocks.remove(0) {
+            Block::Paragraph(inlines) => inlines,
+            _ => unreachable!("checked above"),
+        },
+        _ => Vec::new(),
+    };
+    ListItem {
+        inlines,
+        children: blocks,
+    }
+}
+
+/// Does `line` belong to the list open at column `base` after a blank line?
+///
+/// A sibling marker continues it only when the kind matches; a deeper marker
+/// or an indented line belongs to the open item. Anything else ends the list.
+fn list_continues(line: &str, base: usize, ordered: bool) -> bool {
+    match list_item_marker(line) {
+        Some(m) if m.indent == base => m.ordered == ordered,
+        Some(m) => m.indent > base,
+        None => leading_indent(line) > base,
+    }
+}
+
+/// Leading whitespace width in expanded spaces (tab = 4, as CommonMark).
+fn leading_indent(line: &str) -> usize {
+    line.chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
+}
+
+/// Strip up to `width` columns of leading whitespace (a tab counts as 4).
+fn strip_indent(line: &str, width: usize) -> String {
+    let mut removed = 0usize;
+    let mut cut = 0usize;
+    for (idx, ch) in line.char_indices() {
+        if removed >= width {
+            break;
+        }
+        match ch {
+            ' ' => removed += 1,
+            // A tab wider than the remaining columns stays put: consuming it
+            // whole would dedent past the item's content column.
+            '\t' if removed + 4 <= width => removed += 4,
+            _ => break,
+        }
+        cut = idx + ch.len_utf8();
+    }
+    line[cut..].to_string()
+}
+
+/// Returns the marker shape when the line begins a list item.
+fn list_item_marker(line: &str) -> Option<ListMarker> {
+    let indent = leading_indent(line);
     let t = line.trim_start();
     let bytes = t.as_bytes();
     if bytes.is_empty() {
@@ -665,15 +865,30 @@ fn list_item_marker(line: &str) -> Option<(bool, String)> {
     }
     // Unordered: - * +
     if matches!(bytes[0], b'-' | b'*' | b'+') && bytes.get(1) == Some(&b' ') {
-        return Some((false, t[2..].to_string()));
+        return Some(ListMarker {
+            ordered: false,
+            number: 1,
+            indent,
+            content_indent: indent + 2,
+            text: t[2..].to_string(),
+        });
     }
     // Ordered: digits followed by '.'
     let digits_end = bytes.iter().take_while(|&&b| b.is_ascii_digit()).count();
-    if digits_end > 0
+    // CommonMark caps an ordered marker at nine digits; a longer run is a
+    // paragraph that happens to start with digits, not a list item.
+    if (1..=9).contains(&digits_end)
         && bytes.get(digits_end) == Some(&b'.')
         && bytes.get(digits_end + 1) == Some(&b' ')
     {
-        return Some((true, t[digits_end + 2..].to_string()));
+        let number = t[..digits_end].parse().unwrap_or(1);
+        return Some(ListMarker {
+            ordered: true,
+            number,
+            indent,
+            content_indent: indent + digits_end + 2,
+            text: t[digits_end + 2..].to_string(),
+        });
     }
     None
 }
@@ -1057,6 +1272,197 @@ mod span_tests {
         assert_eq!(bare.len(), 3);
         assert!(
             matches!(&bare[1], Block::Blockquote(inner) if matches!(inner[0].block, Block::Paragraph(_)))
+        );
+    }
+}
+
+#[cfg(test)]
+mod list_tests {
+    use super::*;
+
+    fn list_of(blocks: &[Block]) -> (&str, usize, &Vec<ListItem>) {
+        match &blocks[0] {
+            Block::List {
+                ordered,
+                start,
+                items,
+            } => (if *ordered { "ol" } else { "ul" }, *start, items),
+            other => panic!("expected a list, got {other:?}"),
+        }
+    }
+
+    fn item_text(item: &ListItem) -> String {
+        item.inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Text(t) => t.clone(),
+                _ => String::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn blank_lines_between_items_keep_one_list() {
+        // The loose-list shape every doc site writes. Closing the list on the
+        // blank line emitted one <ol> per item, so the rendered numbering
+        // restarted at 1 for each of them.
+        let blocks = parse("1. one\n\n2. two\n\n3. three\n");
+        assert_eq!(blocks.len(), 1, "list split into blocks: {blocks:?}");
+        let (tag, start, items) = list_of(&blocks);
+        assert_eq!(tag, "ol");
+        assert_eq!(start, 1);
+        assert_eq!(items.len(), 3);
+        assert_eq!(item_text(&items[2]).trim(), "three");
+    }
+
+    #[test]
+    fn nested_markers_become_child_lists() {
+        let blocks = parse("1. parent\n   - child a\n   - child b\n2. second\n");
+        assert_eq!(blocks.len(), 1, "nested list escaped the block: {blocks:?}");
+        let (_, _, items) = list_of(&blocks);
+        assert_eq!(items.len(), 2, "child items flattened into siblings");
+        assert_eq!(item_text(&items[0]).trim(), "parent");
+        match &items[0].children[0] {
+            Block::List {
+                ordered,
+                items: kids,
+                ..
+            } => {
+                assert!(!ordered);
+                assert_eq!(kids.len(), 2);
+                assert_eq!(item_text(&kids[1]).trim(), "child b");
+            }
+            other => panic!("expected a child list, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ordered_list_carries_its_first_number() {
+        let blocks = parse("3. three\n4. four\n");
+        let (_, start, items) = list_of(&blocks);
+        assert_eq!(start, 3, "the start number was dropped");
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn a_different_marker_kind_starts_a_new_block() {
+        let blocks = parse("- bullet\n1. ordered\n");
+        assert_eq!(blocks.len(), 2, "kinds merged into one list: {blocks:?}");
+        assert_eq!(list_of(&blocks[..1]).0, "ul");
+        assert_eq!(list_of(&blocks[1..]).0, "ol");
+    }
+
+    #[test]
+    fn indented_continuation_stays_in_its_item() {
+        let blocks = parse("1. first line\n   continued here\n2. second\n");
+        let (_, _, items) = list_of(&blocks);
+        assert_eq!(items.len(), 2);
+        assert!(
+            item_text(&items[0]).contains("continued here"),
+            "continuation lost: {:?}",
+            items[0]
+        );
+    }
+
+    #[test]
+    fn a_plain_paragraph_after_a_blank_line_ends_the_list() {
+        let blocks = parse("- bullet\n\nplain paragraph\n");
+        assert_eq!(
+            blocks.len(),
+            2,
+            "paragraph swallowed by the list: {blocks:?}"
+        );
+        assert!(matches!(blocks[1], Block::Paragraph(_)));
+    }
+
+    #[test]
+    fn a_table_under_an_item_stays_a_table() {
+        // shittim-chest's guides indent tables two columns under a bullet.
+        // Treating those lines as item text rendered the pipes literally.
+        let src = "- lead-in:\n\n  | Base | Where |\n  |---|---|\n  | A | one |\n";
+        let blocks = parse(src);
+        let (_, _, items) = list_of(&blocks);
+        assert_eq!(items[0].children.len(), 1, "table lost: {items:?}");
+        assert!(
+            matches!(items[0].children[0], Block::Table { .. }),
+            "child is not a table: {:?}",
+            items[0].children[0]
+        );
+    }
+
+    #[test]
+    fn wrapped_item_text_at_the_margin_stays_in_the_item() {
+        // Real docs hard-wrap long items at column 0 (entelecheia's de/es/…
+        // parallel-branch-convergence). The old flat parser kept those lines
+        // in the item; dropping that branch truncated items mid-sentence and
+        // split one list into several.
+        let src = "1. Branch deadline — a wall-clock bound per branch; a branch\n   that misses it is folded into the report\nunder reuse of the failing-branch\nsemantics.\n2. Second item.\n";
+        let blocks = parse(src);
+        assert_eq!(blocks.len(), 1, "list split into blocks: {blocks:?}");
+        let (_, _, items) = list_of(&blocks);
+        assert_eq!(items.len(), 2, "items lost: {items:?}");
+        let text = item_text(&items[0]);
+        assert!(
+            text.contains("under reuse of the failing-branch"),
+            "lazy continuation dropped: {text:?}"
+        );
+        assert!(
+            text.contains("semantics."),
+            "continuation tail dropped: {text:?}"
+        );
+    }
+
+    #[test]
+    fn a_nine_digit_ordinal_is_a_marker_and_ten_digits_is_text() {
+        let blocks = parse("123456789. nine digits\n");
+        assert!(matches!(blocks[0], Block::List { .. }), "{blocks:?}");
+        let blocks = parse("1234567890. ten digits\n");
+        assert!(
+            matches!(blocks[0], Block::Paragraph(_)),
+            "over-long ordinal became a list: {blocks:?}"
+        );
+    }
+
+    #[test]
+    fn tab_indented_nesting_keeps_its_depth() {
+        // A tab is four columns: `- a` + "\t- b" nests one level; the dedent
+        // must not eat the tab whole and shift the child's own indentation.
+        let src = "- parent\n\t- child\n";
+        let blocks = parse(src);
+        let (_, _, items) = list_of(&blocks);
+        assert_eq!(
+            items.len(),
+            1,
+            "tab-indented child became a sibling: {items:?}"
+        );
+        assert!(
+            matches!(items[0].children.first(), Some(Block::List { .. })),
+            "tab-indented nesting lost: {:?}",
+            items[0].children
+        );
+    }
+
+    #[test]
+    fn absurd_nesting_depth_degrades_instead_of_overflowing() {
+        // 2000 nested markers used to recurse through finish_item -> parse ->
+        // parse_list -> finish_item until the stack died (a build-killing
+        // abort, reachable from MCP writes because builds run in-process).
+        let src: String = std::iter::repeat_n("- ", 2000).collect::<String>() + "x\n";
+        let blocks = parse(&src);
+        assert!(!blocks.is_empty(), "deep nesting produced nothing");
+    }
+
+    #[test]
+    fn a_fence_under_an_item_stays_code() {
+        let src = "1. run this:\n\n   ```rust\n   let x = 1;\n   ```\n";
+        let blocks = parse(src);
+        let (_, _, items) = list_of(&blocks);
+        assert!(
+            matches!(
+                items[0].children.first(),
+                Some(Block::CodeBlock { lang, .. }) if lang.as_deref() == Some("rust")
+            ),
+            "fence lost: {items:?}"
         );
     }
 }

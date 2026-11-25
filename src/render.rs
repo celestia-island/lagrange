@@ -7,9 +7,7 @@
 use std::fs;
 use std::path::Path;
 
-use hikari_components::basic::{
-    Badge, BadgeProps, Card, CardProps, Image, ImageProps, Link, LinkProps,
-};
+use hikari_components::basic::{Card, CardProps, Image, ImageProps, Link, LinkProps};
 use hikari_components::display::{
     Empty, EmptyProps, Skeleton, SkeletonProps, Tag, TagProps, TagVariant, Timeline, TimelineProps,
 };
@@ -147,25 +145,42 @@ fn render_block_with_live(
         }
         Block::LiveComponent { source, .. } => render_live_block(source, live_html.get(source)),
         Block::Diagram { kind, source } => render_diagram_block(*kind, source),
-        Block::List { ordered, items } => {
+        Block::List {
+            ordered,
+            start,
+            items,
+        } => {
             let tag = if *ordered { "ol" } else { "ul" };
+            // Numbering comes from the list element itself: `<li>` carries the
+            // item's content and any nested blocks, and the browser's own
+            // `<ol>`/`<ul>` markers paint 1., 2., … (or bullets). Emitting a
+            // hikari `Badge` with the index *on top of that* double-numbered
+            // every ordered list on every doc site ("1. 1"), and its
+            // block-level `hk-badge-wrapper` broke the item's line.
             let lis: Vec<VNode> = items
                 .iter()
-                .enumerate()
-                .map(|(i, it)| {
-                    let content = render_inlines(it);
-                    if *ordered {
-                        let badge = Badge(BadgeProps {
-                            count: Some((i + 1) as i32),
-                            ..Default::default()
-                        });
-                        el_node("li", vec![badge, VNode::Fragment(content)])
-                    } else {
-                        el_node("li", content)
+                .map(|item| {
+                    let mut children = vec![VNode::Fragment(render_inlines(&item.inlines))];
+                    if !item.children.is_empty() {
+                        // Children go through the live-aware renderer so a
+                        // ```` ```hikari ```` fence nested under an item still
+                        // gets its compiled preview instead of the
+                        // "live preview unavailable" placeholder.
+                        let kids = wrap_unspanned(&item.children);
+                        children.push(VNode::Fragment(
+                            kids.iter()
+                                .map(|sb| render_block_with_live(sb, live_html))
+                                .collect(),
+                        ));
                     }
+                    el_node("li", children)
                 })
                 .collect();
-            el_node(tag, lis)
+            let mut list = el(tag);
+            if *ordered && *start != 1 {
+                list = list.attr("start", start.to_string());
+            }
+            VNode::Element(Box::new(list.children(lis)))
         }
         Block::Blockquote(inner) => {
             // Don't use hikari Alert — it escapes inner HTML as description text.
@@ -883,6 +898,44 @@ pub fn render_timeline() -> VNode {
 mod tests {
     use super::*;
     use crate::markdown::parse;
+
+    #[test]
+    fn ordered_list_numbers_once_via_the_list_element() {
+        let html = render_to_html(&parse("1. one\n2. two\n"));
+        // The browser paints 1./2. from <ol>; a per-item badge on top of that
+        // was the "1. 1" double numbering on every doc site.
+        assert!(
+            html.contains("<ol><li>one</li>"),
+            "unexpected markup: {html}"
+        );
+        assert!(!html.contains("hk-badge"), "badge still rendered: {html}");
+        assert_eq!(html.matches("<ol>").count(), 1, "one list expected: {html}");
+    }
+
+    #[test]
+    fn ordered_list_start_number_reaches_the_list_element() {
+        let html = render_to_html(&parse("3. three\n4. four\n"));
+        assert!(
+            html.contains("<ol start=\"3\">"),
+            "start number lost: {html}"
+        );
+        assert!(html.contains("<li>three</li>"), "{html}");
+    }
+
+    #[test]
+    fn nested_list_renders_inside_the_parent_item() {
+        let html = render_to_html(&parse("1. parent\n   - child\n2. second\n"));
+        assert!(
+            html.contains("<li>parent<ul><li>child</li></ul></li>"),
+            "nesting lost: {html}"
+        );
+    }
+
+    #[test]
+    fn unordered_list_keeps_plain_items() {
+        let html = render_to_html(&parse("- a\n- b\n"));
+        assert_eq!(html, "<ul><li>a</li><li>b</li></ul>");
+    }
 
     #[test]
     fn theme_fragment_github_spelling() {
