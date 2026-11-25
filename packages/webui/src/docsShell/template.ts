@@ -121,6 +121,8 @@ export function pageTemplate(opts: PageTemplateOptions): string {
   <meta name="description" content="${escapeAttr(site.description)}">
   <link rel="canonical" href="${escapeAttr(url)}">
   ${site.favicon ? `<link rel="icon" href="${escapeAttr(site.favicon)}">` : ""}
+  ${cssLinks}
+  ${katexTags}
   <script>
   /* PRE-HYDRATION THEME BOOTSTRAP (hikari#1546): hikari's SHIPPED boot asset
    * — the solar system-mode chain, inlined verbatim. It reads hikari's own
@@ -128,22 +130,27 @@ export function pageTemplate(opts: PageTemplateOptions): string {
    * writes only data-theme + data-mode; the COLORS come from the static
    * theme-vars sheet bundled into the stylesheet link below.
    *
+   * PLACEMENT IS LOAD-BEARING: this script sits AFTER the stylesheet links
+   * (and before </head>) on purpose. The pre-rendered vars are an
+   * html[data-mode] block and the CUSTOM-THEME replay is an html:root
+   * block — same specificity — so HEAD ORDER is the only thing that lets
+   * the replay outrank the static sheet, and the runtime's own block
+   * (appended later) outrank the replay. Moving this script above the
+   * links silently reverts a custom theme to stock colors.
+   *
    * PARITY SCOPE, measured: for the default "timezone" strategy and for
    * "manual", the first paint equals what initTheme() applies at hydration
    * (verified: identical mode AND body background, JS blocked vs hydrated).
-   * Two documented cases can still refine after the bundle, both by
-   * design: strategy "ip" (the runtime's geolocation/IP cascade is async
-   * and networked — the asset boots on the offset estimate) and a stored
-   * CUSTOM theme (user-authored vars cannot be pre-rendered; the stock
-   * colors in the right MODE are painted first).
+   * A stored custom theme is now exact too, once its memo exists (written by
+   * the runtime on the first applyTheme — hikari#1552). The remaining
+   * designed divergence: strategy "ip" can refine after the bundle, because
+   * the runtime's geolocation/IP cascade is async and networked.
    *
    * The asset is drift-checked upstream (themeBoot.contract.test.ts),
    * dependency-free, and ES2020 — a browser older than that cannot run the
    * app either and simply keeps an unthemed first paint. */
 ${themeBootJs}
   </script>
-  ${cssLinks}
-  ${katexTags}
 </head>
 <body>
   <div id="app">${body}</div>
