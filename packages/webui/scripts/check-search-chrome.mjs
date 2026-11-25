@@ -446,7 +446,7 @@ try {
     anyHitHasWord: [...document.querySelectorAll('.lagrange-docs-search-hit')].some((h) => (h.textContent ?? '').toLowerCase().includes(${JSON.stringify(WORD.toLowerCase())})),
     error: !!document.querySelector('.lagrange-docs-search-error'),
     input: (() => { const b = document.querySelector('.lagrange-docs-search-panel input').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })(),
-    clear: (() => { const e = document.querySelector('.lagrange-docs-search-panel .lagrange-docs-search-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.right)]; })(),
+    clear: (() => { const e = document.querySelector('.lagrange-docs-search-panel .hk-search-input-clear'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.right)]; })(),
     inputRight: (() => { const b = document.querySelector('.lagrange-docs-search-panel input').getBoundingClientRect(); return Math.round(b.right); })(),
   })`);
   const s = search ? JSON.parse(search) : { hits: 0, error: true, input: null, clear: null };
@@ -520,7 +520,7 @@ try {
   await new Promise((r) => setTimeout(r, 80));
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: dTrig.x, y: dTrig.y, button: "left", clickCount: 1 });
   const field = await poll(async () => {
-    const s = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-input')?.getBoundingClientRect(); if (!b || b.width === 0) return null; return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2, inVp: b.top >= 0 && b.bottom <= innerHeight }); })()`);
+    const s = await safe(`(() => { const b = document.querySelector('.lagrange-docs-search-panel .hk-search-input-field')?.getBoundingClientRect(); if (!b || b.width === 0) return null; return JSON.stringify({ x: b.left + b.width / 2, y: b.top + b.height / 2, inVp: b.top >= 0 && b.bottom <= innerHeight }); })()`);
     const p = s ? JSON.parse(s) : null;
     return p && p.inVp ? { x: p.x, y: p.y } : null;
   });
@@ -528,12 +528,12 @@ try {
   // Same attribution guard as the phone branch: a fresh load leaves the
   // field unfocused, and asserting that makes the click the only
   // explanation for the focus the poll below waits for.
-  const fPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-input'); return el ? document.activeElement === el : null; })()`);
+  const fPreexisting = await safe(`(() => { const el = document.querySelector('.lagrange-docs-search-panel .hk-search-input-field'); return el ? document.activeElement === el : null; })()`);
   check("desktop: the field is unfocused before the click", fPreexisting === false, `preFocused=${fPreexisting}`);
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: f.x, y: f.y, button: "left", clickCount: 1 });
   await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: f.x, y: f.y, button: "left", clickCount: 1 });
   const focused = await poll(async () => {
-    const v = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-input')`);
+    const v = await safe(`document.activeElement === document.querySelector('.lagrange-docs-search-panel .hk-search-input-field')`);
     return v === true ? v : null;
   }, 8);
   check("desktop: the field takes focus from a real click", focused === true, `focused=${focused}`);
@@ -544,12 +544,14 @@ try {
   });
 
   // The clear button must sit INSIDE the field's row on desktop too: it is
-  // absolutely positioned against `.lagrange-docs-search-field`, and moving
-  // it out of that wrapper leaves it floating over the results (round 10 of
-  // #124 measured it outside the field at 1280×800 with nothing noticing).
+  // a flex item of the standard component's row box (`.hk-search-input`),
+  // so the row is THAT box — a drift that pushed the clear out of the row
+  // (the round-10-of-#124 failure measured it floating over the results at
+  // 1280×800 with nothing noticing) would still show up as its rect leaving
+  // the box.
   const dclear = await safe(`(() => {
-    const i = document.querySelector('.lagrange-docs-search-input').getBoundingClientRect();
-    const c = document.querySelector('.lagrange-docs-search-clear');
+    const i = document.querySelector('.lagrange-docs-search-panel .hk-search-input').getBoundingClientRect();
+    const c = document.querySelector('.lagrange-docs-search-panel .hk-search-input-clear');
     if (!c) return JSON.stringify({ present: false });
     const b = c.getBoundingClientRect();
     return JSON.stringify({ present: true, inside: b.top >= i.top && b.bottom <= i.bottom && b.right <= i.right + 1, input: [Math.round(i.top), Math.round(i.bottom)], clear: [Math.round(b.top), Math.round(b.bottom)] });
@@ -581,13 +583,13 @@ try {
   // transition: the list is populated now, a nonsense token must empty it AND
   // raise the component's own "no results" state.
   const NONSENSE = "zzzqx" + "zzqx"; // one token of a shape no shard contains
-  await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-input'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
+  await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-panel .hk-search-input-field'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
   await send("Input.insertText", { text: NONSENSE });
   const negState = await poll(async () => {
     const s = await safe(`JSON.stringify({
       h: document.querySelectorAll('.lagrange-docs-search-hit').length,
       empty: !!document.querySelector('.lagrange-docs-search-empty'),
-      q: document.querySelector('.lagrange-docs-search-input')?.value ?? '',
+      q: document.querySelector('.lagrange-docs-search-panel .hk-search-input-field')?.value ?? '',
     })`);
     const p2 = s ? JSON.parse(s) : null;
     // Settled only when the component has ANSWERED with its empty state —
@@ -603,7 +605,7 @@ try {
 
   // Restore the positive query so the click test below runs against real hits
   // again (the negative control emptied the list).
-  await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-input'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
+  await safe(`(() => { const i = document.querySelector('.lagrange-docs-search-panel .hk-search-input-field'); if (!i) return null; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); return true; })()`);
   await send("Input.insertText", { text: WORD });
   await poll(async () => {
     const h = await safe(`document.querySelectorAll('.lagrange-docs-search-hit').length`);
@@ -612,7 +614,7 @@ try {
 
   // The field MUST still hold focus when the hits are on screen — that is
   // the precondition for the blur the click below will cause.
-  check("desktop: the field keeps focus while results show", v.hits > 0 && typeof v.focused === "string" && v.focused.includes("lagrange-docs-search-input"), `hits=${v.hits} focused=${v.focused}`);
+  check("desktop: the field keeps focus while results show", v.hits > 0 && typeof v.focused === "string" && v.focused.includes("hk-search-input-field"), `hits=${v.hits} focused=${v.focused}`);
 
 
   // ── 4. desktop: a REAL mouse click on a hit navigates ──────────────────
@@ -631,7 +633,7 @@ try {
     return JSON.stringify({ hits: hits.length, cx: b.left + b.width / 2, cy: b.top + b.height / 2, href: hits[0].getAttribute('href'), focused: document.activeElement?.className });
   })()`);
   const v2 = v2raw ? JSON.parse(v2raw) : { hits: 0, cx: 0, cy: 0, href: null, focused: null };
-  check("desktop: the re-query restored results for the click test", v2.hits > 0 && typeof v2.focused === "string" && v2.focused.includes("lagrange-docs-search-input"), `hits=${v2.hits} focused=${v2.focused}`);
+  check("desktop: the re-query restored results for the click test", v2.hits > 0 && typeof v2.focused === "string" && v2.focused.includes("hk-search-input-field"), `hits=${v2.hits} focused=${v2.focused}`);
   const before = await safe(`location.pathname + location.hash`);
   await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: v2.cx, y: v2.cy });
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x: v2.cx, y: v2.cy, button: "left", clickCount: 1 });
