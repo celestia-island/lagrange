@@ -20,8 +20,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # musl static-pie (2026-11-25 libc-independence wave): the published
+        # archive keeps the GNU triple in its FILENAME (the binstall URL
+        # pattern and create-lagrange fetch by that exact name), but the
+        # binary inside is static — no runtime libc contract on any user
+        # machine, and the runner OS stops mattering.
         include:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: tar.gz
           - target: aarch64-apple-darwin
@@ -56,6 +61,32 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: ${{ runner.os }}-cargo-
+
+      - name: musl toolchain
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: Static OpenSSL for musl (built from the pinned release tarball)
+        # lagrange pulls native-tls (hyper-tls), whose musl story is
+        # openssl-sys: point it at a self-built static OpenSSL instead of
+        # hunting distro .a files that hosted runners don't ship. Digest
+        # pinned; bumps are loud (mismatch = hard stop).
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 2 -o openssl.tar.gz             https://www.openssl.org/source/openssl-3.0.15.tar.gz
+          echo "23c666d0edf20f14249b3d8f0368acaee9ab585b09e1de82107c66e1f3ec9533  openssl.tar.gz" | sha256sum -c -
+          tar xzf openssl.tar.gz
+          cd openssl-3.0.15
+          ./Configure linux-x86_64 no-shared no-tests --prefix="$RUNNER_TEMP/musl-sysroot"             CC="musl-gcc -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu"
+          make -j4 build_sw
+          make install_sw
+          echo "OPENSSL_DIR=$RUNNER_TEMP/musl-sysroot" >> "$GITHUB_ENV"
+          echo "OPENSSL_LIB_DIR=$RUNNER_TEMP/musl-sysroot/lib64" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=$RUNNER_TEMP/musl-sysroot/include" >> "$GITHUB_ENV"
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+          echo "OPENSSL_NO_VENDOR=1" >> "$GITHUB_ENV"
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
