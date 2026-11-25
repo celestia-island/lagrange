@@ -15,7 +15,7 @@ import type { DocsSiteMeta } from "../types";
 // `update:modelValue(false)`). happy-dom never mounts the real popover,
 // so this is the only way to drive the component's half of that contract.
 // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the suite green.
-const modalState = vi.hoisted(() => ({ dismiss: null as (() => void) | null }));
+const modalState = vi.hoisted(() => ({ dismiss: null as (() => void) | null, title: "" as string }));
 vi.mock("@celestia-island/hikari", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@celestia-island/hikari")>();
   const { defineComponent, h, Teleport } = await import("vue");
@@ -25,10 +25,12 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
       name: "HkModal",
       props: {
         modelValue: Boolean,
+        title: String,
         "onUpdate:modelValue": Function,
       },
       setup(props, { slots }) {
         modalState.dismiss = () => props["onUpdate:modelValue"]?.(false);
+        modalState.title = props.title ?? "";
         // Teleported like the real popover, so "nothing lands in the
         // header root" stays the contract under test.
         return () =>
@@ -89,7 +91,7 @@ function defaultBody(url: string): unknown {
 /** Open the trigger's popup if it is not already open (clicking an OPEN
  * trigger toggles the panel shut). */
 async function openPanel(): Promise<void> {
-  if (document.querySelector(".lagrange-docs-search-input")) return;
+  if (document.querySelector(".lagrange-docs-search-panel .hk-search-input-field")) return;
   const trigger = document.querySelector<HTMLButtonElement>(
     ".lagrange-docs-search button[aria-haspopup='dialog']",
   )!;
@@ -103,7 +105,7 @@ async function typeInto(_root: ParentNode, value: string): Promise<void> {
   // MUT:mut-openpanel-toggle (an open-panel trigger click closes the panel,
   // which is exactly what this helper must not do).
   await openPanel();
-  const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+  const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-panel .hk-search-input-field")!;
   input.value = value;
   input.dispatchEvent(new Event("input"));
   await nextTick();
@@ -145,6 +147,26 @@ afterEach(() => {
 });
 
 describe("DocsSearchBox", () => {
+  // 2026-11-25 user direction: the modal title (and the trigger's
+  // accessible name) is the NOUN "Search" — no ellipsis. The FIELD's
+  // placeholder keeps the typing affordance ("Search…").
+  it("titles the window and names the trigger without an ellipsis", async () => {
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    const trigger = document.querySelector<HTMLButtonElement>(
+      ".lagrange-docs-search button[aria-haspopup='dialog']",
+    )!;
+    expect(trigger.getAttribute("aria-label")).toBe("Search");
+    trigger.click();
+    await nextTick();
+    expect(modalState.title).toBe("Search");
+    // The field's placeholder keeps the ellipsis convention.
+    const field = document.querySelector<HTMLInputElement>(
+      ".lagrange-docs-search-panel .hk-search-input-field",
+    )!;
+    expect(field.placeholder).toBe("Search…");
+  });
+
   // 2026-11-24: `new DocsSearch(site, fetch)` stored the bare Window
   // method on an instance and called it as a method; Chrome rejected the
   // receiver and every query died as "unavailable" on every docs site.
@@ -263,7 +285,7 @@ describe("DocsSearchBox", () => {
     await typeInto(m.root, "pipeline");
     const box = document.querySelector(".lagrange-docs-search")!;
     expect(box.getAttribute("data-open")).toBe("true");
-    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
+    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-panel .hk-search-input-clear")!.click();
     await nextTick();
     // MUT: M3 (round 7 — `clear()` leaving `open` set). The RESULT list and
     // the busy flag are what `clear()` must reset; the modal's own state is
@@ -285,12 +307,12 @@ describe("DocsSearchBox", () => {
       }),
     );
     await openPanel();
-    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-panel .hk-search-input-field")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
     expect(box.getAttribute("data-busy")).toBe("true");
-    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-clear")!.click();
+    document.querySelector<HTMLButtonElement>(".lagrange-docs-search-panel .hk-search-input-clear")!.click();
     await nextTick();
     expect(box.getAttribute("data-busy")).toBe("false");
     await new Promise((r) => setTimeout(r, 120));
@@ -311,7 +333,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await openPanel();
-    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-panel .hk-search-input-field")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
@@ -331,7 +353,7 @@ describe("DocsSearchBox", () => {
     cleanup = m.unmount;
     await typeInto(m.root, "pipeline");
     await openPanel();
-    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-panel .hk-search-input-field")!;
     const hit = document.querySelector<HTMLAnchorElement>(".lagrange-docs-search-hit")!;
     input.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: hit }));
     await nextTick();
@@ -363,7 +385,7 @@ describe("DocsSearchBox", () => {
     cleanup = m.unmount;
     // Fire the slow query, then immediately the fast one.
     await openPanel();
-    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-panel .hk-search-input-field")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
@@ -391,7 +413,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await openPanel();
-    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-panel .hk-search-input-field")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
@@ -416,7 +438,7 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await openPanel();
-    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-input")!;
+    const input = document.querySelector<HTMLInputElement>(".lagrange-docs-search-panel .hk-search-input-field")!;
     input.value = "pipeline";
     input.dispatchEvent(new Event("input"));
     await nextTick();
@@ -434,6 +456,6 @@ describe("DocsSearchBox", () => {
   it("hides the clear affordance on an empty field", async () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
-    expect(document.querySelector(".lagrange-docs-search-clear")).toBeNull();
+    expect(document.querySelector(".lagrange-docs-search-panel .hk-search-input-clear")).toBeNull();
   });
 });

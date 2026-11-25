@@ -19,6 +19,9 @@ minimumReleaseAgeExclude:
   # Same-day pickup (2026-11-25): custom-theme memo replay, hikari#1552.
   # Same-day pickup (2026-11-25): Rust-derived theme vars, hikari#1557/#1560.
   - '@celestia-island/hikari@0.55.488'
+  # Same-day pickup (2026-11-25): flipped menu cascade anchors at the trigger's
+  # measured edge (the language popup's drift) + theme-name i18n, hikari#1562.
+  - '@celestia-island/hikari@0.55.491'
   # Same-day pickup (2026-11-24): phone nav drawer, hikari#1535.
   - '@celestia-island/hikari@0.55.479'
   - '@celestia-island/tairitsu-host-client@0.1.0'

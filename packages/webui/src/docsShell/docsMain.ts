@@ -23,6 +23,7 @@ import "@celestia-island/hikari/styles";
 import "@celestia-island/hikari/styles/theme-vars.css";
 import { DocsPage } from "./DocsPage";
 import { installDocsLocale } from "./i18n";
+import { initDpiPrefs } from "./dpiPrefs";
 import type { DocsPageData } from "./types";
 import "./docsShell.scss";
 import "./docsContent.scss";
@@ -185,6 +186,11 @@ async function boot(): Promise<void> {
   const page = readPageData();
   await installDocsLocale(page.lang);
   initTheme();
+  // The DPI preference applies before first paint (boot rollback: a risky
+  // persisted scale — or a ?dpi=auto hatch — clears before the root zoom
+  // lands), the same boot order chest's bootstrapApp uses. The keyboard /
+  // resize / URL safety nets register here and live for the page.
+  initDpiPrefs();
 
   const app = createSSRApp(DocsPage, { page });
   const root = document.getElementById("app");
