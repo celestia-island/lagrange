@@ -3,6 +3,11 @@
 // handling have an executing unit gate (review round 3 of PR #119:
 // reverting the KaTeX base fix or the asset-prefix strip left every
 // gate green because both lived inside the un-unit-tested orchestrator).
+// hikari's SHIPPED pre-paint boot asset (hikari#1550), inlined verbatim:
+// `?raw` is resolved by the vite SSR build that bundles this lane, so the
+// emitted <script> carries the same bytes hikari's drift contract pins.
+// eslint-disable-next-line import/no-unresolved -- exports map serves it
+import themeBootJs from "@celestia-island/hikari/styles/theme-boot.js?raw";
 import { escapeAttr, redirectStub } from "./redirect";
 import type { DocsPageData } from "./types";
 
@@ -117,37 +122,25 @@ export function pageTemplate(opts: PageTemplateOptions): string {
   <link rel="canonical" href="${escapeAttr(url)}">
   ${site.favicon ? `<link rel="icon" href="${escapeAttr(site.favicon)}">` : ""}
   <script>
-  /* PRE-HYDRATION THEME BOOTSTRAP (hikari#1546): sets data-theme/data-mode
-   * from the saved preference BEFORE first paint. Attribute writes only —
-   * the COLORS come from the static hikari theme-vars sheet bundled into
-   * the stylesheet link below. Storage keys mirror hikari's useTheme
-   * exactly.
+  /* PRE-HYDRATION THEME BOOTSTRAP (hikari#1546): hikari's SHIPPED boot asset
+   * — the solar system-mode chain, inlined verbatim. It reads hikari's own
+   * storage keys (hikari-theme / hikari-theme-mode / hikari-solar-*) and
+   * writes only data-theme + data-mode; the COLORS come from the static
+   * theme-vars sheet bundled into the stylesheet link below.
    *
-   * KNOWN DIVERGENCE, system mode: hikari resolves "system" via its SOLAR
-   * clock (timezone-estimated day/night, useSolarTime), while this
-   * first-guess uses the OS prefers-color-scheme. An OS-dark user in solar
-   * daytime gets dark first paint, then initTheme() snaps to light —
-   * still themed (better than the previous unthemed flash), but not exact.
-   * The exact fix is upstream: hikari shipping a dependency-free boot
-   * asset compiled from useSolarTime (tracked on hikari#1546 Phase 1.5);
-   * this bootstrap adopts it the moment it exists. Users who pick an
-   * explicit light/dark in the theme dialog get EXACT first paint today. */
-  (function () {
-    try {
-      var d = document.documentElement;
-      var t = null, m = null;
-      try {
-        t = localStorage.getItem("hikari-theme");
-        m = localStorage.getItem("hikari-theme-mode");
-      } catch (e) {}
-      if (!m || m === "system") {
-        m = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark" : "light";
-      }
-      d.setAttribute("data-theme", t || "default");
-      d.setAttribute("data-mode", m);
-    } catch (e) {}
-  })();
+   * PARITY SCOPE, measured: for the default "timezone" strategy and for
+   * "manual", the first paint equals what initTheme() applies at hydration
+   * (verified: identical mode AND body background, JS blocked vs hydrated).
+   * Two documented cases can still refine after the bundle, both by
+   * design: strategy "ip" (the runtime's geolocation/IP cascade is async
+   * and networked — the asset boots on the offset estimate) and a stored
+   * CUSTOM theme (user-authored vars cannot be pre-rendered; the stock
+   * colors in the right MODE are painted first).
+   *
+   * The asset is drift-checked upstream (themeBoot.contract.test.ts),
+   * dependency-free, and ES2020 — a browser older than that cannot run the
+   * app either and simply keeps an unthemed first paint. */
+${themeBootJs}
   </script>
   ${cssLinks}
   ${katexTags}
