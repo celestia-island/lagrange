@@ -154,10 +154,13 @@ fn drift_check_reports_nothing() {
             // A skip that only shows up as a green test is invisible to a
             // merged-green reader. `cargo test` captures test stdout/stderr
             // and reprints it only for FAILING tests, so `eprintln!` alone
-            // would still vanish on a green run (measured). stderr is not
+            // would still vanish on a green run (checked live — see the PR
+            // body's round-3 evidence). stderr is not
             // part of the test-output channel, so this line reaches the
             // reader with no flag and stays greppable in any log:
             // `WARN embedded_ts: SKIPPED`.
+            // comment-gate-ok: documents the visibility mechanics of the skip
+            // path (cargo capture vs stderr), not a probe verdict.
             use std::io::Write as _;
             let _ = writeln!(
                 std::io::stderr(),
