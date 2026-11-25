@@ -123,14 +123,23 @@ export function pageTemplate(opts: PageTemplateOptions): string {
   ${site.favicon ? `<link rel="icon" href="${escapeAttr(site.favicon)}">` : ""}
   <script>
   /* PRE-HYDRATION THEME BOOTSTRAP (hikari#1546): hikari's SHIPPED boot asset
-   * — the solar system-mode chain, inlined verbatim so the first paint
-   * resolves "system" exactly as useTheme does at hydration (no OS-vs-sun
-   * divergence, no snap). It reads hikari's own storage keys
-   * (hikari-theme / hikari-theme-mode / hikari-solar-*) and writes only
-   * data-theme + data-mode; the COLORS come from the static theme-vars
-   * sheet bundled into the stylesheet link below. The asset is
-   * drift-checked upstream (themeBoot.contract.test.ts), ES2020, and
-   * dependency-free. */
+   * — the solar system-mode chain, inlined verbatim. It reads hikari's own
+   * storage keys (hikari-theme / hikari-theme-mode / hikari-solar-*) and
+   * writes only data-theme + data-mode; the COLORS come from the static
+   * theme-vars sheet bundled into the stylesheet link below.
+   *
+   * PARITY SCOPE, measured: for the default "timezone" strategy and for
+   * "manual", the first paint equals what initTheme() applies at hydration
+   * (verified: identical mode AND body background, JS blocked vs hydrated).
+   * Two documented cases can still refine after the bundle, both by
+   * design: strategy "ip" (the runtime's geolocation/IP cascade is async
+   * and networked — the asset boots on the offset estimate) and a stored
+   * CUSTOM theme (user-authored vars cannot be pre-rendered; the stock
+   * colors in the right MODE are painted first).
+   *
+   * The asset is drift-checked upstream (themeBoot.contract.test.ts),
+   * dependency-free, and ES2020 — a browser older than that cannot run the
+   * app either and simply keeps an unthemed first paint. */
 ${themeBootJs}
   </script>
   ${cssLinks}
