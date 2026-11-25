@@ -94,6 +94,9 @@ describe("dpiPrefs", () => {
     expect(loadDpiScale()).toBe(200);
     expect(isDpiCountdownActive()).toBe(false);
     // keepDpiScale does not notify (the visual state did not move).
+    // MUT:lg146-m-keepnonotify — the notification log assertion below
+    // (`seen` equals exactly [100, 200, 200]) bites this claim: a notify
+    // added to keepDpiScale appends a fourth entry and the equality reds.
 
     previewDpiScale(300);
     await vi.advanceTimersByTimeAsync(10_000);
