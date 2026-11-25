@@ -30,13 +30,25 @@ pub fn collect_sources(blocks: &[SpannedBlock]) -> Vec<String> {
 
 fn collect_sources_inner(blocks: &[SpannedBlock], out: &mut Vec<String>) {
     for sb in blocks {
-        match &sb.block {
-            Block::LiveComponent { source, .. } => out.push(source.clone()),
-            Block::Blockquote(inner) => collect_sources_inner(inner, out),
-            Block::Center(inner) => collect_sources_inner(inner, out),
-            Block::Div { children, .. } => collect_sources_inner(children, out),
-            _ => {}
+        collect_sources_in_block(&sb.block, out);
+    }
+}
+
+/// Walk one block. List items carry bare [`Block`] children (no span wrapper),
+/// which is why this takes `Block` rather than `SpannedBlock`.
+fn collect_sources_in_block(block: &Block, out: &mut Vec<String>) {
+    match block {
+        Block::LiveComponent { source, .. } => out.push(source.clone()),
+        Block::Blockquote(inner) | Block::Center(inner) => collect_sources_inner(inner, out),
+        Block::Div { children, .. } => collect_sources_inner(children, out),
+        Block::List { items, .. } => {
+            for item in items {
+                for child in &item.children {
+                    collect_sources_in_block(child, out);
+                }
+            }
         }
+        _ => {}
     }
 }
 
@@ -234,5 +246,27 @@ fn stderr_tail(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         format!("...{}", &s[s.len() - max..])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::markdown::parse_doc;
+
+    #[test]
+    fn nested_hikari_fences_under_list_items_are_collected() {
+        // A ```` ```hikari ```` fence indented under a list item is a child
+        // block of that item now; the walk must still find it or the build
+        // silently renders "(live preview unavailable)".
+        let src = "- demo:\n\n  ```hikari\n  rsx!{ p { \"x\" } }\n  ```\n";
+        let blocks = parse_doc(src);
+        let sources = collect_sources(&blocks);
+        assert_eq!(
+            sources.len(),
+            1,
+            "nested live fence not collected: {sources:?}"
+        );
+        assert!(sources[0].contains("rsx!"));
     }
 }

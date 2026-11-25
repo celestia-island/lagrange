@@ -86,10 +86,13 @@ pub enum Block {
     /// KaTeX runtime into the preview pane of a demo block, with the source
     /// one toggle away. Never syntax-highlighted as plain code.
     Diagram { kind: DiagramKind, source: String },
-    /// A list. `ordered` distinguishes `-`/`*`/`+` from `1.`.
+    /// A list. `ordered` distinguishes `-`/`*`/`+` from `1.`; `start` is the
+    /// first item's number for an ordered list (the `<ol start>` attribute),
+    /// always 1 for bullets.
     List {
         ordered: bool,
-        items: Vec<Vec<Inline>>,
+        start: usize,
+        items: Vec<ListItem>,
     },
     /// A blockquote, parsed recursively into child blocks.
     Blockquote(Vec<SpannedBlock>),
@@ -116,6 +119,19 @@ pub enum Block {
         attrs: String,
         children: Vec<SpannedBlock>,
     },
+}
+
+/// One item of a [`Block::List`].
+///
+/// `inlines` is the item's own text with the marker stripped; `children`
+/// holds the blocks nested under it — child lists (`  - sub`) keep their
+/// hierarchy there, and so do tables, fences and extra paragraphs indented
+/// under the item. Rendering emits `<li>{inlines}{children}</li>` and leaves
+/// numbering to the browser's `<ol>`/`<ul>` markers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListItem {
+    pub inlines: Vec<Inline>,
+    pub children: Vec<Block>,
 }
 
 /// Which client-side renderer a [`Block::Diagram`] preview is fed to.
