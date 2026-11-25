@@ -36,7 +36,13 @@ export const DOCS_UI_KEYS = [
 // searchInput placeholder convention). `dpiRevertCountdown` and
 // `dpiRiskyWarning` carry literal {scale}/{seconds} placeholders that
 // DpiSliderBlock replaces (hikari's t() has no interpolation slot).
-const TABLES: Record<string, Record<string, string>> = {
+//
+// The table is typed against DOCS_UI_KEYS so a key missing from ANY
+// locale fails vue-tsc instead of silently falling back to English at
+// runtime (R2 of PR #146: parity was verified perfect by hand — this
+// keeps it that way mechanically).
+type DocsUiKey = (typeof DOCS_UI_KEYS)[number];
+const TABLES: Record<string, Record<DocsUiKey, string>> = {
   en: {
     "lagrange::docs.search": "Search…",
     "lagrange::docs.searchTitle": "Search",

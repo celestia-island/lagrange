@@ -44,8 +44,15 @@ function isDpiScale(v: unknown): v is number {
  * Persisted manual DPI scale in percent (one of the 25% notches between
  * 100 and 300), or null for Auto — the default, where the page never
  * touches scaling and follows the browser's own zoom untouched.
+ *
+ * Storage reads are SSR-guarded: the docs lane renders the shell
+ * server-side, and the theme dialog's strip content can only instantiate
+ * client-side today (hikari's overlay machinery is inert in a render
+ * pass) — the guard keeps that an invariant of THIS module, not an
+ * accident of the upstream overlay (R2 of PR #146).
  */
 export function loadDpiScale(): number | null {
+  if (typeof localStorage === "undefined") return null;
   const raw = localStorage.getItem(DPI_KEY);
   if (raw == null) return null;
   const v = Number(raw);
