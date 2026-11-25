@@ -20,16 +20,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # musl static-pie (2026-11-25 libc-independence wave): the published
+        # archive keeps the GNU triple in its FILENAME (the binstall URL
+        # pattern and create-lagrange fetch by that exact name), but the
+        # binary inside is static — no runtime libc contract on any user
+        # machine, and the runner OS stops mattering.
         include:
-          - target: x86_64-unknown-linux-gnu
+          # archive_target = the triple consumers expect IN THE FILENAME.
+          # The linux leg builds musl but publishes under the GNU triple:
+          # the binstall URL pattern ([package.metadata.binstall]) and
+          # create-lagrange both fetch by the user machine's gnu triple.
+          # Renaming that contract is a breaking change for every consumer,
+          # so the static binary ships under the historical name.
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: tar.gz
+            archive_target: x86_64-unknown-linux-gnu
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
+            archive_target: aarch64-apple-darwin
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
+            archive_target: x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v7
@@ -57,6 +71,32 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: musl toolchain
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: Static OpenSSL for musl (built from the pinned release tarball)
+        # lagrange pulls native-tls (hyper-tls), whose musl story is
+        # openssl-sys: point it at a self-built static OpenSSL instead of
+        # hunting distro .a files that hosted runners don't ship. Digest
+        # pinned; bumps are loud (mismatch = hard stop).
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 2 -o openssl.tar.gz             https://www.openssl.org/source/openssl-3.0.15.tar.gz
+          echo "23c666d0edf20f14249b3d8f0368acaee9ab585b09e1de82107c66e1f3ec9533  openssl.tar.gz" | sha256sum -c -
+          tar xzf openssl.tar.gz
+          cd openssl-3.0.15
+          ./Configure linux-x86_64 no-shared no-tests --prefix="$RUNNER_TEMP/musl-sysroot"             CC="musl-gcc -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu"
+          make -j4 build_sw
+          make install_sw
+          echo "OPENSSL_DIR=$RUNNER_TEMP/musl-sysroot" >> "$GITHUB_ENV"
+          echo "OPENSSL_LIB_DIR=$RUNNER_TEMP/musl-sysroot/lib64" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=$RUNNER_TEMP/musl-sysroot/include" >> "$GITHUB_ENV"
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+          echo "OPENSSL_NO_VENDOR=1" >> "$GITHUB_ENV"
+
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
@@ -64,22 +104,22 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../lagrange-${{ github.ref_name }}-${{ matrix.target }}.tar.gz lagrange
+          tar czf ../../../lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.tar.gz lagrange
           cd ../../..
 
       - name: Package (windows)
         if: matrix.archive == 'zip'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../lagrange-${{ github.ref_name }}-${{ matrix.target }}.zip lagrange.exe
+          7z a ../../../lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.zip lagrange.exe
           cd ../../..
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            lagrange-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
-            lagrange-${{ github.ref_name }}-${{ matrix.target }}.zip
+            lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.tar.gz
+            lagrange-${{ github.ref_name }}-${{ matrix.archive_target }}.zip
 
   release-notes:
     needs: build
