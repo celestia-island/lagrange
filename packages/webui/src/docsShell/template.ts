@@ -116,6 +116,39 @@ export function pageTemplate(opts: PageTemplateOptions): string {
   <meta name="description" content="${escapeAttr(site.description)}">
   <link rel="canonical" href="${escapeAttr(url)}">
   ${site.favicon ? `<link rel="icon" href="${escapeAttr(site.favicon)}">` : ""}
+  <script>
+  /* PRE-HYDRATION THEME BOOTSTRAP (hikari#1546): sets data-theme/data-mode
+   * from the saved preference BEFORE first paint. Attribute writes only —
+   * the COLORS come from the static hikari theme-vars sheet bundled into
+   * the stylesheet link below. Storage keys mirror hikari's useTheme
+   * exactly.
+   *
+   * KNOWN DIVERGENCE, system mode: hikari resolves "system" via its SOLAR
+   * clock (timezone-estimated day/night, useSolarTime), while this
+   * first-guess uses the OS prefers-color-scheme. An OS-dark user in solar
+   * daytime gets dark first paint, then initTheme() snaps to light —
+   * still themed (better than the previous unthemed flash), but not exact.
+   * The exact fix is upstream: hikari shipping a dependency-free boot
+   * asset compiled from useSolarTime (tracked on hikari#1546 Phase 1.5);
+   * this bootstrap adopts it the moment it exists. Users who pick an
+   * explicit light/dark in the theme dialog get EXACT first paint today. */
+  (function () {
+    try {
+      var d = document.documentElement;
+      var t = null, m = null;
+      try {
+        t = localStorage.getItem("hikari-theme");
+        m = localStorage.getItem("hikari-theme-mode");
+      } catch (e) {}
+      if (!m || m === "system") {
+        m = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark" : "light";
+      }
+      d.setAttribute("data-theme", t || "default");
+      d.setAttribute("data-mode", m);
+    } catch (e) {}
+  })();
+  </script>
   ${cssLinks}
   ${katexTags}
 </head>
