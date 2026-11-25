@@ -4,7 +4,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
-license.workspace = true
+# crates.io rejects non-SPDX `license` expressions (SySL-1.0 is not an SPDX
+# identifier), so publishable workspace crates carry the licence FILE instead —
+# the same shape `lagrange-library` itself publishes with.
+license-file = "LICENSE"
 repository.workspace = true
 description = "Shared content contract for the lagrange ecosystem: frontmatter, document ids, anchors"
 keywords = ["documentation", "markdown", "frontmatter", "lagrange"]
