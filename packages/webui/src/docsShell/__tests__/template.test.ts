@@ -52,6 +52,27 @@ function render(opts: { base?: string; math?: boolean; favicon?: string | null }
   });
 }
 
+describe("pageTemplate boot recovery watcher", () => {
+  it("ships inline UNDER the module tag and reloads once via sessionStorage", () => {
+    const html = render();
+    const moduleAt = html.indexOf('<script type="module"');
+    const watcherAt = html.indexOf("lagrange-boot-reload");
+    expect(moduleAt).toBeGreaterThanOrEqual(0);
+    expect(watcherAt).toBeGreaterThan(moduleAt);
+    // Once-only: a broken build must not reload-loop the reader.
+    expect(html).toContain("sessionStorage.getItem(KEY)");
+    expect(html).toContain("sessionStorage.setItem(KEY");
+    // Cache-buster so the CDN serves the NEW html on the recovery pass.
+    expect(html).toContain("searchParams.set('lr'");
+  });
+
+  it("every page gets the watcher, base or not", () => {
+    for (const base of ["", "/repo"]) {
+      expect(render({ base })).toContain("lagrange-boot-reload");
+    }
+  });
+});
+
 describe("pageTemplate asset URLs", () => {
   it("carries the site base on the client JS and CSS", () => {
     const html = render({ base: "/repo" });

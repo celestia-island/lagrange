@@ -248,6 +248,16 @@ async function boot(): Promise<void> {
       console.error("docs hydration: body upgrade failed:", err);
     }
   }
+
+  // Tell the page's boot watcher (template.ts) the module executed. The
+  // watcher exists for the deploy window: a cached HTML still names the old
+  // (deleted) bundle hash, the module 404s, and NOTHING on the page works —
+  // the user's "every button is dead". Without this explicit flag the
+  // watcher would also treat a merely SLOW boot as healthy only after its
+  // heuristic selectors fired; an explicit mark makes the reload decision
+  // exact (and lets the watcher skip the wait entirely on every normal
+  // visit, since the flag appears within milliseconds).
+  (globalThis as Record<string, unknown>).__lagrangeBoot = true;
 }
 
 // Self-execute when this is a real docs page: the payload script tag
