@@ -70,6 +70,73 @@ function mountMermaidBoxes(): void {
   }
 }
 
+/**
+ * Markdown table scroll shells (the boot upgrade for `.lagrange-docs-table-
+ * scroll` hosts the Rust renderer wraps every table in).
+ *
+ * The host senses its own overflow and drives hikari's shared edge-glow
+ * painter (`hk-edge-glow` — the same sheet HkScrollContainer mounts; this is
+ * a re-USE of that painter's markup contract, not a second painter): a band
+ * renders only while its edge hides content, so a phone sees the theme-color
+ * lamp on the overflowing side, both sides mid-scroll, and nothing at either
+ * end. Re-measures on scroll and on host resize (a rotated phone or a
+ * reflowed sheet changes which edges overflow without a scroll event).
+ *
+ * Why imperative DOM and not a Vue mount per table: the table HTML is
+ * build-rendered (SSR body), and a Vue takeover per table re-owners live
+ * content for no behavioural gain — the painter is markup + sheet, and this
+ * upgrade drives exactly that contract.
+ */
+function mountTableScrollShells(root: ParentNode): void {
+  const hosts = root.querySelectorAll<HTMLElement>(".lagrange-docs-table-scroll");
+  for (const host of hosts) {
+    if (host.dataset.glowMounted === "1") continue;
+    host.dataset.glowMounted = "1";
+    if (host.querySelector(".hk-edge-glow")) continue;
+
+    const glow = document.createElement("div");
+    glow.className = "hk-edge-glow";
+    glow.setAttribute("aria-hidden", "true");
+    host.appendChild(glow);
+
+    // Mirrors HkScrollContainer's overflowGlowEdgesFor: start/end verdicts
+    // per axis, mapped to physical edges (this host is LTR horizontal).
+    const sync = (): void => {
+      const hiddenBefore = host.scrollLeft > 1;
+      const hiddenAfter = host.scrollLeft + host.clientWidth < host.scrollWidth - 1;
+      const edges = [
+        ...(hiddenBefore ? ["left"] : []),
+        ...(hiddenAfter ? ["right"] : []),
+      ];
+      // Re-render the band set (the painter's contract: bands exist per
+      // requested edge; an empty set keeps the inert root).
+      glow.replaceChildren(
+        ...edges.map((edge) => {
+          const band = document.createElement("span");
+          band.className = "hk-edge-glow-band";
+          band.dataset.edge = edge;
+          return band;
+        }),
+      );
+    };
+
+    let raf = 0;
+    const schedule = (): void => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        sync();
+      });
+    };
+    host.addEventListener("scroll", schedule, { passive: true });
+    host.addEventListener("resize", schedule);
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(schedule).observe(host);
+    }
+    sync();
+  }
+}
+
 /** KaTeX boxes: the legacy render loop, ported (vendor runtime, kept
  * until the hikari/tairitsu math lane exists). */
 function renderMathBoxes(): void {
@@ -241,6 +308,7 @@ async function boot(): Promise<void> {
     installCodeCopy,
     mountMermaidBoxes,
     renderMathBoxes,
+    mountTableScrollShells,
   ]) {
     try {
       upgrade();

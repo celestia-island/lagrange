@@ -86,17 +86,14 @@ body {
   align-items: center;
 }
 
+// In-flight state: a CENTERED SPINNER, no text (2026-11-27 user direction —
+// the old "Searching…" text row read as a random white block on the sheet).
 .lagrange-docs-search-busy {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 60;
-  padding: 0.5rem 0.7rem;
-  border-radius: var(--hk-radius-surface, 10px);
-  background: rgb(var(--hk-color-surface, 255 255 255));
-  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.12), transparent);
-  font-size: 0.8rem;
-  opacity: 0.85;
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
 }
 
 .lagrange-docs-search-error {
@@ -154,12 +151,61 @@ body {
   opacity: 0.75;
 }
 
+// The magnifier snippet: markdown-rendered chunk window (tables render as
+// tables), matches underlined in place, and a directional fade on each edge
+// where the section text continues beyond the window — no fade at the
+// section's true start/end (2026-11-27 user direction; the old one-line
+// ellipsis cut showed raw pipe rows and hid deeper matches entirely).
 .lagrange-docs-search-hit-snippet {
+  position: relative;
   font-size: 0.78rem;
-  opacity: 0.6;
+  opacity: 0.72;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-height: 13rem;
+
+  > :first-child { margin-top: 0; }
+  > :last-child { margin-bottom: 0; }
+
+  // Rendered markdown tables inside the window: never widen the hit card.
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    font-size: 0.72rem;
+  }
+
+  &.has-fade-above,
+  &.has-fade-below {
+    // mask = the TEXT dissolves toward the edge (an overlay tint would not
+    // read as "there is more of the same content here").
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        black var(--fade-top, 0%),
+        black calc(100% - var(--fade-bottom, 0%)),
+        transparent 100%
+      );
+    mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        black var(--fade-top, 0%),
+        black calc(100% - var(--fade-bottom, 0%)),
+        transparent 100%
+      );
+  }
+
+  &.has-fade-above { --fade-top: 14%; }
+  &.has-fade-below { --fade-bottom: 14%; }
+}
+
+.lagrange-docs-search-mark {
+  background: none;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--color-primary) / 0.85);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 // Mobile: the trigger is one icon slot, exactly like its neighbours.
@@ -173,7 +219,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(360px, 86vw);
+  // The old min(360px, 86vw) cap was LEFT-ALIGNED inside the modal's
+  // content box, so phones showed 16px of air on the left and ~42px on the
+  // right. The modal owns the page gutter — the panel just fills it.
+  width: 100%;
 
   .hk-search-input {
     width: 100%;
@@ -192,10 +241,37 @@ body {
 
   .lagrange-docs-search-busy {
     position: static;
-    padding: 0.4rem 0;
   }
 }
 
+
+// ── markdown table scroll shell (build renders tables inside this host) ──
+// A wide table must never widen the PAGE: the host clips it and the table
+// keeps its natural width (min-width: max-content — cells stop collapsing
+// into one-character columns on phones). The boot pass mounts the shared
+// hk-edge-glow painter (hikari's ONE edge-glow painter — the same sheet the
+// scroll containers use) on left/right and toggles the bands from sensed
+// overflow: a band shows only while that edge hides content, and its ink is
+// the theme primary — the "there is more beyond this edge" lamp.
+.lagrange-docs-table-scroll {
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+
+  > table {
+    min-width: max-content;
+    margin: 0;
+  }
+
+  .hk-edge-glow {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+}
 
 // ── theme dialog: mode-extra strip (DPI block) ───────────────────────────
 // The mode-extra strip is ONE menu column directly under the 主题模式

@@ -50,8 +50,13 @@ const SHARD_COUNT: usize = 16;
 pub struct ChunkMeta {
     pub heading_path: Vec<String>,
     pub anchor: String,
-    /// Readable text cut from the chunk's source span.
-    pub snippet: String,
+    /// The chunk's FULL readable text (untruncated). The front-end builds
+    /// its match-centred preview window from this — a 160-char head cut
+    /// cannot show a match that sits deeper in the section, and the window
+    /// needs the surrounding lines to know where the fades go (L942 follow-
+    /// up: raw markdown table rows in this text are what the snippet
+    /// rendered as pipes; the window is rendered as markdown client-side).
+    pub text: String,
 }
 
 /// Lightweight document metadata — loaded eagerly by the front-end.
@@ -128,17 +133,16 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
         let mut chunk_metas: Vec<ChunkMeta> = Vec::with_capacity(doc.chunks.len());
         for (chunk_idx, chunk) in doc.chunks.iter().enumerate() {
             let text = plain_text(&chunk.source_text);
-            let snippet = truncate_chars(&text, SNIPPET_CHARS);
-            chunk_metas.push(ChunkMeta {
-                heading_path: chunk.heading_path.clone(),
-                anchor: chunk.anchor.clone(),
-                snippet,
-            });
             // Index the chunk text: heading path words ride along so a
             // section can be found by its own title.
             let mut indexable = chunk.heading_path.join(" ");
             indexable.push(' ');
             indexable.push_str(&text);
+            chunk_metas.push(ChunkMeta {
+                heading_path: chunk.heading_path.clone(),
+                anchor: chunk.anchor.clone(),
+                text,
+            });
             for token in tokenize(&indexable) {
                 let shard_idx = shard_for(&token);
                 let entry = shards[shard_idx].index.entry(token).or_default();
@@ -148,9 +152,11 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
                 }
             }
         }
+        // First chunk's head — the no-query landing view (the per-chunk
+        // full texts are for match-centred windows; this one stays a cut).
         let snippet = chunk_metas
             .first()
-            .map(|c| c.snippet.clone())
+            .map(|c| truncate_chars(&c.text, SNIPPET_CHARS))
             .unwrap_or_default();
         metas.push(DocMeta {
             id: doc_id,
@@ -1543,10 +1549,14 @@ mod tests {
         }
         assert_eq!(hit_chunk, Some(0), "安装 must resolve to chunk 0");
         assert_eq!(meta["docs"][0]["chunks"][0]["anchor"], "安装");
-        // Snippet is the source span text, not rendered HTML.
-        assert!(meta["docs"][0]["chunks"][0]["snippet"]
+        // The chunk carries its FULL readable text (the front-end cuts its
+        // own match-centred window from it) — the source span text, not
+        // rendered HTML.
+        assert!(meta["docs"][0]["chunks"][0]["text"]
             .as_str()
             .unwrap()
             .contains("运行"));
+        // The doc-level head snippet is still the truncated first chunk.
+        assert!(meta["docs"][0]["snippet"].as_str().unwrap().len() <= 160 + 8);
     }
 }
