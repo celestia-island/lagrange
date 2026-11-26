@@ -584,7 +584,7 @@ fn render_live_pair(
 /// `aria-label`/`title` (`Copy code`) are hard-coded ENGLISH on purpose: the
 /// build has no locale at this point and they are the no-JS fallback. Both
 /// lanes re-label them on the client from their own i18n table — the legacy
-/// lane's inline runtime (`lgUI.t`: comments/diagram.ts) and the webui lane's
+/// lane's inline runtime (`lgUI.t`: src/diagram.ts) and the webui lane's
 /// boot pass (`localizeStaticChrome`: packages/webui/src/docsShell/docsMain.ts,
 /// keys `lagrange::docs.preview|source|copyCode`). Adding a language here
 /// instead would fork the wording in three places.

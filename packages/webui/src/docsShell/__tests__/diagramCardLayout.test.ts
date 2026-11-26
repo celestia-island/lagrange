@@ -30,26 +30,34 @@ function stripComments(css: string): string {
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
-/** The declaration body of the first rule whose selector text is `selector`
- *  (searched from `from`), or null when there is no such block. Depth is
- *  tracked by BRACE COUNT — SCSS may put a nested rule on one line. */
-function ruleBody(
-  css: string,
-  selector: string,
-  from = 0,
-): string | null {
-  const idx = css.indexOf(selector, from);
-  if (idx < 0) return null;
-  const open = css.indexOf("{", idx + selector.length);
-  if (open < 0) return null;
-  let depth = 0;
-  for (let i = open; i < css.length; i += 1) {
-    const ch = css[i];
-    if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) return css.slice(open + 1, i);
+/** The declaration body of the first rule whose selector is EXACTLY
+ *  `selector` (searched from `from`), or null when there is no such block.
+ *
+ *  An exact token match matters: a plain `indexOf` also matches
+ *  `.lg-diagram-canvas` inside `.lg-diagram-canvas-x`, so a renamed selector
+ *  would keep the guard green while the shipped sheet styles nothing
+ *  (measured — that survived an earlier version of this file). Depth is
+ *  tracked by BRACE COUNT, so one-line nested SCSS still reads correctly. */
+function ruleBody(css: string, selector: string, from = 0): string | null {
+  let idx = css.indexOf(selector, from);
+  while (idx >= 0) {
+    const before = idx === 0 ? "" : css[idx - 1];
+    let open = idx + selector.length;
+    while (open < css.length && /\s/.test(css[open])) open += 1;
+    const startsSelector = before === "" || /[\s{};,]/.test(before);
+    if (startsSelector && css[open] === "{") {
+      let depth = 0;
+      for (let i = open; i < css.length; i += 1) {
+        const ch = css[i];
+        if (ch === "{") depth += 1;
+        else if (ch === "}") {
+          depth -= 1;
+          if (depth === 0) return css.slice(open + 1, i);
+        }
+      }
+      return null;
     }
+    idx = css.indexOf(selector, idx + 1);
   }
   return null;
 }
@@ -57,6 +65,12 @@ function ruleBody(
 const sheet = stripComments(
   readFileSync(resolve(here, "../docsContent.scss"), "utf8"),
 );
+
+/** The Rust renderer owns the markup this sheet styles. Read it so a rename
+ *  on either side (a live mutation let `> .lg-diagram-canvas` become
+ *  `-x` and still pass a source-shape-only pin) fails here — the guard must
+ *  cover the seam, not just the sheet. */
+const renderer = readFileSync(resolve(here, "../../../../../src/render.rs"), "utf8");
 
 describe("diagram card layout", () => {
   it("keeps the canvas a stretched flex item with a real width floor", () => {
@@ -72,6 +86,14 @@ describe("diagram card layout", () => {
     // from turning into a min-content floor that kills `overflow-x`.
     expect(canvas!).toMatch(/flex:\s*1 1 auto/);
     expect(canvas!).toMatch(/min-width:\s*0/);
+  });
+
+  it("styles the canvas class the renderer actually emits", () => {
+    // The sheet and the markup are two files: a selector that no longer
+    // matches the emitted class paints nothing while every other gate stays
+    // green (measured: renaming the selector survived the shape pin alone).
+    expect(renderer).toContain('attr("class", "lg-diagram-canvas")');
+    expect(ruleBody(sheet, ".lg-diagram-canvas")).not.toBeNull();
   });
 
   it("the reader is not vacuous (negative control)", () => {
