@@ -136,6 +136,32 @@ describe("resolveClientAssetsFrom (M12)", () => {
       resolveClientAssetsFrom({ "index.html": { file: "assets/x.js", isEntry: true } } as never),
     ).toThrow(/docsMain/);
   });
+
+  it("falls back to the standalone merged sheet when cssCodeSplit is off", () => {
+    // The docs-client build ships `cssCodeSplit: false` (the async-chunk
+    // style loss): vite 8 emits ONE stylesheet as its own manifest entry
+    // and leaves the docsMain entry's `css` EMPTY. The template must link
+    // that sheet or every page renders unstyled.
+    const out = resolveClientAssetsFrom({
+      "src/docsShell/docsMain.ts": { file: "assets/docsMain-abc.js", isEntry: true } as never,
+      "style-hash.css": { file: "assets/style-hash.css" } as never,
+      "assets/HkTimeZoneGlobe-x.css": { file: "assets/HkTimeZoneGlobe-x.css" } as never,
+    } as never);
+    expect(out.entryJs).toBe("docsMain-abc.js");
+    expect(out.cssFiles).toEqual(["style-hash.css", "HkTimeZoneGlobe-x.css"]);
+  });
+
+  it("split-mode css keeps winning over the fallback (no eager async sheets)", () => {
+    const out = resolveClientAssetsFrom({
+      "src/docsShell/docsMain.ts": {
+        file: "assets/docsMain-abc.js",
+        isEntry: true,
+        css: ["assets/docsMain-abc.css"],
+      } as never,
+      "HkTimeZoneGlobe-x.css": { file: "assets/HkTimeZoneGlobe-x.css" } as never,
+    } as never);
+    expect(out.cssFiles).toEqual(["docsMain-abc.css"]);
+  });
 });
 
 describe("buildPageData", () => {

@@ -55,6 +55,7 @@ export interface ClientAssets {
 export interface ViteManifestEntry {
   file: string;
   isEntry?: boolean;
+  isDynamicEntry?: boolean;
   css?: string[];
 }
 
@@ -63,13 +64,30 @@ export interface ViteManifestEntry {
  * `assets/` prefix: the copy step places those files directly under
  * `<out>/assets/docs/`, so keeping the prefix double-prefixes the URL and
  * every asset 404s (measured, PR #119 round 3 mutation M12).
+ *
+ * Stylesheet resolution has TWO manifest shapes (the docs-client build
+ * owns both): with CSS code splitting the entry chunk lists its sheets in
+ * `css`; with `cssCodeSplit: false` — the shape this lane builds since the
+ * async-chunk style loss (rolldown swept statically-needed modules into an
+ * async chunk whose CSS never loaded: the DPI slider rendered height:0 and
+ * the sun-clock globe mounted unstyled) — vite 8 emits the single merged
+ * sheet as its own manifest entry and attaches NOTHING to the entry. The
+ * fallback picks those standalone `.css` entries so the template always
+ * links the shell's styles.
  */
 export function resolveClientAssetsFrom(raw: Record<string, ViteManifestEntry>): ClientAssets {
   const entryKey = Object.keys(raw).find((k) => raw[k]?.isEntry && k.includes("docsMain"));
   if (!entryKey) throw new Error("ssr-docs: client manifest has no docsMain entry");
   const entry = raw[entryKey];
   const strip = (f: string) => f.replace(/^assets\//, "");
-  return { entryJs: strip(entry.file), cssFiles: [...(entry.css ?? [])].map(strip) };
+  const split = (entry.css ?? []).map(strip);
+  const merged =
+    split.length > 0
+      ? []
+      : Object.values(raw)
+          .filter((v) => v?.file?.endsWith(".css") && !v.isEntry && !v.isDynamicEntry)
+          .map((v) => strip(v.file));
+  return { entryJs: strip(entry.file), cssFiles: [...split, ...merged] };
 }
 
 /** JSON placed inside a `<script>` must not be able to close it. */

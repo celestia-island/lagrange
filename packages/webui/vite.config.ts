@@ -29,17 +29,40 @@ export default defineConfig(({ mode }) => ({
           emptyOutDir: true,
           manifest: true,
           assetsDir: "assets",
+          // The SSR lane copies <clientDir>/assets/* FLAT into
+          // <site-out>/assets/docs/* — the URL layout REPLACES the
+          // build's assetsDir segment. The only bundle-internal reference
+          // form that survives that move is vite's default-base emission
+          // (module-relative `import("./chunk.js")` — resolved against
+          // import.meta.url of the entry at /assets/docs/). Everything
+          // that builds URLs against a BASE breaks:
+          //   - `base` (top-level OR the rollupOptions slot this config
+          //     wrongly carried for months — rollupOptions has no such
+          //     field, so it was silently ignored) would bake absolute
+          //     /assets/docs/assets/* paths that double the segment;
+          //   - the modulePreload helper maps dep URLs through that same
+          //     base, and a CSS preload miss REJECTS the whole dynamic
+          //     import — the deployed theme window's sun-clock globe
+          //     never mounted (its async chunk's CSS 404'd at
+          //     /assets/*, origin root). Bare imports both work in this
+          //     layout and cannot reject; the lost prefetch hint only
+          //     delays the first lazy open.
+          modulePreload: false,
+          // Async-chunk CSS only ever loads through the (removed) preload
+          // path, and rolldown's chunking can sweep statically-needed
+          // modules into async chunks — the docs DPI slider's HkSlider
+          // styles landed in solarTimeZones-*.css and never loaded at
+          // all (the control rendered height:0). One merged entry sheet,
+          // linked by the page template, carries every family.
+          cssCodeSplit: false,
           rollupOptions: {
             input: "src/docsShell/docsMain.ts",
-            // Where the hydration bundle's files land (copied to
-            // <out>/assets/docs by the SSR lane). The page template
-            // prefixes the SITE base on the entry URLs it emits, and the
-            // bundle's own dynamic-chunk fetches resolve relative to the
-            // entry (import.meta.url), so a subpath deployment works —
+            // What is NOT configurable here is the deployment directory
+            // name itself ("assets/docs", fixed by the SSR lane and the
+            // page template); a subpath SITE base works because the
+            // template prefixes it on the entry URLs it emits —
             // measured at --site-url https://example.com/repo (PR #119
-            // round 4). What is NOT configurable here is this directory
-            // name itself; it is fixed for every deployment.
-            base: "/assets/docs/",
+            // round 4).
           },
         },
       }
