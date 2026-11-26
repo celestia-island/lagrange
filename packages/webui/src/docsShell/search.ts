@@ -34,7 +34,8 @@ export interface Hit {
   title: string;
   heading: string;
   url: string;
-  /** Full chunk text — the view cuts the match-centred window itself. */
+  /** The chunk's markdown preview, capped by the build at 2000 chars on a
+   *  line boundary — the view cuts the match-centred window itself. */
   text: string;
 }
 

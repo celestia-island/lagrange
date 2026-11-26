@@ -692,8 +692,11 @@ pub(crate) fn truncate_chars(text: &str, limit: usize) -> String {
 /// hard character cut leaves an unterminated table row (or list item) at the
 /// tail, which makes the renderer swallow the whole preceding block into a
 /// paragraph — the hit card then shows literal pipes, which is exactly what
-/// the preview exists to prevent (measured: under the naive cut 29 of 1859
-/// chunks hit the cap, 13 of them ending on an unterminated pipe row).
+/// the preview exists to prevent (measured on the docs.celestia.world corpus
+/// — 11 languages, 1859 chunks: under the naive cut 29 chunks hit the cap and
+/// 13 of those ended on an unterminated pipe row; this crate's own `docs/`
+/// corpus is 172 chunks and never reaches the cap, so it cannot show either
+/// number).
 /// Backing off to the previous newline keeps every LINE the preview ships
 /// complete; a section that is ONE line longer than the whole budget has no
 /// newline to snap to, so that case still hard-cuts (a single overlong
