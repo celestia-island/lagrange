@@ -692,9 +692,12 @@ pub(crate) fn truncate_chars(text: &str, limit: usize) -> String {
 /// hard character cut leaves an unterminated table row (or list item) at the
 /// tail, which makes the renderer swallow the whole preceding block into a
 /// paragraph — the hit card then shows literal pipes, which is exactly what
-/// the preview exists to prevent (measured: 13 of 1859 chunks ended on a
-/// truncated pipe row under the naive cut). Backing off to the previous
-/// newline keeps every shipped preview a sequence of complete source lines.
+/// the preview exists to prevent (measured: under the naive cut 29 of 1859
+/// chunks hit the cap, 13 of them ending on an unterminated pipe row).
+/// Backing off to the previous newline keeps every LINE the preview ships
+/// complete; a section that is ONE line longer than the whole budget has no
+/// newline to snap to, so that case still hard-cuts (a single overlong
+/// paragraph, which renders flat either way).
 pub fn preview_markdown(raw: &str, limit: usize) -> String {
     let trimmed = raw.trim();
     if trimmed.chars().count() <= limit {

@@ -8,8 +8,10 @@ import type { DocsSiteMeta } from "./types";
 interface ChunkMeta {
   heading_path: string[];
   anchor: string;
-  /** The chunk's FULL readable text (build writes it untruncated) — the hit
-   *  view cuts its own match-centred window from this. */
+  /** The chunk's MARKDOWN SOURCE, capped by the build at `PREVIEW_CHARS`
+   *  (2000) on a line boundary — the hit view cuts its own match-centred
+   *  window from this. A section longer than the cap is still fully indexed;
+   *  only its tail is not previewable. */
   text: string;
 }
 

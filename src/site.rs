@@ -1864,13 +1864,12 @@ mod tests {
     /// lives inside a `const` string, so nothing else can catch a rename.
     #[test]
     fn legacy_search_reads_the_chunk_preview_field() {
+        // Assert the WHOLE accessor: the `snippet` half alone is trivially
+        // true (it is the fallback substring), so only the expression pins
+        // that read order — preview first, old field second.
         assert!(
-            LAGRANGE_JS_TEMPLATE.contains(".chunks[ck].text"),
-            "the legacy search must read the per-chunk preview (`text`)"
-        );
-        assert!(
-            LAGRANGE_JS_TEMPLATE.contains(".chunks[ck].snippet"),
-            "and keep the old field as a fallback for archives built before the rename"
+            LAGRANGE_JS_TEMPLATE.contains("d.chunks[ck].text||d.chunks[ck].snippet"),
+            "the legacy search must read the per-chunk preview (`text`) with the old field as fallback"
         );
     }
 
