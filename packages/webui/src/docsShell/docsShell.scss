@@ -258,10 +258,17 @@ body {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  // 原本写在 table 上的上下外边距（裸 table: 1.5rem 0）随包壳移到宿主，
+  // 窄表不丢间距，宽表滚动时上下留白随宿主一起滚（可接受）。
+  margin: 1.5rem 0;
   padding-bottom: 2px;
 
+  // `width: 100%`（.lagrange-docs-body table）会压过这里的 min-width 并把
+  // 宽表压进宿主——宿主规则必须赢：显式 width:auto + 表级特异性。
   > table {
+    width: auto;
     min-width: max-content;
+    max-width: none;
     margin: 0;
   }
 

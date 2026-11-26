@@ -40,6 +40,13 @@ use tracing::info;
 /// codepoints and panics — review round 3, B-S3).
 pub const SNIPPET_CHARS: usize = 160;
 
+/// Cap on the per-chunk MARKDOWN preview shipped in `search_meta.json`. The
+/// hit view only ever shows a window of ~±160 characters around the match,
+/// so this bounds the payload without hiding matches in ordinary sections
+/// (a chunk is one heading's span; sections longer than this are rare and
+/// their tail is still indexed, just not previewable).
+pub const PREVIEW_CHARS: usize = 2000;
+
 /// Number of shards (must be ≥ 1). 16 shards keeps each file small for sites
 /// up to a few thousand pages while staying below the HTTP/2 concurrent-request
 /// limit on most browsers.
@@ -50,12 +57,13 @@ const SHARD_COUNT: usize = 16;
 pub struct ChunkMeta {
     pub heading_path: Vec<String>,
     pub anchor: String,
-    /// The chunk's FULL readable text (untruncated). The front-end builds
-    /// its match-centred preview window from this — a 160-char head cut
-    /// cannot show a match that sits deeper in the section, and the window
-    /// needs the surrounding lines to know where the fades go (L942 follow-
-    /// up: raw markdown table rows in this text are what the snippet
-    /// rendered as pipes; the window is rendered as markdown client-side).
+    /// The chunk's MARKDOWN SOURCE (not the flattened plain text), capped at
+    /// [`PREVIEW_CHARS`]. The hit view cuts a line-snapped window around the
+    /// match and renders it AS MARKDOWN, so pipe rows become tables and
+    /// emphasis survives — the plain-text form would show the pipes
+    /// literally (2026-11-27 user report: the snippet looked like raw
+    /// markdown dump). Line breaks are what makes that rendering possible at
+    /// all: `plain_text` joins everything with spaces.
     pub text: String,
 }
 
@@ -133,15 +141,16 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
         let mut chunk_metas: Vec<ChunkMeta> = Vec::with_capacity(doc.chunks.len());
         for (chunk_idx, chunk) in doc.chunks.iter().enumerate() {
             let text = plain_text(&chunk.source_text);
-            // Index the chunk text: heading path words ride along so a
-            // section can be found by its own title.
+            // Index the FLATTENED text (the indexer's tokenization contract
+            // predates the preview and stays put); ship the MARKDOWN source
+            // for the hit window.
             let mut indexable = chunk.heading_path.join(" ");
             indexable.push(' ');
             indexable.push_str(&text);
             chunk_metas.push(ChunkMeta {
                 heading_path: chunk.heading_path.clone(),
                 anchor: chunk.anchor.clone(),
-                text,
+                text: truncate_chars(chunk.source_text.trim(), PREVIEW_CHARS),
             });
             for token in tokenize(&indexable) {
                 let shard_idx = shard_for(&token);
@@ -152,11 +161,13 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
                 }
             }
         }
-        // First chunk's head — the no-query landing view (the per-chunk
-        // full texts are for match-centred windows; this one stays a cut).
-        let snippet = chunk_metas
+        // First chunk's head — the no-query landing view, in FLAT text (the
+        // markdown previews are for match-centred windows; this cut has
+        // always been prose and the legacy lane still renders it as text).
+        let snippet = doc
+            .chunks
             .first()
-            .map(|c| truncate_chars(&c.text, SNIPPET_CHARS))
+            .map(|c| truncate_chars(&plain_text(&c.source_text), SNIPPET_CHARS))
             .unwrap_or_default();
         metas.push(DocMeta {
             id: doc_id,

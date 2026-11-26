@@ -16,6 +16,11 @@ import { createApp, createSSRApp } from "vue";
 import { HkMermaidDiagram, initTheme, useI18n } from "@celestia-island/hikari";
 import { mermaidParser } from "@celestia-island/hikari/mermaid";
 import "@celestia-island/hikari/styles";
+// The table scroll shells mount hikari's edge-glow PAINTER markup
+// (hk-edge-glow bands) imperatively; the painter's sheet ships only with
+// the component module, which no docs page mounts. Import the sheet for
+// its classes — a re-USE of hikari's one painter, not a second painter.
+import "@celestia-island/hikari/components/HkEdgeGlow.scss"; // exports-map: ./components/* → src/components/*
 // Pre-hydration theme vars (hikari#1546): the static stock-preset sheet,
 // bundled into docsMain css so the SSR <head> link carries it before any
 // JS. The inline bootstrap in template.ts sets data-theme/data-mode; this
@@ -87,7 +92,7 @@ function mountMermaidBoxes(): void {
  * content for no behavioural gain — the painter is markup + sheet, and this
  * upgrade drives exactly that contract.
  */
-function mountTableScrollShells(root: ParentNode): void {
+export function mountTableScrollShells(root: ParentNode = document): void {
   const hosts = root.querySelectorAll<HTMLElement>(".lagrange-docs-table-scroll");
   for (const host of hosts) {
     if (host.dataset.glowMounted === "1") continue;

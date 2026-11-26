@@ -207,7 +207,7 @@ fn render_block_with_live(
             // A wide table must never widen the PAGE: the scroll host clips
             // it (overflow-x) and carries the edge-glow bands the boot pass
             // mounts, so the table scrolls in place while the page stays put.
-            // `min-width: max-content` (docsContent.scss) keeps cells from
+            // `min-width: max-content` (docsShell.scss) keeps cells from
             // collapsing to unreadable columns on phones.
             el_node(
                 "div",

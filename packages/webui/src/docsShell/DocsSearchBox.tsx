@@ -191,7 +191,11 @@ export const DocsSearchBox = defineComponent({
             results panel (the "no empty panel flash" contract still
             holds — that assertion is what caught this overlap). */}
         {busy.value && !hits.value && !failed.value && (
-          <div class="lagrange-docs-search-busy" role="status">
+          <div
+            class="lagrange-docs-search-busy"
+            role="status"
+            aria-label={t("lagrange::docs.searchBusy", "Searching…")}
+          >
             <HkSpinner size="sm" center />
           </div>
         )}
@@ -225,8 +229,10 @@ export const DocsSearchBox = defineComponent({
                         view.hasBelow && "has-fade-below",
                       ]}
                       // Sanitized in buildSnippetView (DOMPurify + a text-node
-                      // walk that wraps matches in <mark>).
-                      domPropsInnerHTML={view.html}
+                      // walk that wraps matches in <mark>). innerHTML is a
+                      // Vue recognized prop (ReservedProps) — the JSX type
+                      // name for the Vue-2-era domPropsInnerHTML spelling.
+                      {...{ innerHTML: view.html }}
                     />
                   )}
                 </a>

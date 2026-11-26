@@ -184,7 +184,7 @@ export class DocsSearch {
           url: anchor
             ? `${langUrl(this.site, doc.url, doc.lang)}#${anchor}`
             : langUrl(this.site, doc.url, doc.lang),
-          text: meta3?.text ?? meta3?.snippet ?? "",
+          text: meta3?.text ?? "",
         };
       });
     return hits;

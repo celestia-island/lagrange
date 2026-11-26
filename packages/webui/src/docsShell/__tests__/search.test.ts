@@ -65,7 +65,7 @@ describe("DocsSearch", () => {
         title: "Architecture",
         url: "/guides/architecture.html",
         document_id: "guides/architecture",
-        chunks: [{ heading_path: ["Architecture"], anchor: "a1", snippet: "the pipeline" }],
+        chunks: [{ heading_path: ["Architecture"], anchor: "a1", text: "the pipeline" }],
       },
       {
         id: 1,
@@ -73,7 +73,7 @@ describe("DocsSearch", () => {
         title: "架构",
         url: "/guides/architecture.html",
         document_id: "guides/architecture",
-        chunks: [{ heading_path: ["架构"], anchor: "a1", snippet: "管线" }],
+        chunks: [{ heading_path: ["架构"], anchor: "a1", text: "管线" }],
       },
     ],
     shards: ["search_i_00.json", "search_i_01.json"],

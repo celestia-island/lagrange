@@ -1230,7 +1230,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
     for(var k in ids){var d=meta.docs[k];if(d&&d.lang===L){
      var view={url:d.url,title:d.title,snippet:d.snippet};
      var hc=hits[k];
-     if(hc&&d.chunks){for(var ck in hc){if(d.chunks[ck]){view.snippet=d.chunks[ck].snippet;break}}}
+     if(hc&&d.chunks){for(var ck in hc){if(d.chunks[ck]){view.snippet=(d.chunks[ck].text||d.chunks[ck].snippet||'').slice(0,160);break}}}
      result.push(view)}}
     result=result.slice(0,10);
     if(!result.length){sr.innerHTML='<div class="lg-no">'+he(lgUI.t('noResults'))+'</div>';sp.open();return}
