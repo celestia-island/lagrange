@@ -99,6 +99,16 @@ describe("buildSnippetView", () => {
     expect(view.html).toContain("Install");
   });
 
+  it("keeps the heading when the body is only whitespace", () => {
+    // The chunker can emit `## Heading` followed by blank lines. The query
+    // here does NOT match the heading, so the empty-body guard is the only
+    // thing keeping it: a guard that tested the raw remainder instead of its
+    // trimmed form would drop the heading and leave a blank card.
+    const view = buildSnippetView("## Install\n   \n\t\n", "pipeline");
+    expect(view.html.trim().length).toBeGreaterThan(0);
+    expect(view.html).toContain("Install");
+  });
+
   it("keeps the heading when the MATCH lives in it", () => {
     const view = buildSnippetView(["## Quick Start", "", "Run the pipeline."].join("\n"), "Quick");
     expect(view.html).toContain("Start");
