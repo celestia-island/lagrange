@@ -166,9 +166,10 @@ export function installCodeCopy(): void {
  *
  * The strings live in `lagrange::docs.*` above. They are a hand-kept twin of
  * the legacy lane's `CHROME` table (`src/comments/ui.ts`, which ships inline
- * inside the Rust binary and cannot import this module): the nine locales the
- * legacy lane already had are byte-identical here, and `de`/`pt` exist only in
- * this table. Keep the wording in step when either side changes.
+ * inside the Rust binary and cannot import this module): for THESE THREE
+ * diagram keys the nine locales the legacy lane already had are byte-identical
+ * here, and `de`/`pt` exist only in this table. Keep the wording in step when
+ * either side changes (the twin has no mechanical pin).
  */
 function localizeStaticChrome(): void {
   const { t } = useI18n();
