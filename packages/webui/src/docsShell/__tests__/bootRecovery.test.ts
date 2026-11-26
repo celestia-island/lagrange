@@ -1,9 +1,9 @@
+// @vitest-environment happy-dom — needs sessionStorage/location
 // Behavioral pins for the inline boot watcher (the deploy-window self-heal).
 // The watcher is a STRING in the emitted HTML; these tests execute it in
 // happy-dom with a controllable clock, so the reload decision is observed,
 // not assumed. MUT anchors name the mutation each pin survives.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-// @vitest-environment happy-dom — needs sessionStorage/location
 
 import { bootRecoveryJs } from "../template";
 
@@ -57,8 +57,38 @@ describe("boot watcher (deploy window self-heal)", () => {
     expect(r.reloadCalls).toBe(1);
     expect(r.reloadUrl).toContain("lr=");
     // The once-only flag is set BEFORE reloading, so a broken build cannot
-    // loop the reader.
+    // loop the reader. Pinned against a reorder (flag-after-replace) by
+    // observing the flag through the reload call itself.
     expect(r.sessionStorageGet).toBe("1");
+  });
+
+  it("RELOADS even though the page carries SSR markup (the 404 shape)", () => {
+    // The S0 shape this PR fixes: a 404'd module leaves the SSR shell in the
+    // DOM (sidebar rows, content). A watcher that treats that markup as
+    // "booted" never fires — pin that the reload happens with a REALISTIC
+    // body in place.
+    document.body.innerHTML =
+      '<div id="app"><div class="s-admin-shell"><aside class="hk-sidebar-rail-host">'
+      + '<nav class="hk-sidebar"><div class="hk-menu-sidebar">'
+      + '<div class="hk-menu-sidebar-row hk-menu-sidebar-group"></div></div></nav></aside>'
+      + '<main class="s-admin-shell-main"><article class="lagrange-docs-content"><p>body</p></article></main></div></div>';
+    const r = runWatcher({ booted: false });
+    expect(r.reloadCalls).toBe(1);
+    expect(r.reloadUrl).toContain("lr=");
+  });
+
+  it("give-up threshold is exactly 12s (24 ticks), not drift-tolerant", () => {
+    vi.useFakeTimers();
+    (globalThis as Record<string, unknown>).__lagrangeBoot = false;
+    const reload = vi.fn();
+    Object.defineProperty(window.location, "replace", { configurable: true, value: reload });
+    // eslint-disable-next-line no-new-func
+    new Function(bootRecoveryJs("", "docsMain-abc.js"))();
+    vi.advanceTimersByTime(500 * 24);
+    expect(reload, "attempts=24 must still be inside the grace window").not.toHaveBeenCalled();
+    vi.advanceTimersByTime(500);
+    expect(reload, "attempt 25 is past the limit and must fire").toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("stands down on a second visit (sessionStorage flag set)", () => {

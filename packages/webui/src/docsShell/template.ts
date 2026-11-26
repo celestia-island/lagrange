@@ -196,25 +196,27 @@ ${themeBootJs}
  * not a crash — the script never loaded.
  *
  * An inline WATCHER under the module tag: if the boot has not landed within
- * a few seconds, hard-reload ONCE with a cache-buster so the CDN serves the
- * new HTML (which names the live bundle). Once-only via sessionStorage, so
- * a genuinely broken build cannot reload-loop; skipped entirely when the
- * boot did happen.
+ * 12 seconds (24 x 500ms polls), hard-reload ONCE with a cache-buster so the
+ * CDN serves the new HTML (which names the live bundle). Once-only via
+ * sessionStorage, so a genuinely broken build cannot reload-loop; skipped
+ * entirely when the boot did happen.
  */
 export function bootRecoveryJs(base: string, entryJs: string): string {
   const src = JSON.stringify(`${base}/assets/docs/${entryJs}`);
   return `
 (function(){
   var KEY = 'lagrange-boot-reload';
+  var LIMIT = 24; // 24 x 500ms = 12s of grace before the reload decision
   try { if (sessionStorage.getItem(KEY)) return; } catch {}
   var attempts = 0;
   var timer = setInterval(function(){
     attempts += 1;
-    // Did the module EXECUTE? Its boot leaves hydratable content or explicit
-    // markers behind; a 404'd module leaves the SSR markup untouched.
-    var booted = window.__lagrangeBoot === true
-      || !!document.querySelector('.lagrange-docs-mermaid, .hk-board, .lagrange-dpi-body, .hk-search-input, [class*="hk-menu-sidebar"]');
-    if (booted || attempts > 24) {
+    // The ONLY boot signal is the explicit flag docsMain sets at the end of a
+    // successful hydration. DOM heuristics are useless here: the SSR body a
+    // 404'd page always carries (sidebar rows, content) would positively
+    // assert "booted" on the exact failure this watcher detects.
+    var booted = window.__lagrangeBoot === true;
+    if (booted || attempts > LIMIT) {
       clearInterval(timer);
       if (booted) { try { sessionStorage.removeItem(KEY); } catch {} return; }
       try { sessionStorage.setItem(KEY, '1'); } catch {}
