@@ -202,7 +202,6 @@ ${themeBootJs}
  * entirely when the boot did happen.
  */
 export function bootRecoveryJs(base: string, entryJs: string): string {
-  const src = JSON.stringify(`${base}/assets/docs/${entryJs}`);
   return `
 (function(){
   // Stored values: "1" = a recovery reload was issued from THIS tab and its

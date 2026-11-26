@@ -56,9 +56,10 @@ describe("boot watcher (deploy window self-heal)", () => {
     const r = runWatcher({ booted: false });
     expect(r.reloadCalls).toBe(1);
     expect(r.reloadUrl).toContain("lr=");
-    // The once-only flag is set BEFORE reloading, so a broken build cannot
-    // loop the reader. Pinned against a reorder (flag-after-replace) by
-    // observing the flag through the reload call itself.
+    // The once-only flag is set around the reload (observed after the
+    // decision completes). The ORDER itself is not separately pinned — the
+    // shipped order is correct and the body records that; a reorder that
+    // skipped the set would fail the assertion below on the observed value.
     expect(r.sessionStorageGet).toBe("1");
   });
 
