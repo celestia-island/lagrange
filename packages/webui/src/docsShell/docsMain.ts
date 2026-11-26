@@ -13,7 +13,7 @@
 //   - the preview/source segmented toggle rides a delegated listener,
 //     the same semantics the legacy runtime had.
 import { createApp, createSSRApp } from "vue";
-import { HkMermaidDiagram, initTheme } from "@celestia-island/hikari";
+import { HkMermaidDiagram, initTheme, useI18n } from "@celestia-island/hikari";
 import { mermaidParser } from "@celestia-island/hikari/mermaid";
 import "@celestia-island/hikari/styles";
 // Pre-hydration theme vars (hikari#1546): the static stock-preset sheet,
@@ -156,6 +156,39 @@ export function installCodeCopy(): void {
   });
 }
 
+/**
+ * Translate the STATIC chrome the Rust renderer emits: the diagram cards'
+ * Preview/Source toggle and their copy button. The markup ships English as
+ * the no-JS fallback (the renderer is language-agnostic), and the legacy lane
+ * re-labels the same nodes from its own runtime — without this pass the docs
+ * shell left a Chinese page with an English "Preview | Source" pill, which is
+ * exactly what the hub showed (2026-11-26).
+ *
+ * The strings live in `lagrange::docs.*` above. They are a hand-kept twin of
+ * the legacy lane's `CHROME` table (`src/comments/ui.ts`, which ships inline
+ * inside the Rust binary and cannot import this module): for THESE THREE
+ * diagram keys the nine locales the legacy lane already had are byte-identical
+ * here, and `de`/`pt` exist only in this table. Keep the wording in step when
+ * either side changes (the twin has no mechanical pin).
+ */
+function localizeStaticChrome(): void {
+  const { t } = useI18n();
+  for (const btn of document.querySelectorAll<HTMLElement>(".lg-diagram-toggle-btn")) {
+    const pane = btn.getAttribute("data-pane");
+    if (pane === "preview") btn.textContent = t("lagrange::docs.preview", "Preview");
+    else if (pane === "source") btn.textContent = t("lagrange::docs.source", "Source");
+  }
+  // Every code-block copy button, not only the diagram card's: the ordinary
+  // fenced blocks emit the same node and the legacy lane re-labels them all.
+  const copy = t("lagrange::docs.copyCode", "Copy code");
+  for (const btn of document.querySelectorAll<HTMLElement>(
+    "button.hi-code-highlight-copy[data-copy]",
+  )) {
+    btn.setAttribute("title", copy);
+    btn.setAttribute("aria-label", copy);
+  }
+}
+
 /** The segmented preview/source toggle (delegated — the body is server
  * HTML that never re-renders through Vue). */
 function installDiagramToggle(): void {
@@ -203,6 +236,7 @@ async function boot(): Promise<void> {
   // kill every installer after it, and no test pinned the order because
   // order was never supposed to matter).
   for (const upgrade of [
+    localizeStaticChrome,
     installDiagramToggle,
     installCodeCopy,
     mountMermaidBoxes,

@@ -579,6 +579,17 @@ fn render_live_pair(
 /// syntax-highlighted source one toggle away. The raw source travels in a
 /// hidden <pre> — text nodes are escaped at serialization, so JS reads the
 /// exact source back via textContent.
+///
+/// The toggle captions (`Preview`/`Source`) and the copy button's
+/// `aria-label`/`title` (`Copy code`) are hard-coded ENGLISH on purpose: the
+/// build has no locale at this point and they are the no-JS fallback. Both
+/// lanes re-label them on the client from their own i18n table — the legacy
+/// lane's inline runtime (the toggle in `src/diagram.ts`, the copy label in
+/// `src/site.rs`'s `rL()`, both through `lgUI.t`) and the webui lane's boot
+/// pass (`localizeStaticChrome`:
+/// packages/webui/src/docsShell/docsMain.ts, keys
+/// `lagrange::docs.preview|source|copyCode`). Adding a language here instead
+/// would fork the wording in three places.
 fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNode {
     let lang = kind.source_lang();
     let highlighted = syntax_highlight(source, lang);
