@@ -180,11 +180,67 @@ ${themeBootJs}
   <div id="app">${body}</div>
   <script type="application/json" id="lagrange-page-data">${escapeJsonForScript(dataJson)}</script>
   <script type="module" src="${escapeAttr(`${base}/assets/docs/${assets.entryJs}`)}"></script>
+  <script>${bootRecoveryJs(base, assets.entryJs)}</script>
 </body>
 </html>
 `;
 }
 
+/**
+ * Boot recovery for the deploy window (measured 2026-11-26, user report
+ * "every button is dead"): GitHub Pages caches the HTML for ten minutes
+ * (`max-age=600`), so right after a deploy a visitor's cached HTML still
+ * names the PREVIOUS build's entry bundle — which the new deploy deleted
+ * (hashed filenames), so the module 404s. Nothing on the page is wired: no
+ * search, no language menu, no theme dialog, mermaid cards stay empty. It is
+ * not a crash — the script never loaded.
+ *
+ * An inline WATCHER under the module tag: if the boot has not landed within
+ * 12 seconds (24 x 500ms polls), hard-reload ONCE with a cache-buster so the
+ * CDN serves the new HTML (which names the live bundle). Once-only via
+ * sessionStorage, so a genuinely broken build cannot reload-loop; skipped
+ * entirely when the boot did happen.
+ */
+export function bootRecoveryJs(base: string, entryJs: string): string {
+  return `
+(function(){
+  // Stored values: "1" = a recovery reload was issued from THIS tab and its
+  // outcome is unknown; "resume" = the reloaded page has started watching
+  // again (the reader is inside a recovery attempt, not a loop).
+  var KEY = 'lagrange-boot-reload';
+  var LIMIT = 24; // 24 x 500ms = 12s of grace before the reload decision
+  var prior = null;
+  try { prior = sessionStorage.getItem(KEY); } catch {}
+  // A previous page in this tab stood down (reloaded once, still bad). Do not
+  // give up for the tab's whole life: THIS page is the recovery attempt —
+  // keep watching. If it boots, clear the flag; if it hits the limit, stand
+  // down again (flag stays "1", still once per page load, never a loop).
+  try { if (prior === '1') sessionStorage.setItem(KEY, 'resume'); } catch {}
+  var attempts = 0;
+  var timer = setInterval(function(){
+    attempts += 1;
+    // The ONLY boot signal is the explicit flag docsMain sets at the end of a
+    // successful hydration. DOM heuristics are useless here: the SSR body a
+    // 404'd page always carries (sidebar rows, content) would positively
+    // assert "booted" on the exact failure this watcher detects.
+    var booted = window.__lagrangeBoot === true;
+    if (booted || attempts > LIMIT) {
+      clearInterval(timer);
+      if (booted) {
+        // Healthy boot clears the recovery state — a FUTURE deploy window in
+        // this tab gets its own reload instead of standing down forever.
+        try { sessionStorage.removeItem(KEY); } catch {}
+        return;
+      }
+      try { sessionStorage.setItem(KEY, prior === '1' ? 'resume' : '1'); } catch {}
+      var u = new URL(location.href);
+      u.searchParams.set('lr', String(Date.now()));
+      location.replace(u.toString());
+    }
+  }, 500);
+})();
+`;
+}
 /** Build the DocsPageData payload a page embeds (one per page+language). */
 export function buildPageData(
   manifest: Manifest,
