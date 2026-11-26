@@ -26,6 +26,10 @@ minimumReleaseAgeExclude:
   # height morphs (the 11-23 top-edge pin retired, hikari#1567) — the docs
   # theme window's DPI fold and sun-clock globe sit on that surface.
   - '@celestia-island/hikari@0.55.493'
+  # Same-day pickup (2026-11-26): the sun-clock lookup's in-flight state reads
+  # as a compact centered circle (both upstream renderers) and the
+  # detected-value readout splits label-left / value-right, hikari#1571.
+  - '@celestia-island/hikari@0.55.495'
   # Same-day pickup (2026-11-24): phone nav drawer, hikari#1535.
   - '@celestia-island/hikari@0.55.479'
   - '@celestia-island/tairitsu-host-client@0.1.0'
