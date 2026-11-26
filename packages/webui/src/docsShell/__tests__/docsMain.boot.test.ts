@@ -33,9 +33,14 @@ function fixture(): void {
     renderMode: "html",
     markdown: "",
     html: '<div class="lg-diagram" data-diagram-kind="mermaid" data-diagram-rendered="0">'
+      + '<div class="hi-code-highlight-header"><span class="hi-code-highlight-language">mermaid</span>'
+      + '<div class="lg-diagram-actions"><div class="lg-diagram-toggle">'
+      + '<button type="button" class="lg-diagram-toggle-btn active" data-pane="preview">Preview</button>'
+      + '<button type="button" class="lg-diagram-toggle-btn" data-pane="source">Source</button>'
+      + '</div><button class="hi-code-highlight-copy" data-copy="cargo build" title="Copy code" aria-label="Copy code">copy</button>'
+      + '</div></div>'
       + '<div class="lg-diagram-raw"><pre><code>graph TD; A--&gt;B</code></pre></div>'
-      + '<div class="lg-diagram-canvas"></div></div>'
-      + '<button class="hi-code-highlight-copy" data-copy="cargo build">copy</button>',
+      + '<div class="lg-diagram-canvas"></div></div>',
   };
   document.body.innerHTML =
     `<div id="app"><div class="s-admin-shell"><p>server html</p></div></div>`
@@ -72,6 +77,41 @@ describe("docsMain boot", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(writes).toEqual(["cargo build"]);
     expect(copyBtn!.classList.contains("copied")).toBe(true);
+    // Static chrome strings ride the shell's i18n table, not the English
+    // fallback the renderer ships: with the page locale installed, both the
+    // segmented toggle and the copy button's accessible name are translated.
+    const panes = [...document.querySelectorAll(".lg-diagram-toggle-btn")].map((b) => b.textContent);
+    expect(panes).toEqual(["Preview", "Source"]);
+    expect(copyBtn!.getAttribute("aria-label")).toBe("Copy code");
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("docsMain boot — diagram chrome localization", () => {
+  it("renders the diagram toggle and copy label in the page's locale", { timeout: 15000 }, async () => {
+    fixture();
+    // Re-write the payload with a zh-Hans page: the SSR body still carries the
+    // renderer's English labels, so this pins the boot pass that replaces them.
+    const payload = document.getElementById("lagrange-page-data") as HTMLScriptElement;
+    const page = JSON.parse(payload.textContent as string);
+    page.lang = "zh-Hans";
+    page.locales = [{ code: "zh-Hans", url: "/zh-Hans/a.html" }];
+    payload.textContent = JSON.stringify(page);
+
+    vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: async () => {} },
+      language: "zh-Hans",
+      languages: ["zh-Hans"],
+      userAgent: "vitest",
+    });
+    await boot();
+
+    const panes = [...document.querySelectorAll(".lg-diagram-toggle-btn")].map((b) => b.textContent);
+    expect(panes).toEqual(["预览", "源码"]);
+    const copyBtn = document.querySelector<HTMLElement>("button.hi-code-highlight-copy[data-copy]");
+    expect(copyBtn!.getAttribute("title")).toBe("复制代码");
+    expect(copyBtn!.getAttribute("aria-label")).toBe("复制代码");
     vi.unstubAllGlobals();
   });
 });

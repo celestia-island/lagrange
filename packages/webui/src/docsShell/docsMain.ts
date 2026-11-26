@@ -13,7 +13,7 @@
 //   - the preview/source segmented toggle rides a delegated listener,
 //     the same semantics the legacy runtime had.
 import { createApp, createSSRApp } from "vue";
-import { HkMermaidDiagram, initTheme } from "@celestia-island/hikari";
+import { HkMermaidDiagram, initTheme, useI18n } from "@celestia-island/hikari";
 import { mermaidParser } from "@celestia-island/hikari/mermaid";
 import "@celestia-island/hikari/styles";
 // Pre-hydration theme vars (hikari#1546): the static stock-preset sheet,
@@ -156,6 +156,32 @@ export function installCodeCopy(): void {
   });
 }
 
+/**
+ * Translate the STATIC chrome the Rust renderer emits: the diagram cards'
+ * Preview/Source toggle and their copy button. The markup ships English as
+ * the no-JS fallback (the renderer is language-agnostic), and the legacy lane
+ * re-labels the same nodes from its own runtime — without this pass the docs
+ * shell left a Chinese page with an English "Preview | Source" pill, which is
+ * exactly what the hub showed (2026-11-26). One table serves both lanes:
+ * `lagrange::docs.*` above, whose preview/source/copyCode wording matches the
+ * legacy lane's entries.
+ */
+function localizeStaticChrome(): void {
+  const { t } = useI18n();
+  for (const btn of document.querySelectorAll<HTMLElement>(".lg-diagram-toggle-btn")) {
+    const pane = btn.getAttribute("data-pane");
+    if (pane === "preview") btn.textContent = t("lagrange::docs.preview", "Preview");
+    else if (pane === "source") btn.textContent = t("lagrange::docs.source", "Source");
+  }
+  const copy = t("lagrange::docs.copyCode", "Copy code");
+  for (const btn of document.querySelectorAll<HTMLElement>(
+    "button.hi-code-highlight-copy[data-copy]",
+  )) {
+    btn.setAttribute("title", copy);
+    btn.setAttribute("aria-label", copy);
+  }
+}
+
 /** The segmented preview/source toggle (delegated — the body is server
  * HTML that never re-renders through Vue). */
 function installDiagramToggle(): void {
@@ -203,6 +229,7 @@ async function boot(): Promise<void> {
   // kill every installer after it, and no test pinned the order because
   // order was never supposed to matter).
   for (const upgrade of [
+    localizeStaticChrome,
     installDiagramToggle,
     installCodeCopy,
     mountMermaidBoxes,

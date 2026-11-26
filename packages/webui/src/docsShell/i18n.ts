@@ -27,6 +27,11 @@ export const DOCS_UI_KEYS = [
   "lagrange::docs.dpiRiskyWarning",
   "lagrange::docs.dpiHint",
   "lagrange::docs.dpiResetHint",
+  // Diagram cards: the server-rendered toggle/copy chrome. English ships in
+  // the markup as the no-JS fallback; this table is what the shell paints.
+  "lagrange::docs.preview",
+  "lagrange::docs.source",
+  "lagrange::docs.copyCode",
 ] as const;
 
 // `searchTitle` deliberately carries NO ellipsis (2026-11-25 user
@@ -64,6 +69,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "Scaling to {scale}% may push the interface off-screen and make it hard to use",
     "lagrange::docs.dpiHint": "Auto follows the browser's own zoom untouched. Drag the slider to fix the whole scale in 25% steps from 100% to 300% — everything scales together, exactly like native browser zoom.",
     "lagrange::docs.dpiResetHint": "Scaled too large to operate? Press Ctrl+Alt+0 at any time to reset to Auto, or add ?dpi=auto to the address bar to force a reset on load.",
+    "lagrange::docs.preview": "Preview",
+    "lagrange::docs.source": "Source",
+    "lagrange::docs.copyCode": "Copy code",
   },
   "zh-Hans": {
     "lagrange::docs.search": "搜索…",
@@ -86,6 +94,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "放大到 {scale}% 可能超出屏幕范围，导致界面难以使用",
     "lagrange::docs.dpiHint": "自动档完全跟随浏览器自身的缩放，不做任何干预。拖动滑块可按 25% 档位在 100%–300% 之间固定整体缩放，界面所有内容像浏览器原生缩放一样一起缩放。",
     "lagrange::docs.dpiResetHint": "缩放设置得过大导致界面没法操作？随时按 Ctrl+Alt+0 立即复位为自动档；也可以在地址栏加上 ?dpi=auto 打开页面强制复位。",
+    "lagrange::docs.preview": "预览",
+    "lagrange::docs.source": "源码",
+    "lagrange::docs.copyCode": "复制代码",
   },
   "zh-Hant": {
     "lagrange::docs.search": "搜尋…",
@@ -108,6 +119,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "放大到 {scale}% 可能超出螢幕範圍，導致介面難以使用",
     "lagrange::docs.dpiHint": "自動檔完全跟隨瀏覽器自身的縮放，不做任何干預。拖動滑塊可按 25% 檔位在 100%–300% 之間固定整體縮放，介面所有內容像瀏覽器原生縮放一樣一起縮放。",
     "lagrange::docs.dpiResetHint": "縮放設定得過大導致介面沒法操作？隨時按 Ctrl+Alt+0 立即復位為自動檔；也可以在網址列加上 ?dpi=auto 開啟頁面強制復位。",
+    "lagrange::docs.preview": "預覽",
+    "lagrange::docs.source": "原始碼",
+    "lagrange::docs.copyCode": "複製程式碼",
   },
   ja: {
     "lagrange::docs.search": "検索…",
@@ -130,6 +144,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "{scale}% への拡大は画面からはみ出し、操作しにくくなる可能性があります",
     "lagrange::docs.dpiHint": "自動モードはブラウザー自身のズームに完全に従い、干渉しません。スライダーを動かすと 25% 刻みで 100%〜300% の範囲で全体の倍率を固定でき、すべての内容がブラウザーのネイティブズームと同じように一緒に拡縮されます。",
     "lagrange::docs.dpiResetHint": "拡大しすぎて操作できない場合は、いつでも Ctrl+Alt+0 で自動モードに戻せます。アドレスバーに ?dpi=auto を付けてページを開く方法もあります。",
+    "lagrange::docs.preview": "プレビュー",
+    "lagrange::docs.source": "ソース",
+    "lagrange::docs.copyCode": "コードをコピー",
   },
   ko: {
     "lagrange::docs.search": "검색…",
@@ -152,6 +169,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "{scale}%로 확대하면 화면을 벗어나 인터페이스를 사용하기 어려워질 수 있습니다",
     "lagrange::docs.dpiHint": "자동 모드는 브라우저 자체의 확대/축소를 그대로 따릅니다. 슬라이더를 움직이면 25% 단위로 100%–300% 범위에서 전체 배율을 고정할 수 있으며, 모든 콘텐츠가 브라우저 기본 확대처럼 함께 조정됩니다.",
     "lagrange::docs.dpiResetHint": "너무 크게 확대되어 조작할 수 없나요? 언제든 Ctrl+Alt+0을 눌러 자동 모드로 초기화하거나, 주소 표시줄에 ?dpi=auto를 붙여 강제로 초기화할 수 있습니다.",
+    "lagrange::docs.preview": "미리보기",
+    "lagrange::docs.source": "소스",
+    "lagrange::docs.copyCode": "코드 복사",
   },
   fr: {
     "lagrange::docs.search": "Rechercher…",
@@ -174,6 +194,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "Passer à {scale} % peut dépasser l'écran et rendre l'interface difficile à utiliser",
     "lagrange::docs.dpiHint": "Le mode Auto suit le zoom du navigateur sans intervenir. Déplacez le curseur pour fixer l'échelle globale par pas de 25 % entre 100 % et 300 % — tout se met à l'échelle ensemble, comme le zoom natif du navigateur.",
     "lagrange::docs.dpiResetHint": "Interface devenue inutilisable ? Appuyez sur Ctrl+Alt+0 à tout moment pour revenir au mode Auto, ou ajoutez ?dpi=auto à l'adresse pour forcer la réinitialisation.",
+    "lagrange::docs.preview": "Aperçu",
+    "lagrange::docs.source": "Source",
+    "lagrange::docs.copyCode": "Copier le code",
   },
   de: {
     "lagrange::docs.search": "Suchen…",
@@ -196,6 +219,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "Skalierung auf {scale} % kann den Bildschirmbereich überschreiten und die Bedienung erschweren",
     "lagrange::docs.dpiHint": "Auto folgt dem eigenen Zoom des Browsers ohne Eingriff. Mit dem Schieberegler lässt sich die Gesamtskalierung in 25-%-Schritten zwischen 100 % und 300 % festlegen — alles skaliert zusammen, genau wie der native Browser-Zoom.",
     "lagrange::docs.dpiResetHint": "Zu groß skaliert zum Bedienen? Drücken Sie jederzeit Ctrl+Alt+0, um auf Auto zurückzusetzen, oder hängen Sie ?dpi=auto an die Adresse an, um beim Laden zurückzusetzen.",
+    "lagrange::docs.preview": "Vorschau",
+    "lagrange::docs.source": "Quelltext",
+    "lagrange::docs.copyCode": "Code kopieren",
   },
   es: {
     "lagrange::docs.search": "Buscar…",
@@ -218,6 +244,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "Escalar al {scale} % puede salirse de la pantalla y dificultar el uso",
     "lagrange::docs.dpiHint": "Auto sigue el zoom del propio navegador sin intervenir. Arrastra el deslizador para fijar la escala completa en pasos del 25 % entre 100 % y 300 %: todo escala junto, igual que el zoom nativo del navegador.",
     "lagrange::docs.dpiResetHint": "¿Escalado demasiado grande para usar la interfaz? Pulsa Ctrl+Alt+0 en cualquier momento para volver a Auto, o añade ?dpi=auto a la dirección para forzar el reinicio al cargar.",
+    "lagrange::docs.preview": "Vista previa",
+    "lagrange::docs.source": "Fuente",
+    "lagrange::docs.copyCode": "Copiar código",
   },
   pt: {
     "lagrange::docs.search": "Pesquisar…",
@@ -240,6 +269,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "Ampliar para {scale} % pode ultrapassar o ecrã e dificultar a utilização",
     "lagrange::docs.dpiHint": "O modo Auto segue o zoom do próprio navegador sem interferir. Arraste o controlo deslizante para fixar a escala global em passos de 25 % entre 100 % e 300 % — tudo escala em conjunto, tal como o zoom nativo do navegador.",
     "lagrange::docs.dpiResetHint": "Ampliado demasiado para conseguir usar? Prima Ctrl+Alt+0 a qualquer momento para repor o modo Auto, ou acrescente ?dpi=auto ao endereço para forçar a reposição ao abrir.",
+    "lagrange::docs.preview": "Pré-visualização",
+    "lagrange::docs.source": "Código-fonte",
+    "lagrange::docs.copyCode": "Copiar código",
   },
   ru: {
     "lagrange::docs.search": "Поиск…",
@@ -262,6 +294,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "Масштаб {scale} % может выйти за пределы экрана и затруднить работу с интерфейсом",
     "lagrange::docs.dpiHint": "Авто полностью следует собственному масштабированию браузера и не вмешивается. Перетащите ползунок, чтобы зафиксировать общий масштаб шагами по 25 % в диапазоне 100–300 % — всё масштабируется вместе, как при собственном масштабировании браузера.",
     "lagrange::docs.dpiResetHint": "Масштаб слишком велик и интерфейс не работает? В любой момент нажмите Ctrl+Alt+0, чтобы вернуть авто; можно также добавить ?dpi=auto в адресную строку для принудительного сброса.",
+    "lagrange::docs.preview": "Предпросмотр",
+    "lagrange::docs.source": "Исходник",
+    "lagrange::docs.copyCode": "Копировать код",
   },
   ar: {
     "lagrange::docs.search": "بحث…",
@@ -284,6 +319,9 @@ const TABLES: Record<string, Record<DocsUiKey, string>> = {
     "lagrange::docs.dpiRiskyWarning": "التحجيم إلى {scale}٪ قد يتجاوز حدود الشاشة ويجعل الواجهة صعبة الاستخدام",
     "lagrange::docs.dpiHint": "يتبع الوضع التلقائي تكبير المتصفح نفسه دون أي تدخل. اسحب شريط التمرير لتثبيت المقياس الكلي بخطوات 25٪ بين 100٪ و300٪ — كل المحتوى يتحجّم معًا تمامًا مثل تكبير المتصفح الأصلي.",
     "lagrange::docs.dpiResetHint": "التحجيم كبير جدًا بحيث يتعذر الاستخدام؟ اضغط Ctrl+Alt+0 في أي وقت لإعادة الوضع التلقائي، أو أضف ?dpi=auto إلى شريط العنوان لفرض إعادة الضبط عند الفتح.",
+    "lagrange::docs.preview": "معاينة",
+    "lagrange::docs.source": "المصدر",
+    "lagrange::docs.copyCode": "نسخ الكود",
   },
 };
 

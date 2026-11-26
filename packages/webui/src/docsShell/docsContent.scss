@@ -216,7 +216,17 @@
     padding: 1.25rem;
     overflow-x: auto;
 
+    // The canvas is a FLEX ITEM and its content (the mermaid board) is a
+    // `width: 100%` child: with the default `flex: 0 1 auto` the item is
+    // sized by its content, the percentage resolves against a zero width,
+    // and the whole card collapses to its 2px border — measured on the hub
+    // 2026-11-26, where HkBoard then fitted against a 0-wide viewport and
+    // painted the diagram mirrored at negative scale (i.e. nothing). The
+    // canvas must claim the row so the board has a real viewport to fit
+    // into.
     > .lg-diagram-canvas {
+      flex: 1 1 auto;
+      min-width: 0;
       max-width: 100%;
 
       svg {
