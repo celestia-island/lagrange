@@ -1857,6 +1857,23 @@ fn html_escape_text(s: &str) -> String {
 mod tests {
     use super::*;
 
+    /// The legacy lane's inline search reads the per-chunk PREVIEW field. It
+    /// used to read `chunks[ck].snippet`, which the preview rename removed —
+    /// every hit then silently fell back to the document-level fragment (the
+    /// search still "worked", it just showed the wrong text). The field name
+    /// lives inside a `const` string, so nothing else can catch a rename.
+    #[test]
+    fn legacy_search_reads_the_chunk_preview_field() {
+        assert!(
+            LAGRANGE_JS_TEMPLATE.contains(".chunks[ck].text"),
+            "the legacy search must read the per-chunk preview (`text`)"
+        );
+        assert!(
+            LAGRANGE_JS_TEMPLATE.contains(".chunks[ck].snippet"),
+            "and keep the old field as a fallback for archives built before the rename"
+        );
+    }
+
     /// Round 8 of PR #119 (S2): a language without its own SUMMARY.md
     /// inherits the default language's tree in the legacy sidebar. The
     /// manifest must export the SAME post-fallback tree — exporting

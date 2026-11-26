@@ -74,4 +74,25 @@ describe("buildSnippetView", () => {
     expect(view.html).toContain('class="lagrange-docs-search-mark"');
     expect(view.html).toContain(">plana</mark>");
   });
+
+  it("keeps a hit an EXCERPT: images collapse to alt text, links unwrap", () => {
+    // A chunk can carry images and links. A hit card that loaded remote
+    // images would fire a request per hit, and live links make the card a
+    // navigation minefield — the excerpt shows the WORDS, not the chrome.
+    const withChrome = [
+      "Read the [pipeline guide](https://example.com/guide) first.",
+      "",
+      "![architecture diagram](https://example.com/diagram.png)",
+      "",
+      "Then check the pipeline again.",
+    ].join("\n");
+    const view = buildSnippetView(withChrome, "pipeline");
+    expect(view.html).not.toContain("<img");
+    expect(view.html).not.toContain("<a ");
+    expect(view.html).not.toContain("example.com");
+    // The words survive: link label (the match inside it is marked, so the
+    // label is no longer a contiguous string) and the image's alt text.
+    expect(view.html).toContain("guide");
+    expect(view.html).toContain("architecture diagram");
+  });
 });

@@ -58,7 +58,9 @@ pub struct ChunkMeta {
     pub heading_path: Vec<String>,
     pub anchor: String,
     /// The chunk's MARKDOWN SOURCE (not the flattened plain text), capped at
-    /// [`PREVIEW_CHARS`]. The hit view cuts a line-snapped window around the
+    /// [`PREVIEW_CHARS`] **on a line boundary** — a row cut mid-pipe renders
+    /// as a literal-pipes paragraph, which is precisely the defect this
+    /// preview exists to remove. The hit view cuts a line-snapped window around the
     /// match and renders it AS MARKDOWN, so pipe rows become tables and
     /// emphasis survives — the plain-text form would show the pipes
     /// literally (2026-11-27 user report: the snippet looked like raw
@@ -141,16 +143,16 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
         let mut chunk_metas: Vec<ChunkMeta> = Vec::with_capacity(doc.chunks.len());
         for (chunk_idx, chunk) in doc.chunks.iter().enumerate() {
             let text = plain_text(&chunk.source_text);
-            // Index the FLATTENED text (the indexer's tokenization contract
-            // predates the preview and stays put); ship the MARKDOWN source
-            // for the hit window.
+            // Index the FLATTENED text — the tokenizer's contract predates
+            // the preview and stays put. The hit window cuts the MARKDOWN
+            // source instead.
             let mut indexable = chunk.heading_path.join(" ");
             indexable.push(' ');
             indexable.push_str(&text);
             chunk_metas.push(ChunkMeta {
                 heading_path: chunk.heading_path.clone(),
                 anchor: chunk.anchor.clone(),
-                text: truncate_chars(chunk.source_text.trim(), PREVIEW_CHARS),
+                text: preview_markdown(&chunk.source_text, PREVIEW_CHARS),
             });
             for token in tokenize(&indexable) {
                 let shard_idx = shard_for(&token);
@@ -683,6 +685,30 @@ pub(crate) fn truncate_chars(text: &str, limit: usize) -> String {
     text.chars().take(limit).collect()
 }
 
+/// The chunk's markdown source, cut to at most `limit` characters **at a line
+/// boundary**.
+///
+/// The client renders this as markdown, and markdown is line-structured: a
+/// hard character cut leaves an unterminated table row (or list item) at the
+/// tail, which makes the renderer swallow the whole preceding block into a
+/// paragraph — the hit card then shows literal pipes, which is exactly what
+/// the preview exists to prevent (measured: 13 of 1859 chunks ended on a
+/// truncated pipe row under the naive cut). Backing off to the previous
+/// newline keeps every shipped preview a sequence of complete source lines.
+pub fn preview_markdown(raw: &str, limit: usize) -> String {
+    let trimmed = raw.trim();
+    if trimmed.chars().count() <= limit {
+        return trimmed.to_string();
+    }
+    let head: String = trimmed.chars().take(limit).collect();
+    match head.rfind('\n') {
+        // A newline is ASCII, so the index is a character boundary of `head`.
+        Some(idx) => head[..idx].to_string(),
+        // One line longer than the whole budget: nothing to snap to.
+        None => head,
+    }
+}
+
 /// Append `text` with inline emphasis/code delimiters removed and link/image
 /// syntax reduced to its visible text.
 fn strip_inline_markers_into(text: &str, out: &mut String) {
@@ -882,6 +908,44 @@ mod tests {
         for probe in ["a", "z", "9", "_", "运"] {
             assert!(shard_for(probe) < SHARD_COUNT);
         }
+    }
+
+    #[test]
+    fn preview_cuts_on_a_line_boundary_never_mid_row() {
+        // A table whose rows straddle the budget: a naive character cut lands
+        // inside a pipe row and the renderer turns the whole table into one
+        // literal-pipes paragraph (the reported defect).
+        let header = "| Role | Docs |\n| --- | --- |\n";
+        let row = format!("| {} | link |\n", "x".repeat(60));
+        let mut raw = String::from("## Layer\n\n");
+        raw.push_str(header);
+        while raw.len() < 400 {
+            raw.push_str(&row);
+        }
+        let preview = preview_markdown(&raw, 200);
+        assert!(preview.chars().count() <= 200);
+        // Every shipped line is a COMPLETE source line: the cut landed on a
+        // newline, so the preview is a prefix of the source that ends one.
+        assert!(raw.starts_with(&preview), "preview must be a source prefix");
+        let next = raw[preview.len()..].chars().next();
+        assert_eq!(next, Some('\n'), "the cut must sit on a line boundary");
+        // And what survives still renders as a table: header + separator +
+        // at least one complete row.
+        assert!(preview.contains("| --- |"), "the header row survives");
+        assert!(preview.trim_end().ends_with('|'), "no half row at the tail");
+    }
+
+    #[test]
+    fn preview_keeps_short_chunks_whole_and_trims_edges() {
+        // Short section: no cut at all, and surrounding blank lines go.
+        let raw = "\n\n## Install\n\nRun the command.\n\n";
+        assert_eq!(
+            preview_markdown(raw, 2000),
+            "## Install\n\nRun the command."
+        );
+        // One line longer than the budget: nothing to snap to, hard cut.
+        let long = "y".repeat(500);
+        assert_eq!(preview_markdown(&long, 100), "y".repeat(100));
     }
 
     #[test]
