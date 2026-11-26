@@ -142,6 +142,8 @@ describe("resolveClientAssetsFrom (M12)", () => {
     // style loss): vite 8 emits ONE stylesheet as its own manifest entry
     // and leaves the docsMain entry's `css` EMPTY. The template must link
     // that sheet or every page renders unstyled.
+    // MUT:css-manifest-fallback: removing the fallback never keeps this
+    // suite green — the assertion below is that direction's named killer.
     const out = resolveClientAssetsFrom({
       "src/docsShell/docsMain.ts": { file: "assets/docsMain-abc.js", isEntry: true } as never,
       "style-hash.css": { file: "assets/style-hash.css" } as never,
