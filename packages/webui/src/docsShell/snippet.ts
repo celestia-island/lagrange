@@ -135,6 +135,34 @@ export interface SnippetView {
   hasBelow: boolean;
 }
 
+/** A window that opens on the section's own `# Heading` would repeat what the
+ *  card already shows (title + heading path). Drop that line — but ONLY when
+ *  it is safe to:
+ *
+ *  - the heading must not carry the query's hit set. A heading-only chunk
+ *    (the Rust chunker emits them: a section that is just its heading) would
+ *    otherwise lose the match entirely and render an EMPTY card — measured on
+ *    this repo's own docs, where 9 sections are heading-only;
+ *  - there must be body text after it, or the same emptiness follows.
+ *
+ *  The window coordinates (hasAbove/hasBelow) are computed from the cut, not
+ *  from this string, so dropping the line never moves the fades. */
+function dropLeadingHeading(
+  window: string,
+  match: { index: number; length: number } | null,
+  tokens: string[],
+): string {
+  const m = /^#{1,6}[ \t]+([^\n]*)\n?/.exec(window);
+  if (!m) return window;
+  const rest = window.slice(m[0].length).trim();
+  if (rest.length === 0) return window; // heading-only window: it IS the content
+  const heading = m[1] ?? "";
+  const matchInHeading =
+    match !== null && tokens.some((token) => token.length > 0 && heading.toLowerCase().includes(token.toLowerCase()));
+  if (matchInHeading) return window; // the hit lives here; keep it visible
+  return rest;
+}
+
 /** Build the match-centred, markdown-rendered snippet view for a hit. */
 export function buildSnippetView(text: string, rawQuery: string): SnippetView {
   const tokens = tokenizeQuery(rawQuery).filter((t) => t.length >= 1);
@@ -149,7 +177,8 @@ export function buildSnippetView(text: string, rawQuery: string): SnippetView {
 
   // The window is the chunk's MARKDOWN SOURCE: rendering it turns pipe rows
   // into tables and keeps emphasis. marked v18 emits a synchronous string.
-  const raw = marked.parse(windowText.window, { async: false }) as string;
+  const windowBody = dropLeadingHeading(windowText.window, match, tokens);
+  const raw = marked.parse(windowBody, { async: false }) as string;
   const holder = document.createElement("div");
   holder.innerHTML = purify(raw);
 

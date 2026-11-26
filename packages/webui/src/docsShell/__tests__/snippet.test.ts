@@ -75,6 +75,46 @@ describe("buildSnippetView", () => {
     expect(view.html).toContain(">plana</mark>");
   });
 
+  it("drops the section's own leading heading (the card already shows it)", () => {
+    const chunk = [
+      "## Install",
+      "",
+      "Run the pipeline command to start.",
+    ].join("\n");
+    const view = buildSnippetView(chunk, "pipeline");
+    // The heading text is GONE (asserting the text, not the tag: sanitizers
+    // and environments disagree on whether the wrapper survives, so a tag
+    // assertion can pass for the wrong reason).
+    expect(view.html).not.toContain("Install");
+    expect(view.html.startsWith("Run the")).toBe(true);
+  });
+
+  it("keeps a heading-only chunk's match (never renders an empty card)", () => {
+    // The Rust chunker emits heading-only spans (9 of them in this repo's
+    // own docs). Stripping the heading there would delete the ONLY content —
+    // and the only highlight — and the card renders nothing at all.
+    const view = buildSnippetView("## Install", "Install");
+    expect(view.html.length).toBeGreaterThan(0);
+    expect(view.html).toContain("lagrange-docs-search-mark");
+    expect(view.html).toContain("Install");
+  });
+
+  it("keeps the heading when the body is only whitespace", () => {
+    // The chunker can emit `## Heading` followed by blank lines. The query
+    // here does NOT match the heading, so the empty-body guard is the only
+    // thing keeping it: a guard that tested the raw remainder instead of its
+    // trimmed form would drop the heading and leave a blank card.
+    const view = buildSnippetView("## Install\n   \n\t\n", "pipeline");
+    expect(view.html.trim().length).toBeGreaterThan(0);
+    expect(view.html).toContain("Install");
+  });
+
+  it("keeps the heading when the MATCH lives in it", () => {
+    const view = buildSnippetView(["## Quick Start", "", "Run the pipeline."].join("\n"), "Quick");
+    expect(view.html).toContain("Start");
+    expect(view.html).toContain("lagrange-docs-search-mark");
+  });
+
   it("keeps a hit an EXCERPT: images collapse to alt text, links unwrap", () => {
     // A chunk can carry images and links. A hit card that loaded remote
     // images would fire a request per hit, and live links make the card a
