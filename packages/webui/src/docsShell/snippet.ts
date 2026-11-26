@@ -149,7 +149,12 @@ export function buildSnippetView(text: string, rawQuery: string): SnippetView {
 
   // The window is the chunk's MARKDOWN SOURCE: rendering it turns pipe rows
   // into tables and keeps emphasis. marked v18 emits a synchronous string.
-  const raw = marked.parse(windowText.window, { async: false }) as string;
+  // The hit card already shows the document title and the heading path, so a
+  // window that opens ON the section's own `# Heading` would print it twice —
+  // and at full heading size, which dwarfs the card. Drop the leading heading
+  // line when the window starts at it.
+  const windowBody = windowText.window.replace(/^#{1,6}[ \t]+[^\n]*\n?/, "");
+  const raw = marked.parse(windowBody, { async: false }) as string;
   const holder = document.createElement("div");
   holder.innerHTML = purify(raw);
 

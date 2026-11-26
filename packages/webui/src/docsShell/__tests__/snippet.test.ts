@@ -75,6 +75,21 @@ describe("buildSnippetView", () => {
     expect(view.html).toContain(">plana</mark>");
   });
 
+  it("drops the section's own leading heading (the card already shows it)", () => {
+    const chunk = [
+      "## Install",
+      "",
+      "Run the pipeline command to start.",
+      "",
+      "More prose after the match so the window continues below.",
+    ].join("\n");
+    const view = buildSnippetView(chunk, "Install");
+    // The heading line is gone; the prose survives.
+    expect(view.html).not.toContain("<h2");
+    expect(view.html).not.toContain("Install</h2>");
+    expect(view.html).toContain("pipeline");
+  });
+
   it("keeps a hit an EXCERPT: images collapse to alt text, links unwrap", () => {
     // A chunk can carry images and links. A hit card that loaded remote
     // images would fire a request per hit, and live links make the card a
