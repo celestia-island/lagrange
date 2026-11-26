@@ -22,6 +22,10 @@ minimumReleaseAgeExclude:
   # Same-day pickup (2026-11-25): flipped menu cascade anchors at the trigger's
   # measured edge (the language popup's drift) + theme-name i18n, hikari#1562.
   - '@celestia-island/hikari@0.55.491'
+  # Same-day pickup (2026-11-26): dialogs stay vertically centered through
+  # height morphs (the 11-23 top-edge pin retired, hikari#1567) — the docs
+  # theme window's DPI fold and sun-clock globe sit on that surface.
+  - '@celestia-island/hikari@0.55.493'
   # Same-day pickup (2026-11-24): phone nav drawer, hikari#1535.
   - '@celestia-island/hikari@0.55.479'
   - '@celestia-island/tairitsu-host-client@0.1.0'
