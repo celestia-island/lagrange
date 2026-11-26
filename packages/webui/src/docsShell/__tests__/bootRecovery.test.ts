@@ -91,27 +91,59 @@ describe("boot watcher (deploy window self-heal)", () => {
     vi.useRealTimers();
   });
 
-  it("a '1' flag PROMOTES to resume and keeps watching (no silent life-long give-up)", async () => {
-    // The previous round's shape: after a recovery reload the flag is "1";
-    // a watcher that just stands down would leave the reader dead for the
-    // rest of the tab's life. The reloaded page is the recovery ATTEMPT, so
-    // the watcher must resume — and on a healthy boot CLEAR the flag so a
-    // future deploy window gets its own reload.
-    const holder: { calls: number } = { calls: 0 };
+  it("the STALE RE-ENTERED load still reloads (promotion's observable effect)", () => {
+    // Two chained page loads with carried storage — what promotion actually
+    // changes. Visit 1 (no flag): reload, writes "1". Visit 2 (reads "1"):
+    // PROMOTES to resume and keeps watching, so if the CDN served stale HTML
+    // AGAIN, this page still reloads — a reader is never left dead for the
+    // rest of the tab's life. (M-a: deleting the promote line makes this
+    // visit stand down at 0 reloads — the exact L943 failure again.)
     vi.useFakeTimers();
-    sessionStorage.setItem("lagrange-boot-reload", "1");
+    const reload = vi.fn();
+    Object.defineProperty(window.location, "replace", { configurable: true, value: reload });
+    // eslint-disable-next-line no-new-func
+    const run = (): void => new Function(bootRecoveryJs("", "docsMain-abc.js"))();
+
+    // Visit 1: no flag, boot never lands -> reload, writes "1".
+    sessionStorage.clear();
     (globalThis as Record<string, unknown>).__lagrangeBoot = false;
-    const reload = vi.fn((u: string) => { holder.calls += 1; void u; });
+    run();
+    vi.advanceTimersByTime(500 * 25);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("lagrange-boot-reload")).toBe("1");
+
+    // Visit 2: the reloaded page, storage carried. Its ENTRY state is what
+    // promotion changes: "resume" (this page is a recovery attempt, and the
+    // healthy-boot branch knows to CLEAR it) vs "1" (a second failure — the
+    // healthy-boot branch never touches a "1", leaving the reader suppressed
+    // for the tab's life). Reload count is 1 in both; the ENTRY STATE is the
+    // observable. (M-a: deleting the promote line makes this "1".)
+    (globalThis as Record<string, unknown>).__lagrangeBoot = false;
+    run();
+    expect(sessionStorage.getItem("lagrange-boot-reload"), "visit 2 must ENTER in the promoted resume state").toBe("resume");
+    // The promoted state is what the healthy-boot branch clears — on the
+    // NEXT page load in the same tab (this visit's watcher already stood
+    // down; sessionStorage survives navigation, so the recovery state must
+    // be clearable by it):
+    vi.useFakeTimers();
+    (globalThis as Record<string, unknown>).__lagrangeBoot = true;
+    run();
+    vi.advanceTimersByTime(500 * 2);
+    expect(sessionStorage.getItem("lagrange-boot-reload"), "a healthy boot after the promotion clears the recovery state").toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("a healthy boot on the promoted page clears the flag (future window recovered)", async () => {
+    sessionStorage.setItem("lagrange-boot-reload", "resume");
+    (globalThis as Record<string, unknown>).__lagrangeBoot = true;
+    vi.useFakeTimers();
+    const reload = vi.fn();
     Object.defineProperty(window.location, "replace", { configurable: true, value: reload });
     // eslint-disable-next-line no-new-func
     new Function(bootRecoveryJs("", "docsMain-abc.js"))();
-    // The watcher keeps polling while the boot is pending — no stand-down.
-    vi.advanceTimersByTime(500 * 5);
-    expect(reload, "resume mode must not reload again while still watching").not.toHaveBeenCalled();
-    // A healthy boot lands: the flag clears.
-    (globalThis as Record<string, unknown>).__lagrangeBoot = true;
-    vi.advanceTimersByTime(500);
-    expect(sessionStorage.getItem("lagrange-boot-reload")).toBeNull();
+    vi.advanceTimersByTime(500 * 25);
+    expect(reload, "a healthy promoted boot never reloads").not.toHaveBeenCalled();
+    expect(sessionStorage.getItem("lagrange-boot-reload"), "a healthy boot clears the recovery state so a future deploy window gets its own reload").toBeNull();
     vi.useRealTimers();
   });
 

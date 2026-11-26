@@ -252,11 +252,10 @@ async function boot(): Promise<void> {
   // Tell the page's boot watcher (template.ts) the module executed. The
   // watcher exists for the deploy window: a cached HTML still names the old
   // (deleted) bundle hash, the module 404s, and NOTHING on the page works —
-  // the user's "every button is dead". Without this explicit flag the
-  // watcher would also treat a merely SLOW boot as healthy only after its
-  // heuristic selectors fired; an explicit mark makes the reload decision
-  // exact (and lets the watcher skip the wait entirely on every normal
-  // visit, since the flag appears within milliseconds).
+  // the user's "every button is dead". The explicit mark is the watcher's
+  // ONLY boot signal (DOM heuristics would misread the SSR shell a 404'd
+  // page always carries); until it lands, the watcher's 12s window runs and
+  // the recovery reload fires.
   (globalThis as Record<string, unknown>).__lagrangeBoot = true;
 }
 
