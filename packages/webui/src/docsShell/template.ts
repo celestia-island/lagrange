@@ -205,9 +205,18 @@ export function bootRecoveryJs(base: string, entryJs: string): string {
   const src = JSON.stringify(`${base}/assets/docs/${entryJs}`);
   return `
 (function(){
+  // Stored values: "1" = a recovery reload was issued from THIS tab and its
+  // outcome is unknown; "resume" = the reloaded page has started watching
+  // again (the reader is inside a recovery attempt, not a loop).
   var KEY = 'lagrange-boot-reload';
   var LIMIT = 24; // 24 x 500ms = 12s of grace before the reload decision
-  try { if (sessionStorage.getItem(KEY)) return; } catch {}
+  var prior = null;
+  try { prior = sessionStorage.getItem(KEY); } catch {}
+  // A previous page in this tab stood down (reloaded once, still bad). Do not
+  // give up for the tab's whole life: THIS page is the recovery attempt —
+  // keep watching. If it boots, clear the flag; if it hits the limit, stand
+  // down again (flag stays "1", still once per page load, never a loop).
+  try { if (prior === '1') sessionStorage.setItem(KEY, 'resume'); } catch {}
   var attempts = 0;
   var timer = setInterval(function(){
     attempts += 1;
@@ -218,8 +227,13 @@ export function bootRecoveryJs(base: string, entryJs: string): string {
     var booted = window.__lagrangeBoot === true;
     if (booted || attempts > LIMIT) {
       clearInterval(timer);
-      if (booted) { try { sessionStorage.removeItem(KEY); } catch {} return; }
-      try { sessionStorage.setItem(KEY, '1'); } catch {}
+      if (booted) {
+        // Healthy boot clears the recovery state — a FUTURE deploy window in
+        // this tab gets its own reload instead of standing down forever.
+        try { sessionStorage.removeItem(KEY); } catch {}
+        return;
+      }
+      try { sessionStorage.setItem(KEY, prior === '1' ? 'resume' : '1'); } catch {}
       var u = new URL(location.href);
       u.searchParams.set('lr', String(Date.now()));
       location.replace(u.toString());

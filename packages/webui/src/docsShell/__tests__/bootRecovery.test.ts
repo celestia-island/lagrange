@@ -91,12 +91,50 @@ describe("boot watcher (deploy window self-heal)", () => {
     vi.useRealTimers();
   });
 
-  it("stands down on a second visit (sessionStorage flag set)", () => {
+  it("a '1' flag PROMOTES to resume and keeps watching (no silent life-long give-up)", async () => {
+    // The previous round's shape: after a recovery reload the flag is "1";
+    // a watcher that just stands down would leave the reader dead for the
+    // rest of the tab's life. The reloaded page is the recovery ATTEMPT, so
+    // the watcher must resume — and on a healthy boot CLEAR the flag so a
+    // future deploy window gets its own reload.
+    const holder: { calls: number } = { calls: 0 };
+    vi.useFakeTimers();
     sessionStorage.setItem("lagrange-boot-reload", "1");
-    const r = runWatcher({ keepStorage: true });
-    expect(r.reloadCalls).toBe(0);
-    // And the visit leaves the flag untouched (the reader is not stuck in a
-    // "suppressed forever" state that a later good deploy could not clear).
+    (globalThis as Record<string, unknown>).__lagrangeBoot = false;
+    const reload = vi.fn((u: string) => { holder.calls += 1; void u; });
+    Object.defineProperty(window.location, "replace", { configurable: true, value: reload });
+    // eslint-disable-next-line no-new-func
+    new Function(bootRecoveryJs("", "docsMain-abc.js"))();
+    // The watcher keeps polling while the boot is pending — no stand-down.
+    vi.advanceTimersByTime(500 * 5);
+    expect(reload, "resume mode must not reload again while still watching").not.toHaveBeenCalled();
+    // A healthy boot lands: the flag clears.
+    (globalThis as Record<string, unknown>).__lagrangeBoot = true;
+    vi.advanceTimersByTime(500);
+    expect(sessionStorage.getItem("lagrange-boot-reload")).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("resume mode stands down again after its own 12s (once per page load)", () => {
+    vi.useFakeTimers();
+    sessionStorage.setItem("lagrange-boot-reload", "1");
+    (globalThis as Record<string, unknown>).__lagrangeBoot = false;
+    const reload = vi.fn();
+    Object.defineProperty(window.location, "replace", { configurable: true, value: reload });
+    // eslint-disable-next-line no-new-func
+    new Function(bootRecoveryJs("", "docsMain-abc.js"))();
+    vi.advanceTimersByTime(500 * 24);
+    expect(reload, "resumed watching must still respect the grace window").not.toHaveBeenCalled();
+    vi.advanceTimersByTime(500);
+    expect(reload).toHaveBeenCalledTimes(1);
+    // The stored value is the resume marker again (still once per page load).
+    expect(sessionStorage.getItem("lagrange-boot-reload")).toBe("resume");
+    vi.useRealTimers();
+  });
+
+  it("stands down permanently only on a first visit (no prior flag)", () => {
+    const r = runWatcher({ booted: false });
+    expect(r.reloadCalls).toBe(1);
     expect(r.sessionStorageGet).toBe("1");
   });
 });
