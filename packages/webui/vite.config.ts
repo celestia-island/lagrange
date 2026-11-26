@@ -44,9 +44,14 @@ export default defineConfig(({ mode }) => ({
           //     base, and a CSS preload miss REJECTS the whole dynamic
           //     import — the deployed theme window's sun-clock globe
           //     never mounted (its async chunk's CSS 404'd at
-          //     /assets/*, origin root). Bare imports both work in this
-          //     layout and cannot reject; the lost prefetch hint only
-          //     delays the first lazy open.
+          //     /assets/*, origin root). `modulePreload: false` removes
+          //     the dependency map: vite keeps a (minified) helper
+          //     wrapper around the dynamic import, but with an empty dep
+          //     list it resolves immediately — no preload URL is ever
+          //     computed, so nothing can 404 and nothing can reject the
+          //     import, and the module-relative import specifiers load
+          //     each chunk from its deployed home. The cost is only the
+          //     lost prefetch hint on the first lazy open.
           modulePreload: false,
           // Async-chunk CSS only ever loads through the (removed) preload
           // path, and rolldown's chunking can sweep statically-needed
