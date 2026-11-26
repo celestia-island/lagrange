@@ -30,6 +30,10 @@ minimumReleaseAgeExclude:
   # as a compact centered circle (both upstream renderers) and the
   # detected-value readout splits label-left / value-right, hikari#1571.
   - '@celestia-island/hikari@0.55.495'
+  # Same-day pickup (2026-11-26): the docs shell's mermaid cards get a real
+  # viewport (the board no longer fits against a collapsed 2px flex item) and
+  # subgraph clusters render as frames, hikari#1576/#1577.
+  - '@celestia-island/hikari@0.55.497'
   # Same-day pickup (2026-11-24): phone nav drawer, hikari#1535.
   - '@celestia-island/hikari@0.55.479'
   - '@celestia-island/tairitsu-host-client@0.1.0'
