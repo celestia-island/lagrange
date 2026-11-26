@@ -72,7 +72,7 @@ function stubFetch(): void {
                 title: "Architecture",
                 url: "/guides/architecture.html",
                 document_id: "d",
-                chunks: [{ heading_path: ["Architecture"], anchor: "a", snippet: "pipeline" }],
+                chunks: [{ heading_path: ["Architecture"], anchor: "a", text: "pipeline" }],
               },
             ],
             shards: ["search_i_00.json"],

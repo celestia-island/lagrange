@@ -75,7 +75,7 @@ function defaultBody(url: string): unknown {
           title: "Architecture",
           url: "/guides/architecture.html",
           document_id: "d",
-          chunks: [{ heading_path: ["Architecture"], anchor: "a", snippet: "pipeline" }],
+          chunks: [{ heading_path: ["Architecture"], anchor: "a", text: "pipeline" }],
         },
       ],
       shards: ["search_i_00.json"],
@@ -443,14 +443,76 @@ describe("DocsSearchBox", () => {
     input.dispatchEvent(new Event("input"));
     await nextTick();
     expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("true");
-    // The in-flight row rides the popover, which is teleported to the
-    // overlay root — and the popover now mounts on the busy state itself,
-    // so the row is visible from the first keystroke rather than only
-    // once an answer has landed.
-    expect(document.querySelector('[role="status"]')?.textContent).toContain("Searching");
+    // The in-flight state is a CENTERED SPINNER with no visible text (the
+    // old "Searching…" row read as an unlabeled white block on the bottom
+    // sheet — user report 2026-11-27). The announcement survives as the
+    // status region's aria-label: a bare spinner is silent to a screen
+    // reader, so dropping the text must NOT drop the a11y signal.
+    const busy = document.querySelector(".lagrange-docs-search-busy");
+    expect(busy?.getAttribute("role")).toBe("status");
+    expect(busy?.querySelector(".hk-spinner")).not.toBeNull();
+    expect(busy?.textContent?.trim()).toBe("");
+    expect(busy?.getAttribute("aria-label")?.length ?? 0).toBeGreaterThan(0);
     await new Promise((r) => setTimeout(r, 90));
     await nextTick();
     expect(document.querySelector(".lagrange-docs-search")?.getAttribute("data-busy")).toBe("false");
+  });
+
+  // The magnifier view (2026-11-27 user direction): a hit's snippet is the
+  // match-centred markdown window, and its edges fade ONLY where the section
+  // continues. MUT: dropping either has-fade class from the hit span turns
+  // this RED (the classes had no component-level pin before).
+  it("fades the snippet edge only where the section continues", async () => {
+    // Real chunk text is MARKDOWN SOURCE: paragraphs carry line breaks, so
+    // the window can line-snap and both cuts leave text behind.
+    const body = [
+      ...Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1} of the section before the table.`),
+      "",
+      "| Layer | Project |",
+      "| --- | --- |",
+      "| 0 | pipeline |",
+      "",
+      ...Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1} after the table.`),
+    ].join("\n");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("search_meta.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              docs: [
+                {
+                  id: 0,
+                  lang: "en",
+                  title: "Architecture",
+                  url: "/guides/architecture.html",
+                  document_id: "d",
+                  chunks: [{ heading_path: ["Architecture"], anchor: "a", text: body }],
+                },
+              ],
+              shards: ["search_i_00.json"],
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ pipeline: [[0, 0]] }) };
+      }),
+    );
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await openPanel();
+    await typeInto(document, "pipeline");
+    await new Promise((r) => setTimeout(r, 40));
+    await nextTick();
+
+    const snippet = document.querySelector(".lagrange-docs-search-hit-snippet");
+    expect(snippet).not.toBeNull();
+    // BOTH edges continue → both fades lit, and the window rendered as
+    // markdown (the pipe row became a table, not literal pipes).
+    expect(snippet?.classList.contains("has-fade-above")).toBe(true);
+    expect(snippet?.classList.contains("has-fade-below")).toBe(true);
+    expect(snippet?.querySelector("table")).not.toBeNull();
+    expect(snippet?.querySelector(".lagrange-docs-search-mark")).not.toBeNull();
   });
 
   it("hides the clear affordance on an empty field", async () => {

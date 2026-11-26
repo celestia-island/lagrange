@@ -16,6 +16,11 @@ import { createApp, createSSRApp } from "vue";
 import { HkMermaidDiagram, initTheme, useI18n } from "@celestia-island/hikari";
 import { mermaidParser } from "@celestia-island/hikari/mermaid";
 import "@celestia-island/hikari/styles";
+// The table scroll shells mount hikari's edge-glow PAINTER markup
+// (hk-edge-glow bands) imperatively; the painter's sheet ships only with
+// the component module, which no docs page mounts. Import the sheet for
+// its classes — a re-USE of hikari's one painter, not a second painter.
+import "@celestia-island/hikari/components/HkEdgeGlow.scss"; // exports-map: ./components/* → src/components/*
 // Pre-hydration theme vars (hikari#1546): the static stock-preset sheet,
 // bundled into docsMain css so the SSR <head> link carries it before any
 // JS. The inline bootstrap in template.ts sets data-theme/data-mode; this
@@ -67,6 +72,73 @@ function mountMermaidBoxes(): void {
     // same mount pattern HkMarkdownRenderer uses for its carriers.
     const app = createApp(HkMermaidDiagram, { source, interactive: true });
     app.mount(host);
+  }
+}
+
+/**
+ * Markdown table scroll shells (the boot upgrade for `.lagrange-docs-table-
+ * scroll` hosts the Rust renderer wraps every table in).
+ *
+ * The host senses its own overflow and drives hikari's shared edge-glow
+ * painter (`hk-edge-glow` — the same sheet HkScrollContainer mounts; this is
+ * a re-USE of that painter's markup contract, not a second painter): a band
+ * renders only while its edge hides content, so a phone sees the theme-color
+ * lamp on the overflowing side, both sides mid-scroll, and nothing at either
+ * end. Re-measures on scroll and on host resize (a rotated phone or a
+ * reflowed sheet changes which edges overflow without a scroll event).
+ *
+ * Why imperative DOM and not a Vue mount per table: the table HTML is
+ * build-rendered (SSR body), and a Vue takeover per table re-owners live
+ * content for no behavioural gain — the painter is markup + sheet, and this
+ * upgrade drives exactly that contract.
+ */
+export function mountTableScrollShells(root: ParentNode = document): void {
+  const hosts = root.querySelectorAll<HTMLElement>(".lagrange-docs-table-scroll");
+  for (const host of hosts) {
+    if (host.dataset.glowMounted === "1") continue;
+    host.dataset.glowMounted = "1";
+    if (host.querySelector(".hk-edge-glow")) continue;
+
+    const glow = document.createElement("div");
+    glow.className = "hk-edge-glow";
+    glow.setAttribute("aria-hidden", "true");
+    host.appendChild(glow);
+
+    // Mirrors HkScrollContainer's overflowGlowEdgesFor: start/end verdicts
+    // per axis, mapped to physical edges (this host is LTR horizontal).
+    const sync = (): void => {
+      const hiddenBefore = host.scrollLeft > 1;
+      const hiddenAfter = host.scrollLeft + host.clientWidth < host.scrollWidth - 1;
+      const edges = [
+        ...(hiddenBefore ? ["left"] : []),
+        ...(hiddenAfter ? ["right"] : []),
+      ];
+      // Re-render the band set (the painter's contract: bands exist per
+      // requested edge; an empty set keeps the inert root).
+      glow.replaceChildren(
+        ...edges.map((edge) => {
+          const band = document.createElement("span");
+          band.className = "hk-edge-glow-band";
+          band.dataset.edge = edge;
+          return band;
+        }),
+      );
+    };
+
+    let raf = 0;
+    const schedule = (): void => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        sync();
+      });
+    };
+    host.addEventListener("scroll", schedule, { passive: true });
+    host.addEventListener("resize", schedule);
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(schedule).observe(host);
+    }
+    sync();
   }
 }
 
@@ -241,6 +313,7 @@ async function boot(): Promise<void> {
     installCodeCopy,
     mountMermaidBoxes,
     renderMathBoxes,
+    mountTableScrollShells,
   ]) {
     try {
       upgrade();

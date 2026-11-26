@@ -1230,7 +1230,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
     for(var k in ids){var d=meta.docs[k];if(d&&d.lang===L){
      var view={url:d.url,title:d.title,snippet:d.snippet};
      var hc=hits[k];
-     if(hc&&d.chunks){for(var ck in hc){if(d.chunks[ck]){view.snippet=d.chunks[ck].snippet;break}}}
+     if(hc&&d.chunks){for(var ck in hc){if(d.chunks[ck]){view.snippet=(d.chunks[ck].text||d.chunks[ck].snippet||'').slice(0,160);break}}}
      result.push(view)}}
     result=result.slice(0,10);
     if(!result.length){sr.innerHTML='<div class="lg-no">'+he(lgUI.t('noResults'))+'</div>';sp.open();return}
@@ -1856,6 +1856,22 @@ fn html_escape_text(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The legacy lane's inline search reads the per-chunk PREVIEW field. It
+    /// used to read `chunks[ck].snippet`, which the preview rename removed —
+    /// every hit then silently fell back to the document-level fragment (the
+    /// search still "worked", it just showed the wrong text). The field name
+    /// lives inside a `const` string, so nothing else can catch a rename.
+    #[test]
+    fn legacy_search_reads_the_chunk_preview_field() {
+        // Assert the WHOLE accessor: the `snippet` half alone is trivially
+        // true (it is the fallback substring), so only the expression pins
+        // that read order — preview first, old field second.
+        assert!(
+            LAGRANGE_JS_TEMPLATE.contains("d.chunks[ck].text||d.chunks[ck].snippet"),
+            "the legacy search must read the per-chunk preview (`text`) with the old field as fallback"
+        );
+    }
 
     /// Round 8 of PR #119 (S2): a language without its own SUMMARY.md
     /// inherits the default language's tree in the legacy sidebar. The

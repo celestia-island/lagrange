@@ -41,10 +41,11 @@ import {
   watchEffect,
   type PropType,
 } from "vue";
-import { HkIconButton, HkModal, HkSearchInput, useI18n } from "@celestia-island/hikari";
+import { HkIconButton, HkModal, HkSearchInput, HkSpinner, useI18n } from "@celestia-island/hikari";
 import { Search } from "lucide-vue-next";
 import type { DocsSiteMeta } from "./types";
-import { DocsSearch, type Hit } from "./search";
+import { DocsSearch, tokenizeQuery, type Hit } from "./search";
+import { buildSnippetView } from "./snippet";
 
 export const DocsSearchBox = defineComponent({
   name: "LagrangeDocsSearchBox",
@@ -190,8 +191,12 @@ export const DocsSearchBox = defineComponent({
             results panel (the "no empty panel flash" contract still
             holds — that assertion is what caught this overlap). */}
         {busy.value && !hits.value && !failed.value && (
-          <div class="lagrange-docs-search-busy" role="status">
-            {t("lagrange::docs.searchBusy", "Searching…")}
+          <div
+            class="lagrange-docs-search-busy"
+            role="status"
+            aria-label={t("lagrange::docs.searchBusy", "Searching…")}
+          >
+            <HkSpinner size="sm" center />
           </div>
         )}
         {open.value && (hits.value || failed.value) && (
@@ -206,13 +211,33 @@ export const DocsSearchBox = defineComponent({
                 {t("lagrange::docs.searchNoResults", "No results")}
               </div>
             )}
-            {(hits.value ?? []).map((hit) => (
-              <a class="lagrange-docs-search-hit" key={hit.url} href={hit.url}>
-                <span class="lagrange-docs-search-hit-title">{hit.title}</span>
-                {hit.heading && <span class="lagrange-docs-search-hit-heading">{hit.heading}</span>}
-                {hit.snippet && <span class="lagrange-docs-search-hit-snippet">{hit.snippet}</span>}
-              </a>
-            ))}
+            {(hits.value ?? []).map((hit) => {
+              // The magnifier view: a line-snapped window of the chunk's real
+              // text around the first match, rendered AS markdown (pipe rows
+              // become tables), matches underlined in place, edges faded only
+              // where the section continues.
+              const view = buildSnippetView(hit.text, query.value);
+              return (
+                <a class="lagrange-docs-search-hit" key={hit.url} href={hit.url}>
+                  <span class="lagrange-docs-search-hit-title">{hit.title}</span>
+                  {hit.heading && <span class="lagrange-docs-search-hit-heading">{hit.heading}</span>}
+                  {view.html && (
+                    <span
+                      class={[
+                        "lagrange-docs-search-hit-snippet",
+                        view.hasAbove && "has-fade-above",
+                        view.hasBelow && "has-fade-below",
+                      ]}
+                      // Sanitized in buildSnippetView (DOMPurify + a text-node
+                      // walk that wraps matches in <mark>). innerHTML is a
+                      // Vue recognized prop (ReservedProps) — the JSX type
+                      // name for the Vue-2-era domPropsInnerHTML spelling.
+                      {...{ innerHTML: view.html }}
+                    />
+                  )}
+                </a>
+              );
+            })}
           </div>
         )}
       </>

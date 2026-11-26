@@ -8,7 +8,11 @@ import type { DocsSiteMeta } from "./types";
 interface ChunkMeta {
   heading_path: string[];
   anchor: string;
-  snippet: string;
+  /** The chunk's MARKDOWN SOURCE, capped by the build at `PREVIEW_CHARS`
+   *  (2000) on a line boundary — the hit view cuts its own match-centred
+   *  window from this. A section longer than the cap is still fully indexed;
+   *  only its tail is not previewable. */
+  text: string;
 }
 
 interface DocMeta {
@@ -30,7 +34,9 @@ export interface Hit {
   title: string;
   heading: string;
   url: string;
-  snippet: string;
+  /** The chunk's markdown preview, capped by the build at 2000 chars on a
+   *  line boundary — the view cuts the match-centred window itself. */
+  text: string;
 }
 
 export const SHARD_COUNT = 16;
@@ -181,7 +187,7 @@ export class DocsSearch {
           url: anchor
             ? `${langUrl(this.site, doc.url, doc.lang)}#${anchor}`
             : langUrl(this.site, doc.url, doc.lang),
-          snippet: meta3?.snippet ?? "",
+          text: meta3?.text ?? "",
         };
       });
     return hits;

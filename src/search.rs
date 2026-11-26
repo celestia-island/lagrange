@@ -40,6 +40,13 @@ use tracing::info;
 /// codepoints and panics — review round 3, B-S3).
 pub const SNIPPET_CHARS: usize = 160;
 
+/// Cap on the per-chunk MARKDOWN preview shipped in `search_meta.json`. The
+/// hit view only ever shows a window of ~±160 characters around the match,
+/// so this bounds the payload without hiding matches in ordinary sections
+/// (a chunk is one heading's span; sections longer than this are rare and
+/// their tail is still indexed, just not previewable).
+pub const PREVIEW_CHARS: usize = 2000;
+
 /// Number of shards (must be ≥ 1). 16 shards keeps each file small for sites
 /// up to a few thousand pages while staying below the HTTP/2 concurrent-request
 /// limit on most browsers.
@@ -50,8 +57,16 @@ const SHARD_COUNT: usize = 16;
 pub struct ChunkMeta {
     pub heading_path: Vec<String>,
     pub anchor: String,
-    /// Readable text cut from the chunk's source span.
-    pub snippet: String,
+    /// The chunk's MARKDOWN SOURCE (not the flattened plain text), capped at
+    /// [`PREVIEW_CHARS`] **on a line boundary** — a row cut mid-pipe renders
+    /// as a literal-pipes paragraph, which is precisely the defect this
+    /// preview exists to remove. The hit view cuts a line-snapped window around the
+    /// match and renders it AS MARKDOWN, so pipe rows become tables and
+    /// emphasis survives — the plain-text form would show the pipes
+    /// literally (2026-11-27 user report: the snippet looked like raw
+    /// markdown dump). Line breaks are what makes that rendering possible at
+    /// all: `plain_text` joins everything with spaces.
+    pub text: String,
 }
 
 /// Lightweight document metadata — loaded eagerly by the front-end.
@@ -128,17 +143,17 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
         let mut chunk_metas: Vec<ChunkMeta> = Vec::with_capacity(doc.chunks.len());
         for (chunk_idx, chunk) in doc.chunks.iter().enumerate() {
             let text = plain_text(&chunk.source_text);
-            let snippet = truncate_chars(&text, SNIPPET_CHARS);
-            chunk_metas.push(ChunkMeta {
-                heading_path: chunk.heading_path.clone(),
-                anchor: chunk.anchor.clone(),
-                snippet,
-            });
-            // Index the chunk text: heading path words ride along so a
-            // section can be found by its own title.
+            // Index the FLATTENED text — the tokenizer's contract predates
+            // the preview and stays put. The hit window cuts the MARKDOWN
+            // source instead.
             let mut indexable = chunk.heading_path.join(" ");
             indexable.push(' ');
             indexable.push_str(&text);
+            chunk_metas.push(ChunkMeta {
+                heading_path: chunk.heading_path.clone(),
+                anchor: chunk.anchor.clone(),
+                text: preview_markdown(&chunk.source_text, PREVIEW_CHARS),
+            });
             for token in tokenize(&indexable) {
                 let shard_idx = shard_for(&token);
                 let entry = shards[shard_idx].index.entry(token).or_default();
@@ -148,9 +163,13 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
                 }
             }
         }
-        let snippet = chunk_metas
+        // First chunk's head — the no-query landing view, in FLAT text (the
+        // markdown previews are for match-centred windows; this cut has
+        // always been prose and the legacy lane still renders it as text).
+        let snippet = doc
+            .chunks
             .first()
-            .map(|c| c.snippet.clone())
+            .map(|c| truncate_chars(&plain_text(&c.source_text), SNIPPET_CHARS))
             .unwrap_or_default();
         metas.push(DocMeta {
             id: doc_id,
@@ -666,6 +685,36 @@ pub(crate) fn truncate_chars(text: &str, limit: usize) -> String {
     text.chars().take(limit).collect()
 }
 
+/// The chunk's markdown source, cut to at most `limit` characters **at a line
+/// boundary**.
+///
+/// The client renders this as markdown, and markdown is line-structured: a
+/// hard character cut leaves an unterminated table row (or list item) at the
+/// tail, which makes the renderer swallow the whole preceding block into a
+/// paragraph — the hit card then shows literal pipes, which is exactly what
+/// the preview exists to prevent (measured on the docs.celestia.world corpus
+/// — 11 languages, 1859 chunks: under the naive cut 29 chunks hit the cap and
+/// 13 of those ended on an unterminated pipe row; this crate's own `docs/`
+/// corpus is 172 chunks and never reaches the cap, so it cannot show either
+/// number).
+/// Backing off to the previous newline keeps every LINE the preview ships
+/// complete; a section that is ONE line longer than the whole budget has no
+/// newline to snap to, so that case still hard-cuts (a single overlong
+/// paragraph, which renders flat either way).
+pub fn preview_markdown(raw: &str, limit: usize) -> String {
+    let trimmed = raw.trim();
+    if trimmed.chars().count() <= limit {
+        return trimmed.to_string();
+    }
+    let head: String = trimmed.chars().take(limit).collect();
+    match head.rfind('\n') {
+        // A newline is ASCII, so the index is a character boundary of `head`.
+        Some(idx) => head[..idx].to_string(),
+        // One line longer than the whole budget: nothing to snap to.
+        None => head,
+    }
+}
+
 /// Append `text` with inline emphasis/code delimiters removed and link/image
 /// syntax reduced to its visible text.
 fn strip_inline_markers_into(text: &str, out: &mut String) {
@@ -865,6 +914,44 @@ mod tests {
         for probe in ["a", "z", "9", "_", "运"] {
             assert!(shard_for(probe) < SHARD_COUNT);
         }
+    }
+
+    #[test]
+    fn preview_cuts_on_a_line_boundary_never_mid_row() {
+        // A table whose rows straddle the budget: a naive character cut lands
+        // inside a pipe row and the renderer turns the whole table into one
+        // literal-pipes paragraph (the reported defect).
+        let header = "| Role | Docs |\n| --- | --- |\n";
+        let row = format!("| {} | link |\n", "x".repeat(60));
+        let mut raw = String::from("## Layer\n\n");
+        raw.push_str(header);
+        while raw.len() < 400 {
+            raw.push_str(&row);
+        }
+        let preview = preview_markdown(&raw, 200);
+        assert!(preview.chars().count() <= 200);
+        // Every shipped line is a COMPLETE source line: the cut landed on a
+        // newline, so the preview is a prefix of the source that ends one.
+        assert!(raw.starts_with(&preview), "preview must be a source prefix");
+        let next = raw[preview.len()..].chars().next();
+        assert_eq!(next, Some('\n'), "the cut must sit on a line boundary");
+        // And what survives still renders as a table: header + separator +
+        // at least one complete row.
+        assert!(preview.contains("| --- |"), "the header row survives");
+        assert!(preview.trim_end().ends_with('|'), "no half row at the tail");
+    }
+
+    #[test]
+    fn preview_keeps_short_chunks_whole_and_trims_edges() {
+        // Short section: no cut at all, and surrounding blank lines go.
+        let raw = "\n\n## Install\n\nRun the command.\n\n";
+        assert_eq!(
+            preview_markdown(raw, 2000),
+            "## Install\n\nRun the command."
+        );
+        // One line longer than the budget: nothing to snap to, hard cut.
+        let long = "y".repeat(500);
+        assert_eq!(preview_markdown(&long, 100), "y".repeat(100));
     }
 
     #[test]
@@ -1543,10 +1630,14 @@ mod tests {
         }
         assert_eq!(hit_chunk, Some(0), "安装 must resolve to chunk 0");
         assert_eq!(meta["docs"][0]["chunks"][0]["anchor"], "安装");
-        // Snippet is the source span text, not rendered HTML.
-        assert!(meta["docs"][0]["chunks"][0]["snippet"]
+        // The chunk carries its FULL readable text (the front-end cuts its
+        // own match-centred window from it) — the source span text, not
+        // rendered HTML.
+        assert!(meta["docs"][0]["chunks"][0]["text"]
             .as_str()
             .unwrap()
             .contains("运行"));
+        // The doc-level head snippet is still the truncated first chunk.
+        assert!(meta["docs"][0]["snippet"].as_str().unwrap().len() <= 160 + 8);
     }
 }
