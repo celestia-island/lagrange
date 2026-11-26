@@ -224,6 +224,11 @@
     // painted the diagram mirrored at negative scale (i.e. nothing). The
     // canvas must claim the row so the board has a real viewport to fit
     // into.
+    //
+    // The legacy lane's twin (`styles/layout.scss`) deliberately keeps
+    // shrink-to-fit: its canvas holds a mermaid.js SVG, which HAS an
+    // intrinsic width, so nothing collapses there — and stretching that box
+    // would left-align every SVG diagram in the project doc sites.
     > .lg-diagram-canvas {
       flex: 1 1 auto;
       min-width: 0;

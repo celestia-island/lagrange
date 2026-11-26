@@ -162,9 +162,13 @@ export function installCodeCopy(): void {
  * the no-JS fallback (the renderer is language-agnostic), and the legacy lane
  * re-labels the same nodes from its own runtime — without this pass the docs
  * shell left a Chinese page with an English "Preview | Source" pill, which is
- * exactly what the hub showed (2026-11-26). One table serves both lanes:
- * `lagrange::docs.*` above, whose preview/source/copyCode wording matches the
- * legacy lane's entries.
+ * exactly what the hub showed (2026-11-26).
+ *
+ * The strings live in `lagrange::docs.*` above. They are a hand-kept twin of
+ * the legacy lane's `CHROME` table (`src/comments/ui.ts`, which ships inline
+ * inside the Rust binary and cannot import this module): the nine locales the
+ * legacy lane already had are byte-identical here, and `de`/`pt` exist only in
+ * this table. Keep the wording in step when either side changes.
  */
 function localizeStaticChrome(): void {
   const { t } = useI18n();
@@ -173,6 +177,8 @@ function localizeStaticChrome(): void {
     if (pane === "preview") btn.textContent = t("lagrange::docs.preview", "Preview");
     else if (pane === "source") btn.textContent = t("lagrange::docs.source", "Source");
   }
+  // Every code-block copy button, not only the diagram card's: the ordinary
+  // fenced blocks emit the same node and the legacy lane re-labels them all.
   const copy = t("lagrange::docs.copyCode", "Copy code");
   for (const btn of document.querySelectorAll<HTMLElement>(
     "button.hi-code-highlight-copy[data-copy]",
