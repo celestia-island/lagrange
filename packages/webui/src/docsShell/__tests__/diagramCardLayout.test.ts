@@ -14,7 +14,7 @@
 // shrink-to-fit: its canvas holds a mermaid.js SVG with a real intrinsic
 // width, so nothing collapses there — this guard covers the webui lane only.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -70,7 +70,16 @@ const sheet = stripComments(
  *  on either side (a live mutation let `> .lg-diagram-canvas` become
  *  `-x` and still pass a source-shape-only pin) fails here — the guard must
  *  cover the seam, not just the sheet. */
-const renderer = readFileSync(resolve(here, "../../../../../src/render.rs"), "utf8");
+const rendererPath = resolve(here, "../../../../../src/render.rs");
+if (!existsSync(rendererPath)) {
+  // A move of the renderer must fail HERE with a readable message, not as an
+  // opaque ENOENT at import time.
+  throw new Error(
+    `diagramCardLayout guard: the Rust renderer moved (expected ${rendererPath}) — `
+      + "point this cross-file read at its new home",
+  );
+}
+const renderer = readFileSync(rendererPath, "utf8");
 
 describe("diagram card layout", () => {
   it("keeps the canvas a stretched flex item with a real width floor", () => {
@@ -82,8 +91,12 @@ describe("diagram card layout", () => {
     const canvas = ruleBody(preview!, ".lg-diagram-canvas");
     expect(canvas, "the canvas rule must stay nested under the preview").not.toBeNull();
     // `flex: 1 1 auto` makes the item claim the row (so a `width: 100%` child
-    // has a definite width to resolve against); `min-width: 0` keeps that
-    // from turning into a min-content floor that kills `overflow-x`.
+    // has a definite width to resolve against). `min-width: 0` is the standard
+    // companion for a flex item that may carry wide content: it opts out of
+    // the automatic min-content floor so the preview's `overflow-x` keeps
+    // working. (Measured after this fix: the definite width already implies
+    // the floor, so the declaration is defensive — it matters again if the
+    // board ever reports a min-content size.)
     expect(canvas!).toMatch(/flex:\s*1 1 auto/);
     expect(canvas!).toMatch(/min-width:\s*0/);
   });
