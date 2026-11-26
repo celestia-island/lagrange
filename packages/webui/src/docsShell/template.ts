@@ -74,6 +74,12 @@ export interface ViteManifestEntry {
  * sheet as its own manifest entry and attaches NOTHING to the entry. The
  * fallback picks those standalone `.css` entries so the template always
  * links the shell's styles.
+ *
+ * MUT:css-manifest-fallback: removing the fallback, or widening its guard,
+ * never passes both pin tests — each direction has its own named test
+ * (`falls back to the standalone merged sheet when cssCodeSplit is off` /
+ * `split-mode css keeps winning over the fallback`), and the R3 round
+ * killed each mutation with exactly its own test.
  */
 export function resolveClientAssetsFrom(raw: Record<string, ViteManifestEntry>): ClientAssets {
   const entryKey = Object.keys(raw).find((k) => raw[k]?.isEntry && k.includes("docsMain"));
