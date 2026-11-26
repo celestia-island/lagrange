@@ -175,8 +175,10 @@ body {
   }
 
   // An excerpt is not a page: markdown structure is kept, page-scale type is
-  // not. Without this an opening `# Heading` inside the window dwarfs the
-  // whole hit card.
+  // not. The window is the chunk's source, so a surviving `## Heading` would
+  // otherwise inherit the page's display size inside a 0.78rem card. (The
+  // leading heading is dropped in `snippet.ts`; this covers the ones that
+  // stay, and the environments where the sanitizer keeps the wrapper.)
   :is(h1, h2, h3, h4, h5, h6) {
     font-size: 0.85rem;
     font-weight: 600;

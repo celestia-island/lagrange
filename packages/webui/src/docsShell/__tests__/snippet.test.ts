@@ -80,14 +80,29 @@ describe("buildSnippetView", () => {
       "## Install",
       "",
       "Run the pipeline command to start.",
-      "",
-      "More prose after the match so the window continues below.",
     ].join("\n");
-    const view = buildSnippetView(chunk, "Install");
-    // The heading line is gone; the prose survives.
-    expect(view.html).not.toContain("<h2");
-    expect(view.html).not.toContain("Install</h2>");
-    expect(view.html).toContain("pipeline");
+    const view = buildSnippetView(chunk, "pipeline");
+    // The heading text is GONE (asserting the text, not the tag: sanitizers
+    // and environments disagree on whether the wrapper survives, so a tag
+    // assertion can pass for the wrong reason).
+    expect(view.html).not.toContain("Install");
+    expect(view.html.startsWith("Run the")).toBe(true);
+  });
+
+  it("keeps a heading-only chunk's match (never renders an empty card)", () => {
+    // The Rust chunker emits heading-only spans (9 of them in this repo's
+    // own docs). Stripping the heading there would delete the ONLY content —
+    // and the only highlight — and the card renders nothing at all.
+    const view = buildSnippetView("## Install", "Install");
+    expect(view.html.length).toBeGreaterThan(0);
+    expect(view.html).toContain("lagrange-docs-search-mark");
+    expect(view.html).toContain("Install");
+  });
+
+  it("keeps the heading when the MATCH lives in it", () => {
+    const view = buildSnippetView(["## Quick Start", "", "Run the pipeline."].join("\n"), "Quick");
+    expect(view.html).toContain("Start");
+    expect(view.html).toContain("lagrange-docs-search-mark");
   });
 
   it("keeps a hit an EXCERPT: images collapse to alt text, links unwrap", () => {
