@@ -10,9 +10,10 @@ use std::path::Path;
 use crate::highlight;
 use hikari_components::basic::{Card, CardProps, Image, ImageProps, Link, LinkProps};
 use hikari_components::display::{
-    Empty, EmptyProps, Skeleton, SkeletonProps, Tag, TagProps, TagVariant, Timeline, TimelineProps,
+    EmptyState, EmptyStateProps, Skeleton, SkeletonProps, Tag, TagProps, TagVariant, Timeline,
+    TimelineProps,
 };
-use hikari_components::layout::divider::{DividerOrientation, DividerType};
+use hikari_components::layout::divider::{DividerOrientation, DividerVariant};
 use hikari_components::layout::{Col, ColProps, Divider, DividerProps};
 use hikari_components::navigation::{Menu, MenuProps};
 use tairitsu_vdom::{el, txt, VNode};
@@ -222,11 +223,8 @@ fn render_block_with_live(
             )
         }
         Block::ThematicBreak => Divider(DividerProps {
-            text: None,
             orientation: DividerOrientation::Horizontal,
-            divider_type: DividerType::Solid,
-            text_align: "center".to_string(),
-            rtl: None,
+            variant: DividerVariant::Solid,
             ..Default::default()
         }),
         Block::Center(inner) => VNode::Element(Box::new(
@@ -443,8 +441,8 @@ fn render_live_pair(
             ..Default::default()
         })
     } else if has_rust {
-        Empty(EmptyProps {
-            description: "(live preview unavailable)".to_string(),
+        EmptyState(EmptyStateProps {
+            description: Some("(live preview unavailable)".to_string()),
             ..Default::default()
         })
     } else {
