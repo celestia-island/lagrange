@@ -47,6 +47,25 @@ describe("needsCollapse (自动分析正文)", () => {
 });
 
 describe("toPlainText", () => {
+  it("keeps the word between spaced comparison operators (not a tag)", () => {
+    // The R2 review's S1: `a < b > c` read `< b >` as an HTML tag and
+    // DELETED the b. Only a letter right after `<` opens a tag.
+    expect(toPlainText("The guard runs when a < b > c is true")).toContain("when a < b > c is true");
+    expect(toPlainText("if low < mid > high then swap")).toContain("low < mid > high");
+    // Real tags still go.
+    expect(toPlainText("a <b>bold</b> c")).toBe("a bold c");
+  });
+
+  it("keeps snake_case identifiers searchable", () => {
+    // The R2 review's S2: the emphasis stripper deleted EVERY underscore,
+    // so `use_modal_state` flattened to `usemodalstate`. Lone underscores
+    // are content (GFM agrees — intraword `_` never emphasizes).
+    expect(toPlainText("call `use_modal_state` here")).toContain("use_modal_state");
+    expect(toPlainText("**bold** and __strong__ stay")).toContain("bold and strong stay");
+    // A paired-underscore emphasis at word boundaries still unwraps.
+    expect(toPlainText("this _word_ goes")).toBe("this word goes");
+  });
+
   it("drops block syntax but keeps the words in reading order", () => {
     const flat = toPlainText(TABLE_CHUNK);
     expect(flat).not.toContain("|");
@@ -105,6 +124,42 @@ describe("buildExcerptLines — the six-character rule", () => {
     const many = Array.from({ length: 6 }, (_, i) => `第${i}段 测试 出现在这里。`).join(" ");
     const lines = buildExcerptLines(many, ["测试"]);
     expect(lines.length).toBeLessThanOrEqual(2);
+  });
+
+  it("counts GRAPHEME clusters in the budget (a flag is one character)", () => {
+    // The R2 review's S1: a code-point budget cut INSIDE clusters — the
+    // family emoji printed a broken torso, a flag reassembled into a
+    // DIFFERENT country, a combining accent dangled. The budget is
+    // user-perceived characters, and the invariant is CLUSTER INTEGRITY:
+    // every cluster in the kept context is a complete grapheme (a whole
+    // family, a whole flag) — never a bare ZWJ, a lone face or a single
+    // regional indicator. (ZWJ DOES appear inside an intact family cluster;
+    // the earlier substring regex caught that and was wrong.)
+    const FAMILY = "👨‍👩‍👧‍👦";
+    const lines = buildExcerptLines(`${FAMILY}${FAMILY}${FAMILY} 测试 后面还有一些内容`, ["测试"]);
+    // Only the BEFORE side: everything left of the match segment (an
+    // earlier draft joined both sides and flagged the AFTER context's
+    // perfectly legitimate hanzi clusters as "broken").
+    const matchAt = lines[0].segments.findIndex((x) => x.match);
+    const before = lines[0].segments.slice(0, matchAt).map((x) => x.text).join("");
+    const split = (v: string): string[] => {
+      const Seg = (globalThis as { Intl?: { Segmenter?: new (l: string, o: { granularity: string }) => { segment(v: string): Iterable<{ segment: string }> } } }).Intl?.Segmenter;
+      return Seg
+        ? [...new Seg("und", { granularity: "grapheme" }).segment(v)].map((part) => part.segment)
+        : Array.from(v);
+    };
+    const clusters = split(before);
+    for (const cluster of clusters) {
+      expect(cluster === " " || cluster === FAMILY).toBe(true);
+    }
+    expect(clusters.length).toBeLessThanOrEqual(6);
+
+    const flags = buildExcerptLines("🇨🇳🇨🇳🇨🇳🇨🇳 测试 尾部还有", ["测试"]);
+    const flagMatchAt = flags[0].segments.findIndex((x) => x.match);
+    const flagBefore = flags[0].segments.slice(0, flagMatchAt).map((x) => x.text).join("");
+    for (const cluster of split(flagBefore)) {
+      expect(cluster === " " || cluster === "🇨🇳").toBe(true);
+    }
   });
 
   it("never returns raw markdown punctuation to the card", () => {

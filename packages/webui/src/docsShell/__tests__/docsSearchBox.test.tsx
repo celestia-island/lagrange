@@ -551,12 +551,25 @@ describe("DocsSearchBox", () => {
     const m = await mount(DocsSearchBox, { site, lang: "en" });
     cleanup = m.unmount;
     await openPanel();
+    await typeInto(document, "pipeline");
+    await new Promise((r) => setTimeout(r, 40));
+    await nextTick();
     const pin = document.querySelector(".hk-scroll-pin");
     expect(pin, "the field must be pinned, not in flow").not.toBeNull();
     expect(pin?.getAttribute("data-side")).toBe("top");
     // The FIELD itself lives inside the pin (a pin wrapping something else
     // would satisfy the assertion above and fix nothing).
     expect(pin?.querySelector(".hk-search-input, input")).not.toBeNull();
+    // …and the pin wraps the FIELD and NOTHING ELSE. The R2 review caught
+    // that a pin which also swallowed the results list would pass every
+    // assertion above while breaking the window (a list inside a sticky
+    // layer neither scrolls with the body nor lays out). With hits on
+    // screen, the results must be a SIBLING of the pin under the panel.
+    const results = document.querySelector(".lagrange-docs-search-results");
+    expect(results, "hits on screen for the sibling probe").not.toBeNull();
+    expect(results?.parentElement).toBe(pin?.parentElement);
+    expect(pin?.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(pin?.parentElement?.classList.contains("lagrange-docs-search-panel")).toBe(true);
   });
 
   it("leaves the window's own scrollbar as the ONLY scroller (no nested one)", async () => {
@@ -578,11 +591,17 @@ describe("DocsSearchBox", () => {
     // `getComputedStyle` reports the initial value and the assertion would
     // hold even with the nested scroller restored (mutation B SURVIVED that
     // form). Read the real sheet instead — the same source-level pin the
-    // diagram-card guard uses.
+    // diagram-card guard uses. TWO guards: the base rule (which must carry
+    // NO scrolling chrome at all — the R2 review flagged the old popover
+    // max-height/overflow as a re-arm waiting for a selector reshuffle) and
+    // the panel-scoped rule (explicit none/visible).
     const sheet = readFileSync(resolve(here, "../docsShell.scss"), "utf8");
+    const base = ruleBody(sheet, ".lagrange-docs-search-results");
+    expect(base, "the base results rule must exist").not.toBeNull();
+    expect(base!).not.toMatch(/overflow/);
+    expect(base!).not.toMatch(/max-height/);
     // Nested inside `.lagrange-docs-search-panel { ... }`, so the source
-    // spelling is the bare class; indexOf finds the PANEL-scoped one first
-    // only if it appears first, so search from the panel block onward.
+    // spelling is the bare class; search from the panel block onward.
     const panelAt = sheet.indexOf(".lagrange-docs-search-panel {");
     const block = ruleBody(sheet.slice(panelAt), ".lagrange-docs-search-results");
     expect(block, "the panel's results rule must exist").not.toBeNull();

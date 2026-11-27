@@ -34,6 +34,24 @@ const ELLIPSIS = "…";
  *  plus the CJK/fullwidth punctuation ranges a Chinese excerpt uses. */
 const BOUNDARY = /[\s\u3000-\u303f\uff00-\uffef\u2000-\u206f]/;
 
+/** Split `text` into USER-PERCEIVED characters, not code points: a ZWJ
+ *  emoji, a flag (two regional indicators) or a combining accent is ONE
+ *  character to the reader, and a budget that counts code points mangles
+ *  all three (a cut inside 👨‍👩‍👧‍👦 prints a broken torso; a cut inside a
+ *  flag prints a DIFFERENT country). `Intl.Segmenter` is the platform's
+ *  cluster splitter (every evergreen browser, Node ≥16); code points are
+ *  the honest fallback where it is missing — same as the pre-Segmenter
+ *  behaviour, never worse. */
+function segments(text: string): string[] {
+  const Seg = (globalThis as { Intl?: { Segmenter?: new (...args: unknown[]) => { segment(s: string): Iterable<{ segment: string }> } } })
+    .Intl?.Segmenter;
+  if (Seg) {
+    const splitter = new Seg("und", { granularity: "grapheme" }) as { segment(s: string): Iterable<{ segment: string }> };
+    return [...splitter.segment(text)].map((part) => part.segment);
+  }
+  return Array.from(text);
+}
+
 export interface ExcerptSegment {
   text: string;
   match: boolean;
@@ -44,25 +62,26 @@ export interface ExcerptLine {
   segments: ExcerptSegment[];
 }
 
-/** Keep the last `limit` characters of `text`, preferring a boundary. */
-function tailWithin(text: string, limit: number): string {
-  const chars = Array.from(text);
-  if (chars.length <= limit) return text;
-  const from = chars.length - limit;
-  for (let i = from; i < chars.length - 1; i += 1) {
-    if (BOUNDARY.test(chars[i] ?? "")) return chars.slice(i + 1).join("");
+/** Keep the last `limit` CLUSTERS of `segs`, preferring to start after a
+ *  boundary cluster (never mid-word). Always keeps at least one. */
+function tailClusters(segs: string[], limit: number): string[] {
+  if (segs.length <= limit) return segs;
+  const window = segs.slice(-limit);
+  for (let i = 0; i < window.length - 1; i += 1) {
+    if (BOUNDARY.test(window[i] ?? "")) return window.slice(i + 1);
   }
-  return chars.slice(from).join("");
+  return window;
 }
 
-/** Keep the first `limit` characters of `text`, preferring a boundary. */
-function headWithin(text: string, limit: number): string {
-  const chars = Array.from(text);
-  if (chars.length <= limit) return text;
-  for (let i = limit; i > 1; i -= 1) {
-    if (BOUNDARY.test(chars[i - 1] ?? "")) return chars.slice(0, i - 1).join("");
+/** Keep the first `limit` CLUSTERS of `segs`, preferring to end before a
+ *  boundary cluster. Always keeps at least one. */
+function headClusters(segs: string[], limit: number): string[] {
+  if (segs.length <= limit) return segs;
+  const window = segs.slice(0, limit);
+  for (let i = window.length - 1; i > 0; i -= 1) {
+    if (BOUNDARY.test(window[i] ?? "")) return window.slice(0, i);
   }
-  return chars.slice(0, limit).join("");
+  return window;
 }
 
 /**
@@ -89,10 +108,18 @@ export function toPlainText(markdown: string): string {
   // Links / images → their label only.
   text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
   text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
-  // Emphasis / inline code / strikethrough markers.
-  text = text.replace(/(\*\*|__|\*|_|`+|~~)/g, "");
-  // HTML tags (the chunk source can carry them).
-  text = text.replace(/<[^>]*>/g, " ");
+  // Emphasis / inline code / strikethrough markers. PAIRED markers go with
+  // their content kept; lone `*` / backtick / `~` are markers too. A lone
+  // `_` is NOT: snake_case identifiers are content (and GFM agrees —
+  // intraword underscores never emphasize), so `use_modal_state` must
+  // survive flattening searchable.
+  text = text.replace(/(\*\*|__|~~|`+)(\S[^]*?\S|\S)\1/g, "$2");
+  text = text.replace(/(^|[\s(])_(\S[^_\n]*?\S)_(?=$|[\s.,;:!?)\]）」])/g, "$1$2");
+  text = text.replace(/[*`~]/g, "");
+  // HTML tags (the chunk source can carry them). The letter requirement is
+  // load-bearing: `a < b > c` in prose is comparison operators, not a tag,
+  // and the greedy `[^>]*` form deleted the word between them.
+  text = text.replace(/<\/?[a-zA-Z][^<>]*>/g, " ");
 
   // Collapse whitespace LAST so the earlier regexes could anchor on lines.
   return text.replace(/\s+/g, " ").trim();
@@ -144,31 +171,67 @@ export function buildExcerptLines(markdown: string, tokens: string[]): ExcerptLi
     // No literal occurrence (the index matched a token the flattened text
     // spells differently, e.g. split by markup): show the opening context
     // rather than an empty row.
-    const head = headWithin(text, CONTEXT_CHARS * 4);
+    const clusters = segments(text);
+    const kept = headClusters(clusters, CONTEXT_CHARS * 2);
     return [
       {
         segments: [
-          { text: head, match: false },
-          ...(head.length < text.length ? [{ text: ELLIPSIS, match: false }] : []),
+          { text: kept.join(""), match: false },
+          ...(clusters.length > kept.length ? [{ text: ELLIPSIS, match: false }] : []),
         ],
       },
     ];
   }
 
+  // ONE segmentation of the whole flattened text; every context choice
+  // below slices THIS array, so no cut can ever land inside a cluster. A
+  // raw `text.slice(at - budget, at)` pre-cut was tried first and the
+  // grapheme test caught it: slicing mid-emoji feeds the Segmenter a
+  // broken string, and no downstream cluster-aware budgeting can repair
+  // an already-shattered cluster.
+  const clusters = segments(text);
+  // UTF-16 start offset of each cluster: findMatches speaks UTF-16
+  // indices (indexOf), so map match offsets onto cluster indices.
+  const starts: number[] = [];
+  let walked = 0;
+  for (const seg of clusters) {
+    starts.push(walked);
+    walked += seg.length;
+  }
+  const segAt = (offset: number): number => {
+    let lo = 0;
+    let hi = starts.length - 1;
+    let ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (starts[mid]! <= offset) {
+        ans = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return ans;
+  };
+
   return matches.slice(0, MAX_EXCERPTS).map(({ at, len }) => {
-    const beforeRaw = text.slice(Math.max(0, at - CONTEXT_CHARS * 4), at);
-    const afterRaw = text.slice(at + len, at + len + CONTEXT_CHARS * 4);
-    const before = tailWithin(beforeRaw, CONTEXT_CHARS);
-    const after = headWithin(afterRaw, CONTEXT_CHARS);
-    const elidedBefore = at > before.length;
-    const elidedAfter = text.length - (at + len) > after.length;
-    const segments: ExcerptSegment[] = [];
-    if (elidedBefore) segments.push({ text: ELLIPSIS, match: false });
-    if (before.length > 0) segments.push({ text: before, match: false });
-    segments.push({ text: text.slice(at, at + len), match: true });
-    if (after.length > 0) segments.push({ text: after, match: false });
-    if (elidedAfter) segments.push({ text: ELLIPSIS, match: false });
-    return { segments };
+    const first = segAt(at);
+    const last = segAt(at + len - 1);
+    const beforeAll = clusters.slice(0, first);
+    const afterAll = clusters.slice(last + 1);
+    const keptBefore = tailClusters(beforeAll, CONTEXT_CHARS);
+    const keptAfter = headClusters(afterAll, CONTEXT_CHARS);
+    const before = keptBefore.join("");
+    const after = keptAfter.join("");
+    const elidedBefore = beforeAll.length > keptBefore.length;
+    const elidedAfter = afterAll.length > keptAfter.length;
+    const lineSegments: ExcerptSegment[] = [];
+    if (elidedBefore) lineSegments.push({ text: ELLIPSIS, match: false });
+    if (before.length > 0) lineSegments.push({ text: before, match: false });
+    lineSegments.push({ text: text.slice(at, at + len), match: true });
+    if (after.length > 0) lineSegments.push({ text: after, match: false });
+    if (elidedAfter) lineSegments.push({ text: ELLIPSIS, match: false });
+    return { segments: lineSegments };
   });
 }
 

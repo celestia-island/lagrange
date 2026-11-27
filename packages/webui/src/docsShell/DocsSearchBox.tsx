@@ -293,22 +293,26 @@ export const DocsSearchBox = defineComponent({
                     paints its own surface, so the field's 3px focus ring is
                     no longer eaten by HkModal's gutter cover (the cover is
                     z-index 3; the pin is z-index 10). */}
+                {/* The pin wraps the FIELD and nothing else — the results
+                    list below is a SIBLING of the pin, in the body flow (a
+                    list inside a sticky layer would neither scroll with the
+                    window nor lay out). The dock test pins that shape. */}
                 <HkScrollPin side="top">
-                <HkSearchInput
-                  modelValue={query.value}
-                  onUpdate:modelValue={(v: string) => {
-                    query.value = v;
-                    void run();
-                  }}
-                  onClear={clear}
-                  placeholder={t("lagrange::docs.search", "Search…")}
-                  aria-label={t("lagrange::docs.searchTitle", "Search")}
-                  clearAriaLabel={t("lagrange::docs.clearSearch", "Clear search")}
-                  // Enter in a live-search box must not wait on the
-                  // debounce path the standard component offers — the
-                  // query already ran on every keystroke.
-                  debounce={0}
-                />
+                  <HkSearchInput
+                    modelValue={query.value}
+                    onUpdate:modelValue={(v: string) => {
+                      query.value = v;
+                      void run();
+                    }}
+                    onClear={clear}
+                    placeholder={t("lagrange::docs.search", "Search…")}
+                    aria-label={t("lagrange::docs.searchTitle", "Search")}
+                    clearAriaLabel={t("lagrange::docs.clearSearch", "Clear search")}
+                    // Enter in a live-search box must not wait on the
+                    // debounce path the standard component offers — the
+                    // query already ran on every keystroke.
+                    debounce={0}
+                  />
                 </HkScrollPin>
                 {results()}
               </div>
