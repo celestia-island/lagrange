@@ -42,3 +42,8 @@ minimumReleaseAgeExclude:
   # (hikari#1590), and graph node labels may use the width the layout
   # sized for them (hikari#1591).
   - '@celestia-island/hikari@0.55.500'
+  # Same-day pickup (2026-11-27): board arrows enter their targets head-on,
+  # cyclic flowcharts rank like mermaid.js, the zoom bar docks UNDER the
+  # board, fitted diagrams are draggable, and sequence junctions count as
+  # content (hikari#1593).
+  - '@celestia-island/hikari@0.55.501'
