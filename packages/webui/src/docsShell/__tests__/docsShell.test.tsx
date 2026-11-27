@@ -351,4 +351,17 @@ describe("DocsPage", () => {
     const body = root.querySelector(".lagrange-docs-body");
     expect(body?.innerHTML).toContain("server-rendered body");
   });
+
+  it("opts the body back into text selection (hk-selectable)", async () => {
+    // hikari's selection policy denies a drag selection at the root and
+    // whitelists content through `.hk-selectable`. Without the hook on the
+    // body a reader could neither select a code sample nor copy it from
+    // the context menu (docs.celestia.world, 2026-11-27).
+    const { root } = await mount(DocsPage, {
+      page: makePage({ html: "<p>selectable</p>" }),
+    });
+    expect(root.querySelector(".lagrange-docs-body")?.classList.contains("hk-selectable")).toBe(true);
+    // …and the chrome around it is not opted in.
+    expect(root.querySelector(".lagrange-docs-content")?.classList.contains("hk-selectable")).toBe(false);
+  });
 });

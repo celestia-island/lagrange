@@ -1,0 +1,178 @@
+%YAML 1.2
+---
+# Mermaid source highlighting for syntect (lagrange's build-time highlighter).
+#
+# Mermaid is a family of little languages, not one: a flowchart line is
+# `id[shape] --label--> id{shape}`, a sequence line is `Alice ->> Bob: text`,
+# a class line is `Animal <|-- Duck`, a gantt line is `task :id, after a1, 2d`.
+# What they share is what this grammar colours — the vocabulary a reader
+# scans for:
+#
+#   * the diagram head (`flowchart TD`, `sequenceDiagram`, …) and the
+#     block keywords (`subgraph`, `alt`, `loop`, `participant`, `state`, …),
+#     matched only at the start of a statement so prose inside labels keeps
+#     its colour;
+#   * links and relations (`-->`, `-.->`, `->>`, `<|--`, `..>`, …);
+#   * quoted labels and node shapes (`[rect]`, `(round)`, `{diamond}`, `|edge label|`);
+#   * durations and numbers (`3d`, `1w`, `386`), visibility signs (`+ - # ~`)
+#     on class members, and `%%` comments.
+#
+# Scope names reuse syntect's conventional prefixes (keyword, string,
+# comment, constant.numeric, punctuation, variable, entity.name) so the
+# tokens land on the `.keyword` / `.string` / … classes the family's
+# code-highlight sheet already colours — no new palette entries.
+name: Mermaid
+file_extensions:
+  - mermaid
+  - mmd
+scope: source.mermaid
+contexts:
+  main:
+    - include: comment
+    - include: strings
+    - include: links
+    - include: head
+    - include: keywords
+    - include: members
+    - include: numbers
+    - include: shapes
+    - include: identifiers
+
+  comment:
+    - match: '%%.*$\n?'
+      scope: comment.line.percent.mermaid
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.mermaid
+      push: string_double
+    - match: "'"
+      scope: punctuation.definition.string.begin.mermaid
+      push: string_single
+
+  string_double:
+    - meta_scope: string.quoted.double.mermaid
+    - match: '\\.'
+      scope: constant.character.escape.mermaid
+    - match: '"'
+      scope: punctuation.definition.string.end.mermaid
+      pop: true
+    - match: '$\n?'
+      pop: true
+
+  string_single:
+    - meta_scope: string.quoted.single.mermaid
+    - match: "'"
+      scope: punctuation.definition.string.end.mermaid
+      pop: true
+    - match: '$\n?'
+      pop: true
+
+  # Links and class relations. Each alternative is one whole token so a
+  # `-->>` is never split into `--` + `>>`:
+  #   flowchart  --> --- -.-&gt; ==> --o --x <---&gt; o--o x--x
+  #   sequence   -&gt; ->&gt; --&gt;&gt; -) --)
+  #   class      &lt;|-- ..&gt; ..|&gt; o-- *-- &lt;--
+  # A bare `..` is NOT a link on its own (it would colour every ellipsis in
+  # a label); it needs a head.
+  links:
+    - match: '(<\|?|<)?(={2,}|-\.+-|-{2,})(\|>|>{1,2}|\){1,2}|[ox])'
+      scope: keyword.operator.link.mermaid
+    - match: '(<\|?|<)?(\.{2,})(\|?>)'
+      scope: keyword.operator.link.mermaid
+    - match: '(->>?|-\)|-x)'
+      scope: keyword.operator.link.mermaid
+    - match: '(<\|?|[ox*])--([ox])?'
+      scope: keyword.operator.link.mermaid
+    - match: '(={2,}|-{2,})'
+      scope: keyword.operator.link.mermaid
+    - match: '(<{2,}|\^|v(?=\s*\|))'
+      scope: keyword.operator.direction.mermaid
+
+  # `flowchart TD`, `graph LR;`, `sequenceDiagram`, `stateDiagram-v2`, …
+  head:
+    - match: '^\s*(?i:(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v\d+)?|gantt|pie|quadrantChart|erDiagram|journey|gitGraph|mindmap|timeline|requirementDiagram|block-beta|C4[A-Za-z]*))\b'
+      scope: keyword.control.diagram.mermaid
+      push: head_direction
+  head_direction:
+    - meta_scope: meta.diagram.mermaid
+    - match: '[ \t]+'
+    - match: '\b(?i:(TD|TB|BT|LR|RL))\b'
+      scope: constant.language.direction.mermaid
+    - match: '$\n?'
+      pop: true
+    - include: comment
+    - match: ';'
+      scope: punctuation.terminator.mermaid
+      pop: true
+    - match: '.'
+      pop: true
+
+  # Statement keywords — only where a statement may start.
+  keywords:
+    - match: '^\s*(?i:(subgraph|end|direction|participant|actor|note|alt|else|opt|loop|par|and|break|critical|option|rect|activate|deactivate|autonumber|create|destroy|links|link|call|click|classDef|class|style|linkStyle|title|section|dateFormat|axisFormat|excludes|todayMarker|tickInterval|weekday|state|default|namespace|interface|accTitle|accDescr|quadrant-[1-4]|x-axis|y-axis))\b'
+      captures:
+        1: keyword.other.statement.mermaid
+    - match: '\b(?i:(left of|right of|over|as))\b'
+      scope: keyword.other.modifier.mermaid
+    - match: '(?=:)'
+      push: statement_text
+
+  # Everything after the `:` of a statement (a message, a transition label,
+  # a task line) is prose: only strings, comments and numbers inside it.
+  statement_text:
+    - meta_scope: meta.statement.mermaid
+    - include: comment
+    - include: strings
+    - include: numbers
+    - match: '$\n?'
+      pop: true
+    - match: '[^|%"\n\d]+'
+      scope: text.mermaid
+
+  # Class members: `+String name`, `-sleep(int hours)`, `#$instance`. The
+  # visibility sign is scoped alone — a `-` in the middle of a label
+  # ("well-known") is not one, so the sign must start its (indented) line.
+  members:
+    - match: '^[ \t]*(?=[+\-#~][A-Za-z_$])'
+      push: visibility
+    - match: '(~[A-Za-z_][A-Za-z0-9_]*~)'
+      scope: storage.type.generic.mermaid
+
+  visibility:
+    - match: '[+\-#~]'
+      scope: keyword.other.visibility.mermaid
+      pop: true
+    - match: ''
+      pop: true
+
+  numbers:
+    - match: '\b\d+(?:\.\d+)?(?:ms|s|m|h|d|w|y|%)\b'
+      scope: constant.numeric.duration.mermaid
+    - match: '\b\d+(?:\.\d+)?\b'
+      scope: constant.numeric.mermaid
+
+  # Node shapes and edge labels: `[markdown]`, `((circle))`, `|"northbound"|`.
+  shapes:
+    - match: '\|'
+      scope: punctuation.definition.label.mermaid
+      push: edge_label
+    - match: '(\(\(|\)\)|\[\[|\]\]|\[|\]|\(|\)|\{|\})'
+      scope: punctuation.definition.shape.mermaid
+
+  edge_label:
+    - meta_scope: string.unquoted.edge-label.mermaid
+    - include: strings
+    - match: '\|'
+      scope: punctuation.definition.label.mermaid
+      pop: true
+    - match: '$\n?'
+      pop: true
+    # `|` closes the label, so it is not text.
+    - match: '[^%"\n|]+'
+      scope: text.mermaid
+
+  # Identifiers: node, state, participant and class names.
+  identifiers:
+    - match: '\b[A-Za-z_][A-Za-z0-9_\-]*\b'
+      scope: variable.other.id.mermaid

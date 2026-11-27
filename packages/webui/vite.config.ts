@@ -1,6 +1,21 @@
+import { existsSync, realpathSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
+
+// A dependency's `?raw` import (hikari's `theme-boot.js?raw`) resolves to the
+// dependency's REAL path. In a git worktree `node_modules` is a symlink to
+// the main checkout's install, so that path lies outside this root and
+// vite's file-access guard refuses it ("Denied ID …/theme-boot.js?raw"): the
+// suite that imports it failed to LOAD from a worktree while passing from
+// the main checkout (2026-11-27) — which is how an earlier wave ended up
+// copying files into the main checkout to run its gate. Allow the install's
+// real location instead.
+const nodeModulesRealPath = existsSync(resolve(__dirname, "node_modules"))
+  ? realpathSync(resolve(__dirname, "node_modules"))
+  : resolve(__dirname, "node_modules");
 
 // The docs lane builds in two extra modes, selected by `--mode`
 // (cross-platform, unlike env prefixes):
@@ -12,6 +27,7 @@ import vueJsx from "@vitejs/plugin-vue-jsx";
 // Default mode = the console SPA build (unchanged).
 export default defineConfig(({ mode }) => ({
   plugins: [vue(), vueJsx()],
+  server: { fs: { allow: [__dirname, nodeModulesRealPath] } },
   // hikari ships TSX source; keep it out of the dep pre-bundler (raw
   // JSX would 500 in import-analysis — the chest console's measured
   // lesson) so the transform pipeline compiles it.

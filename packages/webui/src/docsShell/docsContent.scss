@@ -22,6 +22,16 @@
   font-size: 0.95rem;
   line-height: 1.7;
 
+  // Every code block keeps at least this much room above and below. The
+  // `.hi-code-highlight*` sheet gives its own box no margin at all, and the
+  // generic `pre` rule below deliberately skips `.hi-code-highlight-code`
+  // — so a fenced block used to sit flush against the paragraph before and
+  // after it (the CLA page's `Signed-off-by: …` block, 2026-11-27).
+  // Adjacent blocks' margins collapse, so two blocks in a row keep one gap.
+  .hi-code-highlight {
+    margin: 1rem 0;
+  }
+
   h1,
   h2,
   h3,
