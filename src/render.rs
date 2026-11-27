@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::highlight;
 use hikari_components::basic::{Card, CardProps, Image, ImageProps, Link, LinkProps};
 use hikari_components::display::{
     Empty, EmptyProps, Skeleton, SkeletonProps, Tag, TagProps, TagVariant, Timeline, TimelineProps,
@@ -506,7 +507,7 @@ fn render_live_pair(
 
     // Source pane for Rust
     if let Some(src) = rust_src {
-        let highlighted = syntax_highlight(src, "rust");
+        let highlighted = highlight::highlight(src, "rust");
         let lc = src.lines().count().max(1);
         let nums: Vec<VNode> = (1..=lc)
             .map(|i| {
@@ -544,7 +545,7 @@ fn render_live_pair(
 
     // Source pane for TSX
     if let Some(src) = tsx_src {
-        let highlighted = syntax_highlight(src, "tsx");
+        let highlighted = highlight::highlight(src, "tsx");
         let lc = src.lines().count().max(1);
         let nums: Vec<VNode> = (1..=lc)
             .map(|i| {
@@ -606,7 +607,7 @@ fn render_live_pair(
 /// would fork the wording in three places.
 fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNode {
     let lang = kind.source_lang();
-    let highlighted = syntax_highlight(source, lang);
+    let highlighted = highlight::highlight(source, lang);
     let line_count = source.lines().count().max(1);
     let line_num_nodes: Vec<VNode> = (1..=line_count)
         .map(|i| {
@@ -739,7 +740,7 @@ fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
 /// Uses syntect at build time to produce highlighted HTML with CSS classes.
 fn el_pre_code(lang_class: &str, code: &str) -> VNode {
     let lang = lang_class.trim_start_matches("language-");
-    let highlighted = syntax_highlight(code, lang);
+    let highlighted = highlight::highlight(code, lang);
 
     // Build line numbers.
     let line_count = code.lines().count().max(1);
@@ -813,37 +814,6 @@ fn el_pre_code(lang_class: &str, code: &str) -> VNode {
                     ))),
             ))),
     ))
-}
-
-/// Highlight code using syntect. Returns HTML string with inline `<span style="...">`.
-/// Falls back to HTML-escaped plain text if the language is unknown.
-fn syntax_highlight(code: &str, lang: &str) -> String {
-    use syntect::html::{ClassStyle, ClassedHTMLGenerator};
-    use syntect::parsing::SyntaxSet;
-    use syntect::util::LinesWithEndings;
-
-    let ps = SyntaxSet::load_defaults_newlines();
-    let syntax = ps
-        .find_syntax_by_token(lang)
-        .or_else(|| ps.find_syntax_by_extension(lang));
-
-    match syntax {
-        Some(syntax) => {
-            let mut generator =
-                ClassedHTMLGenerator::new_with_class_style(syntax, &ps, ClassStyle::Spaced);
-            for line in LinesWithEndings::from(code) {
-                let _ = generator.parse_html_for_line_which_includes_newline(line);
-            }
-            generator.finalize()
-        }
-        None => html_escape(code),
-    }
-}
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 fn rewrite_link(url: &str) -> String {

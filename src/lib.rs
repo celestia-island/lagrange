@@ -12,6 +12,7 @@ pub mod comments;
 pub mod config;
 pub mod diagram;
 pub mod frontmatter;
+mod highlight;
 pub mod icons;
 pub mod knowledge;
 pub mod live;

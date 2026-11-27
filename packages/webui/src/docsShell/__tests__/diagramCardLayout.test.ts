@@ -14,7 +14,7 @@
 // shrink-to-fit: its canvas holds a mermaid.js SVG with a real intrinsic
 // width, so nothing collapses there — this guard covers the webui lane only.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -117,5 +117,125 @@ describe("diagram card layout", () => {
     // And the reader must actually descend into a nested block.
     const preview = ruleBody(sheet, ".lg-diagram-preview")!;
     expect(ruleBody(preview, ".katex")).toMatch(/color:/);
+  });
+});
+
+/**
+ * Code blocks need breathing room. The `.hi-code-highlight*` rules lagrange
+ * bridges in from hikari's component sheet give the box no margin, and the
+ * generic `pre` rule in this sheet deliberately skips
+ * `.hi-code-highlight-code` — so a fenced block sat flush against its
+ * neighbours (the CLA page's `Signed-off-by:` block, docs.celestia.world
+ * 2026-11-27). Both lanes carry the rule: this one for the webui shell,
+ * `styles/layout.scss` for the legacy lane.
+ *
+ * MUT: deleting (or zeroing) the margin turns both pins RED.
+ */
+describe("code block margins", () => {
+  const legacy = stripComments(readFileSync(resolve(here, "../../../../../styles/layout.scss"), "utf8"));
+
+  // MUT: zeroing the margin rule below never passes — this pin catches it,
+  // and the legacy-lane twin catches it again.
+  it("gives every code block at least 1rem above and below (webui lane)", () => {
+    const rule = ruleBody(sheet, ".hi-code-highlight");
+    expect(rule, ".hi-code-highlight rule must exist under the body scope").not.toBeNull();
+    expect(rule).toMatch(/margin:\s*1rem 0/);
+  });
+
+  it("gives every code block at least 1rem above and below (legacy lane)", () => {
+    const content = ruleBody(legacy, ".content")!;
+    const rule = ruleBody(content, ".hi-code-highlight");
+    expect(rule, "the rule must stay nested under .content").not.toBeNull();
+    expect(rule).toMatch(/margin:\s*1rem 0/);
+    // the legacy article is selectable too
+    expect(content).toMatch(/user-select:\s*text/);
+  });
+});
+
+/**
+ * The parser's own `language-mermaid` fences, rendered through the SAME
+ * highlighter lagrange uses at build time, must carry token spans.
+ *
+ * syntect ships no Mermaid syntax: before `src/highlight/mermaid.sublime-syntax`
+ * a ```` ```mermaid ```` source pane held zero `<span>`s while every other
+ * fence was fully coloured (docs.celestia.world 2026-11-27). This guard reads
+ * the grammar and every corpus fence — not a hand-written sample — so a
+ * future fence using a construct the grammar drops shows up HERE.
+ */
+describe("the mermaid corpus stays highlightable", () => {
+  const grammar = resolve(here, "../../../../../src/highlight/mermaid.sublime-syntax");
+
+  it("ships the grammar the renderer loads", () => {
+    expect(existsSync(grammar)).toBe(true);
+    const source = readFileSync(grammar, "utf8");
+    // the spans the sheet colours: keyword / string / comment / constant
+    for (const scope of ["keyword.operator.link.mermaid", "keyword.control.diagram.mermaid"]) {
+      expect(source, `${scope} in the grammar`).toContain(scope);
+    }
+  });
+
+  it("every mermaid fence in the docs tree opens with a head the grammar scopes", () => {
+    const docsRoot = resolve(here, "../../../../../docs");
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = resolve(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".md")) files.push(full);
+      }
+    };
+    walk(docsRoot);
+    expect(files.length).toBeGreaterThan(0);
+
+    const state = readFileSync(grammar, "utf8");
+    // The head vocabulary straight out of the grammar's own `head:` rule —
+    // reading it from there is the point: a fence whose head the rule forgot
+    // fails here instead of silently losing every colour.
+    // The alternation lives inside the grammar's `head` rule; pull it out
+    // by line (the `\s` / `\d` escapes make a single regex brittle).
+    // The `- match:` line sits directly above its `scope:` line.
+    const lines = state.split("\n");
+    const scopeAt = lines.findIndex((line) => line.includes("keyword.control.diagram.mermaid"));
+    const headLine = scopeAt > 0 ? lines[scopeAt - 1] : undefined;
+    expect(headLine, "the grammar's head rule").toBeTruthy();
+    // The alternation is the FIRST `( … )` group of the match line (the
+    // stateDiagram version suffix `(?:-v\d+)?` comes after it). Extract it
+    // textually — balanced-paren scan from the first `(` — because the
+    // grammar's own regex uses constructs (`(?i:…)`), escapes and
+    // backreference-free but Oniguruma-only syntax that a JS RegExp cannot
+    // compile.
+    // Skip the inline-flag prefix `(?i:` before the real group.
+    const body = headLine!.slice(headLine!.indexOf("(?i:") + 4);
+    const open = body.indexOf("(");
+    expect(open, "the head rule opens a group").toBeGreaterThanOrEqual(0);
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < body.length; i += 1) {
+      if (body[i] === "(") depth += 1;
+      else if (body[i] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    const alternation = body.slice(open + 1, close);
+    // The stateDiagram entry carries its own version-suffix group
+    // (`(?:-v\d+)?`); everything else is a bare word.
+    const heads = alternation.split("|").map((h) => h.replace(/\(\?:.*$/, ""));
+    const fences = files.flatMap((file) =>
+      [...readFileSync(file, "utf8").matchAll(/```mermaid\n([\s\S]*?)```/g)].map((m) => ({
+        file,
+        body: m[1],
+      })),
+    );
+    expect(fences.length).toBeGreaterThan(0);
+    for (const fence of fences) {
+      const first = fence.body.split(/\r?\n/).find((line) => line.trim() !== "")?.trim() ?? "";
+      const head = /^([A-Za-z]+)/.exec(first)?.[1] ?? "";
+      const known = heads.some((h) => h.toLowerCase() === head.toLowerCase() || head.toLowerCase().startsWith(h.toLowerCase()));
+      expect(known, `${fence.file}: mermaid head "${head}" is not in the grammar's head rule`).toBe(true);
+    }
   });
 });

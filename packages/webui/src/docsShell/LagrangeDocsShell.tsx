@@ -336,7 +336,12 @@ export const LagrangeDocsShell = defineComponent({
                * no-JS baseline keeps every lagrange build-time feature);
                * markdown mode is the hikari/tairitsu renderer lane and
                * arrives with its upstream SSR seed. */}
-              <div class="lagrange-docs-body" innerHTML={page.value.html} />
+              {/* `hk-selectable`: hikari's selection policy denies a drag
+               * selection at the root and whitelists content back in. The
+               * body IS content — without the hook a reader could neither
+               * select a code sample nor copy it from the context menu
+               * (docs.celestia.world, 2026-11-27). */}
+              <div class="lagrange-docs-body hk-selectable" innerHTML={page.value.html} />
             </article>
           ),
         }}
