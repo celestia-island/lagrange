@@ -89,16 +89,15 @@ function headClusters(segs: string[], limit: number): string[] {
  *  WHY A CAP AT ALL: the recursion deepens once per nesting level and each
  *  level re-derives its own pair maps, so cost is quadratic in the depth of a
  *  link-in-link chain. Uncapped, that is reachable and unbounded: measured
- *  0.8 ms at depth 10, ~157 ms at 1600, ~1.35 s at 5000, and then a
- *  `RangeError` (stack exhaustion) at roughly 5000-6000 levels — a single line
- *  of pasted input would stall, then throw the whole excerpt away. The cap is
- *  what keeps "linear in the window" true for arbitrarily hostile input.
+ *  ~157 ms at 1600 levels and ~1.35 s at 5000, and the stack then overflows
+ *  somewhere around 4000 levels on a default stack — a single line of pasted
+ *  input would stall, then throw the whole excerpt away. The cap is what keeps
+ *  "linear in the window" true for arbitrarily hostile input.
  *
- *  The exact overflow depth is ENGINE- AND FLAG-DEPENDENT, so no precise
- *  number is claimed here: on this container Node 24 threw at ~5037 by
- *  bisection (5036 OK), and only `--stack-size=4000` moved it past 19999.
- *  What matters for the cap is that it is bounded and well under any engine's
- *  limit, not which limit a particular build happens to have.
+ *  The exact overflow depth is engine- and `ulimit`-dependent, so no precise
+ *  figure is claimed. What matters for the cap is that it is bounded and well
+ *  under any plausible limit, not which limit a particular build happens to
+ *  have.
  *
  *  WHAT HAPPENS PAST IT (asserted in the tests, do NOT "fix" this into a
  *  silent flatten): the too-deep remainder is returned VERBATIM, so its
@@ -139,9 +138,10 @@ const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u00
  *  Depth semantics mirror the Rust indexer (`src/search.rs`:
  *  `find_close_bracket` / `find_close_paren`): the close is the FIRST one at
  *  depth zero, not the first close CHARACTER — that is what makes
- *  `[x](a(b)c)` keep href `a(b)c`. This part really is identical on both
- *  sides; the ESCAPE semantics below are not, and the difference is called
- *  out there rather than glossed as agreement.
+ *  `[x](a(b)c)` keep href `a(b)c`. The agreement claimed here is BALANCE ONLY
+ *  (depth counting); it does not cover newline handling (see the stack-reset
+ *  note below, where the two do differ) and it does not cover the ESCAPE
+ *  semantics, which differ too and are called out rather than glossed.
  *
  *  Escape semantics are the TS flattener's OWN rules, closer to how GFM
  *  RENDERS than to how the indexer SCANS. There is no Rust counterpart to
@@ -171,9 +171,12 @@ const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u00
  *      literal `[`, so this prose is NOT a link and must not be expanded) and
  *      `\*not em\*` keeps its backslashes untouched.
  *
- *  A newline RESETS both stacks: GFM inline links do not span lines, and the
- *  old regexes were line-bounded too, so a stray `[` must not gobble the
- *  rest of the chunk. */
+ *  A newline RESETS both stacks. That is THIS flattener's own choice, and it
+ *  is stated as such rather than justified by a standard: it does not match
+ *  GFM, which does allow an inline link to span lines, and it does not match
+ *  the indexer's `find_close_bracket`, which has no newline handling at all.
+ *  It is kept because the excerpt is a one-line projection by construction, so
+ *  a stray `[` must not gobble the rest of the chunk. */
 function buildBalanceMaps(source: string): { brackets: Int32Array; parens: Int32Array } {
   const length = source.length;
   const brackets = new Int32Array(length).fill(-1);
@@ -294,9 +297,10 @@ export function toPlainText(markdown: string): string {
   // `)`, leaking `c)` into the excerpt. Escaped brackets (`[a\]b](u)`) come
   // out as `a]b`.
   //
-  // The BALANCED-PAIR half matches the indexer exactly (`find_close_bracket`
-  // / `find_close_paren` count depth the same way). The ESCAPE half does NOT,
-  // and pretending otherwise would be a false claim: Rust's
+  // The BALANCED-PAIR half matches the indexer (`find_close_bracket` /
+  // `find_close_paren` count depth the same way) — BALANCE ONLY, not newline
+  // handling, which differs. The ESCAPE half does NOT match, and pretending
+  // otherwise would be a false claim: Rust's
   // `strip_inline_markers_into` has no `\` arm, so `[a\]b](u)` gives the index
   // the label `a\` while this flattener gives `a]b`. That is a KNOWN,
   // DELIBERATE divergence — see the long note on `buildBalanceMaps` for why it

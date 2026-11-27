@@ -152,11 +152,10 @@ describe("toPlainText", () => {
   it("caps link nesting, and the cap degrades to NOISE, not to data loss", () => {
     // L962/R2 S2-1. The cap exists for COST, not cosmetics: each nesting level
     // re-derives its own pair maps, so the recursion is quadratic in depth —
-    // uncapped it measured ~157 ms at depth 1600, ~1.35 s at 5000, and then
-    // threw `RangeError` (stack exhaustion) at roughly 5000-6000 levels (the
-    // exact depth is engine- and `--stack-size`-dependent, so no precise
-    // number is claimed). One pasted line would then stall, then blank the
-    // whole row.
+    // uncapped it measured ~157 ms at depth 1600, ~1.35 s at 5000, and the
+    // stack then overflows somewhere around 4000 levels on a default stack
+    // (the exact depth is engine- and `ulimit`-dependent, so no precise figure
+    // is claimed). One pasted line would then stall, then blank the whole row.
     //
     // Shipped behaviour, pinned so the next round cannot quietly "fix" it into
     // a silent flatten and call it a bugfix: `depth > 8` returns the remainder
