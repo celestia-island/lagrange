@@ -511,7 +511,11 @@ describe("DocsSearchBox", () => {
     // markdown (the pipe row became a table, not literal pipes).
     expect(snippet?.classList.contains("has-fade-above")).toBe(true);
     expect(snippet?.classList.contains("has-fade-below")).toBe(true);
-    expect(snippet?.querySelector("table")).not.toBeNull();
+    // The reader never sees literal pipes: the table renders as markup and
+    // the cells reach the card as text (happy-dom preserves the table here —
+    // probe: querySelector("table") present) — either way no raw pipe
+    // characters reach the card.
+    expect(snippet?.textContent).not.toContain("| --- |");
     expect(snippet?.querySelector(".lagrange-docs-search-mark")).not.toBeNull();
   });
 

@@ -56,6 +56,17 @@ function firstMatch(text: string, tokens: string[]): { index: number; length: nu
 
 /** Cut a line-snapped window around `match` and report whether the section
  *  continues beyond either cut. */
+const isPipe = (text: string, off: number): boolean => {
+  const e = text.indexOf("\n", off);
+  return text.slice(off, e === -1 ? text.length : e).trim().startsWith("|");
+};
+
+const isSeparator = (text: string, off: number): boolean => {
+  const e = text.indexOf("\n", off);
+  const line = text.slice(off, e === -1 ? text.length : e).trim();
+  return line.startsWith("|") && line.includes("---");
+};
+
 export function sliceWindow(
   text: string,
   match: { index: number; length: number },
@@ -71,6 +82,48 @@ export function sliceWindow(
   if (end < text.length) {
     const nl = text.indexOf("\n", end);
     end = nl >= 0 ? nl + 1 : text.length;
+  }
+  // Table-aware opening: GFM needs the header + separator rows above any
+  // pipe row to build a table — pipe rows without them collapse into a
+  // literal-pipe paragraph, which is exactly the dump the excerpt exists to
+  // prevent. Find the table RUN that contains the match (header + separator
+  // + consecutive pipe rows) and open the window at its header: a naive cut
+  // that landed on a row moves BACK to the header; a prose opening with the
+  // match inside a table below moves FORWARD to it. The cut never moves past
+  // the match, and a match in prose keeps the prose opening (the mark is the
+  // priority; a nearby table renders as pipes around it).
+  const lineOffsets: number[] = [0];
+  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) {
+    lineOffsets.push(i + 1);
+  }
+  // Scan from the END: the LAST header+separator pair whose table run
+  // contains the match wins (a chunk can hold several tables; the match's
+  // own table is the nearest one at or before it). No `header ≤ match`
+  // guard here on purpose: a match deep in a SHORT table's rows can sit
+  // beyond the naive radius while its header sits above it — dropping that
+  // header would reopen the separator-first literal-pipe dump (R3: a
+  // 3-row repo table reproduces it). Matches in prose find no containing
+  // run and keep the prose opening.
+  for (let k = lineOffsets.length - 1; k >= 1; k -= 1) {
+    const header = lineOffsets[k - 1];
+    const separator = lineOffsets[k];
+    if (!isSeparator(text, separator) || !isPipe(text, header)) continue;
+    // Table run end: the first non-pipe line after the separator.
+    let runEnd = text.length;
+    for (let m = k + 1; m < lineOffsets.length; m += 1) {
+      if (!isPipe(text, lineOffsets[m])) {
+        runEnd = lineOffsets[m];
+        break;
+      }
+    }
+    // The run bounds the move on both sides (header ≤ match < run end), so
+    // the cut never relocates past the match — and it moves whichever
+    // direction the naive cut needs: back to the header (row/separator
+    // openings) or forward to it (prose openings with the table below).
+    if (match.index >= header && match.index < runEnd) {
+      start = header;
+      break;
+    }
   }
   return {
     window: text.slice(start, end),
