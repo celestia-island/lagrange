@@ -92,15 +92,28 @@ function upgradeDiagramCard(box: DiagramGlobalBox): void {
   const toggle = box.querySelector<HTMLElement>(".lg-diagram-toggle");
   if (!preview || !source || !toggle) return;
 
+  // The pill leaves the header (HkTabs re-renders it in the sub-app).
+  toggle.remove();
+
   // The panes leave the server markup and become the sub-app's content.
   const previewPane = preview.cloneNode(true) as HTMLElement;
   const sourcePane = source.cloneNode(true) as HTMLElement;
   previewPane.style.display = "";
   sourcePane.style.display = "";
 
+  // The header (language badge, copy button, and the pill's slot) is NOT part
+  // of what the swap replaces: the copy control and its `data-copy` payload
+  // live in the card header, and the boot pass's own copy handler binds to it.
+  // Keeping the header in place and swapping only the body is also what the
+  // no-JS baseline shows.
+  const header = box.querySelector<HTMLElement>(".hi-code-highlight-header");
   const host = document.createElement("div");
   host.className = "lagrange-docs-diagram-body";
-  box.replaceChildren(host);
+  if (header) {
+    box.replaceChildren(header, host);
+  } else {
+    box.replaceChildren(host);
+  }
 
   const { t } = useI18n();
   const labels: Record<DiagramPane, string> = {
@@ -125,28 +138,38 @@ function upgradeDiagramCard(box: DiagramGlobalBox): void {
           h(
             "div",
             { class: "lagrange-docs-diagram-tabs" },
-            h(HkTabs, {
-              variant: "segmented",
-              block: false,
-              scrollable: false,
-              renderPanels: false,
-              ariaLabel: `${labels.preview} / ${labels.source}`,
-              modelValue: pane.value,
-              "onUpdate:modelValue": (next: string) => {
-                pane.value = next === "source" ? "source" : "preview";
-              },
-              tabs: DIAGRAM_PANES.map((key) => ({ key, label: labels[key] })),
-            }),
+            // Children are ALWAYS an array (or a slot function). Passing a
+            // bare vnode here makes Vue treat it as the default-slot CONTENT
+            // of the wrapper, which for a component child renders as a comment
+            // placeholder — the tabs silently disappeared on the first pass.
+            [
+              h(HkTabs, {
+                variant: "segmented",
+                block: false,
+                scrollable: false,
+                renderPanels: false,
+                ariaLabel: `${labels.preview} / ${labels.source}`,
+                modelValue: pane.value,
+                "onUpdate:modelValue": (next: string) => {
+                  pane.value = next === "source" ? "source" : "preview";
+                },
+                tabs: DIAGRAM_PANES.map((key) => ({ key, label: labels[key] })),
+              }),
+            ],
           ),
-          h(HkDirectionalSwap, {
-            swapKey: pane.value,
-            direction: direction.value,
-          }, {
-            default: () => {
-              const node = pane.value === "preview" ? previewPane : sourcePane;
-              return h("div", { innerHTML: node.innerHTML });
+          h(
+            HkDirectionalSwap,
+            { swapKey: pane.value, direction: direction.value },
+            {
+              default: () => {
+                const node = pane.value === "preview" ? previewPane : sourcePane;
+                return h("div", {
+                  class: "lagrange-docs-diagram-pane",
+                  innerHTML: node.innerHTML,
+                });
+              },
             },
-          }),
+          ),
         ]);
     },
   });
@@ -160,11 +183,19 @@ function mountMermaidBoxes(): void {
   );
   for (const box of boxes) {
     box.setAttribute("data-diagram-rendered", "1");
+    // Read the source and the canvas BEFORE the chrome upgrade re-parents the
+    // panes: `upgradeDiagramCard` detaches the server markup into a Vue
+    // sub-app, so a lookup afterwards would find nothing and the diagram
+    // would never mount (the boot test caught it — the fixture had to be made
+    // faithful to the renderer before it could).
+    const source = box.querySelector<HTMLElement>(".lg-diagram-raw")?.textContent ?? "";
     upgradeDiagramCard(box);
-    const raw = box.querySelector<HTMLElement>(".lg-diagram-raw");
-    const canvas = box.querySelector<HTMLElement>(".lg-diagram-canvas");
-    if (!raw || !canvas) continue;
-    const source = raw.textContent ?? "";
+    // The upgrade re-rendered the panes into the sub-app; the canvas to
+    // mount into is the one NOW in the DOM (preview pane, freshly cloned).
+    const canvas =
+      box.querySelector<HTMLElement>('.lg-diagram[data-pane="preview"] .lg-diagram-canvas, .lg-diagram-canvas') ??
+      box.querySelector<HTMLElement>(".lg-diagram-canvas");
+    if (!canvas) continue;
     const host = document.createElement("div");
     host.className = "lagrange-docs-mermaid";
     canvas.replaceChildren(host);

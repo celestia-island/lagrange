@@ -47,3 +47,7 @@ minimumReleaseAgeExclude:
   # board, fitted diagrams are draggable, and sequence junctions count as
   # content (hikari#1593).
   - '@celestia-island/hikari@0.55.501'
+  # Same-day pickup (2026-11-28): HkDirectionalSwap (the card's pane switch
+  # slides with the reading direction instead of hard-cutting) plus the Rust
+  # code-highlight header slots, hikari#1598/#1599.
+  - '@celestia-island/hikari@0.55.503'

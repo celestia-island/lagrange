@@ -39,8 +39,18 @@ function fixture(): void {
       + '<button type="button" class="lg-diagram-toggle-btn" data-pane="source">Source</button>'
       + '</div><button class="hi-code-highlight-copy" data-copy="cargo build" title="Copy code" aria-label="Copy code">copy</button>'
       + '</div></div>'
-      + '<div class="lg-diagram-raw"><pre><code>graph TD; A--&gt;B</code></pre></div>'
-      + '<div class="lg-diagram-canvas"></div></div>',
+      // The REAL renderer shape (`src/render.rs` render_diagram_block): a
+      // preview pane holding the canvas + the hidden raw source, and a
+      // source pane holding the highlighted code. The boot pass reads
+      // `.lg-diagram-preview` / `.lg-diagram-source` / `.lg-diagram-toggle`
+      // — a fixture that omitted them let the upgrade silently no-op.
+      + '<div class="lg-diagram-preview" data-pane="preview">'
+      + '<div class="lg-diagram-canvas"></div>'
+      + '<pre class="lg-diagram-raw" style="display:none"><code>graph TD; A--&gt;B</code></pre>'
+      + '</div>'
+      + '<div class="lg-diagram-source" data-pane="source" style="display:none">'
+      + '<div class="hi-code-highlight-content"><pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre></div>'
+      + '</div></div>',
   };
   document.body.innerHTML =
     `<div id="app"><div class="s-admin-shell"><p>server html</p></div></div>`
@@ -80,8 +90,14 @@ describe("docsMain boot", () => {
     // Static chrome strings ride the shell's i18n table, not the English
     // fallback the renderer ships: with the page locale installed, both the
     // segmented toggle and the copy button's accessible name are translated.
-    const panes = [...document.querySelectorAll(".lg-diagram-toggle-btn")].map((b) => b.textContent);
-    expect(panes).toEqual(["Preview", "Source"]);
+    // The pill is hikari's segmented HkTabs (a radiogroup), not the
+    // hand-rolled `.lg-diagram-toggle-btn` pair: the boot pass must have
+    // replaced it, and both radios must be labelled.
+    const radios = [...document.querySelectorAll('[role="radiogroup"] [role="radio"]')];
+    expect(radios.map((b) => b.textContent)).toEqual(["Preview", "Source"]);
+    expect(radios[0].getAttribute("aria-checked")).toBe("true");
+    // …and the panes really came through the swap (the preview is mounted).
+    expect(document.querySelector(".lagrange-docs-diagram-pane")).not.toBeNull();
     expect(copyBtn!.getAttribute("aria-label")).toBe("Copy code");
     vi.unstubAllGlobals();
   });
@@ -107,7 +123,7 @@ describe("docsMain boot — diagram chrome localization", () => {
     });
     await boot();
 
-    const panes = [...document.querySelectorAll(".lg-diagram-toggle-btn")].map((b) => b.textContent);
+    const panes = [...document.querySelectorAll('[role="radiogroup"] [role="radio"]')].map((b) => b.textContent);
     expect(panes).toEqual(["预览", "源码"]);
     const copyBtn = document.querySelector<HTMLElement>("button.hi-code-highlight-copy[data-copy]");
     expect(copyBtn!.getAttribute("title")).toBe("复制代码");
