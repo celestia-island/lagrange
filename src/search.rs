@@ -1100,6 +1100,11 @@ mod tests {
             "## 安装\n\n项目 地图 分区 内容",
             // table
             "| A | B |\n| --- | --- |\n| kirino | auth |",
+            // Abutting label form (no whitespace before the bracket): the
+            // source-mode boundary must keep `textlink` from being invented
+            // (R3 M2b: without the pre-label boundary this corpus entry
+            // indexes a run that exists nowhere in the source).
+            "text[link](url)more of the pipeline.",
         ];
         for src in tricky {
             let text = search_source(src);
