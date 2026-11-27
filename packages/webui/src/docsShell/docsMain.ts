@@ -185,9 +185,9 @@ function mountMermaidBoxes(): void {
     box.setAttribute("data-diagram-rendered", "1");
     // Read the source and the canvas BEFORE the chrome upgrade re-parents the
     // panes: `upgradeDiagramCard` detaches the server markup into a Vue
-    // sub-app, so a lookup afterwards would find nothing and the diagram
-    // would never mount (the boot test caught it — the fixture had to be made
-    // faithful to the renderer before it could).
+    // sub-app, so a lookup afterwards finds nothing and the diagram never
+    // mounts — the boot test catches it (MUT: moving these lookups below the
+    // upgrade turns that test red).
     const source = box.querySelector<HTMLElement>(".lg-diagram-raw")?.textContent ?? "";
     upgradeDiagramCard(box);
     // The upgrade re-rendered the panes into the sub-app; the canvas to
