@@ -127,13 +127,21 @@ describe("toPlainText", () => {
     // matched from index 1 and DELETED the visible `[-]` (`\[-](u)` → `\-`).
     // The scan keeps every visible character.
     //
-    // The escape rules are SPLIT on purpose (see `buildBalanceMaps`): a
-    // backslash suppresses a STRUCTURAL character's role, and the resulting
-    // plain-text label gets a full ASCII unescape — but PROSE outside any
-    // label is never unescaped. Pin the prose half explicitly: `\[x](u)` must
+    // The escape rules are the TS flattener's OWN (Rust's
+    // `strip_inline_markers_into` has no `\` arm, so the two sides knowingly
+    // diverge here — see the `buildBalanceMaps` note). A backslash suppresses
+    // a STRUCTURAL character's role, and the resulting plain-text label gets a
+    // full ASCII unescape — but PROSE outside any label is never unescaped.
+    // Pin the prose half explicitly: `\[x](u)` must
     // stay `\[x](u)`, because GFM renders `\[` as a literal `[` so this is
     // not a link, and it must NOT be rewritten into `x`.
     expect(toPlainText("\\[x](u)")).toBe("\\[x](u)");
+    // NOTE ON STAGE: this asserts the output of the WHOLE `toPlainText`
+    // pipeline, and the value `\not emphasis\` is shaped by the LATER
+    // `[*`~]` stripper (it removes the two `*`s, leaving the backslashes).
+    // So this line pins the composition of two stages, not the link scan
+    // alone — kept because it is the only guard that the emphasis stage still
+    // runs AFTER the link stage and does not eat the backslashes.
     expect(toPlainText("\\*not emphasis\\*")).toBe("\\not emphasis\\");
     const escaped = toPlainText("\\[-](u)");
     expect(escaped).toContain("[-](u)");
@@ -144,9 +152,11 @@ describe("toPlainText", () => {
   it("caps link nesting, and the cap degrades to NOISE, not to data loss", () => {
     // L962/R2 S2-1. The cap exists for COST, not cosmetics: each nesting level
     // re-derives its own pair maps, so the recursion is quadratic in depth —
-    // uncapped it measured 157 ms at depth 1600, 1.35 s at 5000, and threw
-    // `RangeError` (stack exhaustion) at 12000. One pasted line would then
-    // stall or blank the whole row.
+    // uncapped it measured ~157 ms at depth 1600, ~1.35 s at 5000, and then
+    // threw `RangeError` (stack exhaustion) at roughly 5000-6000 levels (the
+    // exact depth is engine- and `--stack-size`-dependent, so no precise
+    // number is claimed). One pasted line would then stall, then blank the
+    // whole row.
     //
     // Shipped behaviour, pinned so the next round cannot quietly "fix" it into
     // a silent flatten and call it a bugfix: `depth > 8` returns the remainder

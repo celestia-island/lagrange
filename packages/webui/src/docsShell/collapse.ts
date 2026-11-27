@@ -89,10 +89,16 @@ function headClusters(segs: string[], limit: number): string[] {
  *  WHY A CAP AT ALL: the recursion deepens once per nesting level and each
  *  level re-derives its own pair maps, so cost is quadratic in the depth of a
  *  link-in-link chain. Uncapped, that is reachable and unbounded: measured
- *  0.8 ms at depth 10, 157 ms at 1600, 1351 ms at 5000, and a `RangeError`
- *  (stack exhaustion) at 12000 — a single line of pasted input would stall or
- *  throw the whole excerpt away. The cap is what keeps "linear in the window"
- *  true for arbitrarily hostile input.
+ *  0.8 ms at depth 10, ~157 ms at 1600, ~1.35 s at 5000, and then a
+ *  `RangeError` (stack exhaustion) at roughly 5000-6000 levels — a single line
+ *  of pasted input would stall, then throw the whole excerpt away. The cap is
+ *  what keeps "linear in the window" true for arbitrarily hostile input.
+ *
+ *  The exact overflow depth is ENGINE- AND FLAG-DEPENDENT, so no precise
+ *  number is claimed here: on this container Node 24 threw at ~5037 by
+ *  bisection (5036 OK), and only `--stack-size=4000` moved it past 19999.
+ *  What matters for the cap is that it is bounded and well under any engine's
+ *  limit, not which limit a particular build happens to have.
  *
  *  WHAT HAPPENS PAST IT (asserted in the tests, do NOT "fix" this into a
  *  silent flatten): the too-deep remainder is returned VERBATIM, so its
@@ -133,20 +139,31 @@ const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u00
  *  Depth semantics mirror the Rust indexer (`src/search.rs`:
  *  `find_close_bracket` / `find_close_paren`): the close is the FIRST one at
  *  depth zero, not the first close CHARACTER — that is what makes
- *  `[x](a(b)c)` keep href `a(b)c`.
+ *  `[x](a(b)c)` keep href `a(b)c`. This part really is identical on both
+ *  sides; the ESCAPE semantics below are not, and the difference is called
+ *  out there rather than glossed as agreement.
  *
- *  Escape semantics are deliberately TWO rules, and neither is "copy the
- *  indexer's `\` handling" wholesale — the indexer uses different walks for
- *  different jobs, so an unqualified "mirror the indexer" claim would be
- *  false here:
+ *  Escape semantics are the TS flattener's OWN rules, closer to how GFM
+ *  RENDERS than to how the indexer SCANS. There is no Rust counterpart to
+ *  point at: `strip_inline_markers_into` (`src/search.rs:848`) has five match
+ *  arms (`` ` ``, `*`/`_`, `![`, `[`, `<`) and NO `\` arm, and the
+ *  `find_close_bracket` / `find_close_paren` it calls do zero escape
+ *  handling. Two rules, both stated as what this file does:
  *
- *  (a) STRUCTURAL characters (`\[`, `\]`, `\(`, `\)`) — this follows the
- *      inline scanner's rule, not `is_reference_definition`'s: a backslash
- *      suppresses the character's structural role, so `[a\]b](u)` is one link
- *      whose label is `a\]b` rather than a link ending at the escaped bracket.
- *      The reference-definition walk instead skips the next character
- *      UNCONDITIONALLY; copying that here would make `\*` swallow the `*` the
- *      emphasis stripper must still see.
+ *  (a) STRUCTURAL characters (`\[`, `\]`, `\(`, `\)`) — a backslash suppresses
+ *      the character's structural role, so `[a\]b](u)` is one link whose label
+ *      is `a]b` rather than a link ending at the escaped bracket.
+ *
+ *      ⚠️ THIS KNOWINGLY DIVERGES FROM THE RUST INDEXER. Compiled and run
+ *      against the real `find_close_bracket`: the same input
+ *      `[a\]b](u)` yields `close = 3`, i.e. label `"a\"` — Rust treats the
+ *      escaped `\]` as the closing bracket and TS does not. The two are
+ *      OPPOSITE on this input, by design. The divergence is accepted because
+ *      it only affects which characters an excerpt SHOWS; the underline
+ *      contract is carried by token positions the index ships, not by this
+ *      projection, and `escapeHtml` covers the text either way. Do not
+ *      "restore consistency" by copying the indexer's escape-free walk: that
+ *      would print `a\` and lose the `b` the page shows.
  *  (b) INSIDE a flattened label — a full ASCII-punctuation unescape, because
  *      the label is now plain text and must not carry `\]` through to the row.
  *      It never reaches outside a label: prose keeps whatever backslashes it
@@ -275,8 +292,16 @@ export function toPlainText(markdown: string): string {
   // balanced pairs are not a regular language: `[x](a(b)c)` has href
   // `a(b)c` in GFM, and the previous `[^)\n]*` target stopped at the FIRST
   // `)`, leaking `c)` into the excerpt. Escaped brackets (`[a\]b](u)`) come
-  // out as `a]b`. Both are the Rust indexer's semantics (`find_close_bracket`
-  // / `find_close_paren`), so the excerpt and the index finally agree.
+  // out as `a]b`.
+  //
+  // The BALANCED-PAIR half matches the indexer exactly (`find_close_bracket`
+  // / `find_close_paren` count depth the same way). The ESCAPE half does NOT,
+  // and pretending otherwise would be a false claim: Rust's
+  // `strip_inline_markers_into` has no `\` arm, so `[a\]b](u)` gives the index
+  // the label `a\` while this flattener gives `a]b`. That is a KNOWN,
+  // DELIBERATE divergence — see the long note on `buildBalanceMaps` for why it
+  // is safe (display-only; the underline contract rides on token positions,
+  // not on this projection) and why "restoring consistency" is the wrong fix.
   text = flattenLinks(text);
   // Emphasis / inline code / strikethrough markers. PAIRED markers go with
   // their content kept; lone `*` / backtick / `~` are markers too. A lone
