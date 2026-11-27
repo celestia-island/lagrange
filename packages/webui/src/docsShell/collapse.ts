@@ -84,6 +84,122 @@ function headClusters(segs: string[], limit: number): string[] {
   return window;
 }
 
+/** Deepest link-inside-link nesting the flattener unrolls. GFM has no real
+ *  limit, but a pathological corpus does; past this depth the remainder is
+ *  left verbatim, which is still correct text (only its targets survive). */
+const MAX_LINK_NESTING = 8;
+
+/** ASCII punctuation — the only characters a backslash can escape in GFM —
+ *  as a replacement pattern: an escaped bracket becomes the bracket it
+ *  escaped, which is what the reader was always meant to see. */
+const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u007e])/g;
+
+/** Balanced-pair maps for ONE string: `brackets[i]` is the index of the `]`
+ *  that closes the `[` at `i` (and `parens[i]` likewise for `(`), or -1 when
+ *  the pair never closes on this line.
+ *
+ *  Built ONCE per string in a single left-to-right pass, because that single
+ *  pass is the whole point: the two regexes this replaced rescanned to
+ *  end-of-string for EVERY unterminated `[`, which is quadratic — measured
+ *  12.7 ms / 51 ms / 846 ms / 13.3 s at 4 / 8 / 32 / 128 KB of `[a` filler,
+ *  and the 8 KB number is the LIVE one (`PREVIEW_CHARS` caps a window).
+ *
+ *  Depth semantics mirror the Rust indexer (`src/search.rs`:
+ *  `find_close_bracket` / `find_close_paren`): the close is the FIRST one at
+ *  depth zero, not the first close CHARACTER — that is what makes
+ *  `[x](a(b)c)` keep href `a(b)c`. Escape semantics follow the indexer's
+ *  reference-definition walk (`is_reference_definition`): `\` escapes the
+ *  next character, so `[a\]b](u)` is one link whose label is `a\]b`, not a
+ *  link that ends at the escaped bracket.
+ *
+ *  A newline RESETS both stacks: GFM inline links do not span lines, and the
+ *  old regexes were line-bounded too, so a stray `[` must not gobble the
+ *  rest of the chunk. */
+function buildBalanceMaps(source: string): { brackets: Int32Array; parens: Int32Array } {
+  const length = source.length;
+  const brackets = new Int32Array(length).fill(-1);
+  const parens = new Int32Array(length).fill(-1);
+  const bracketStack: number[] = [];
+  const parenStack: number[] = [];
+  for (let i = 0; i < length; i += 1) {
+    const ch = source.charCodeAt(i);
+    if (ch === 10 /* \n */) {
+      bracketStack.length = 0;
+      parenStack.length = 0;
+      continue;
+    }
+    if (ch === 92 /* \ */) {
+      // The escaped character is content: it may not open or close a pair.
+      // A backslash before the newline escapes nothing.
+      if (i + 1 < length && source.charCodeAt(i + 1) !== 10) i += 1;
+      continue;
+    }
+    if (ch === 91 /* [ */) {
+      bracketStack.push(i);
+    } else if (ch === 93 /* ] */) {
+      const open = bracketStack.pop();
+      if (open !== undefined) brackets[open] = i;
+    } else if (ch === 40 /* ( */) {
+      parenStack.push(i);
+    } else if (ch === 41 /* ) */) {
+      const open = parenStack.pop();
+      if (open !== undefined) parens[open] = i;
+    }
+  }
+  return { brackets, parens };
+}
+
+/** `[text](target)` / `![alt](target)` → `text` / `alt`.
+ *
+ *  A scan, not a replacement: balanced pairs are not a regular language. The
+ *  label is flattened RECURSIVELY the way the indexer does it, so
+ *  `[![alt](i.png)](u)` yields `alt` and `[a[b]c](u)` yields `a[b]c` instead
+ *  of leaving half a construct for the emphasis strippers to maul. Every
+ *  construct the scan consumes advances `i` past its target, so the caller's
+ *  text is walked exactly once. */
+function flattenLinks(source: string, depth = 0): string {
+  if (depth > MAX_LINK_NESTING) return source;
+  const { brackets, parens } = buildBalanceMaps(source);
+  const parts: string[] = [];
+  const length = source.length;
+  let literalStart = 0;
+  let i = 0;
+  while (i < length) {
+    const ch = source.charCodeAt(i);
+    if (ch === 92 /* \ */) {
+      // Escaped character: literal content, never a link opener.
+      i += 2;
+      continue;
+    }
+    const image = ch === 33 /* ! */ && i + 1 < length && source.charCodeAt(i + 1) === 91 /* [ */;
+    if (image || ch === 91 /* [ */) {
+      const open = image ? i + 1 : i;
+      const close = brackets[open];
+      if (close >= 0 && source.charCodeAt(close + 1) === 40 /* ( */) {
+        const targetClose = parens[close + 1];
+        if (targetClose >= 0) {
+          parts.push(source.slice(literalStart, i));
+          const label = source.slice(open + 1, close);
+          // Recursing is only worth it when the label can hold a construct of
+          // its own, so the common flat label skips the walk entirely. The
+          // unescape applies to the LABEL ONLY — it is the one place this scan
+          // rewrites characters, and text outside every link keeps whatever
+          // backslashes it shipped with (a whole-string unescape would have
+          // silently changed prose this fix is not about).
+          const nested = label.includes("[") ? flattenLinks(label, depth + 1) : label;
+          parts.push(label.includes("\\") ? nested.replace(BACKSLASH_ESCAPE, "$1") : nested);
+          i = targetClose + 1;
+          literalStart = i;
+          continue;
+        }
+      }
+    }
+    i += 1;
+  }
+  parts.push(source.slice(literalStart));
+  return parts.join("");
+}
+
 /**
  * Flatten markdown source to readable single-space text.
  *
@@ -105,13 +221,13 @@ export function toPlainText(markdown: string): string {
   // Table rows: drop the separator line, then turn cell pipes into spaces.
   text = text.replace(/^ {0,3}\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$/gm, " ");
   text = text.replace(/[ \t]*\|[ \t]*/g, " ");
-  // Links / images → their label only. Labels and targets are bounded to
-  // ONE LINE (inline links do not span lines in GFM): an unbounded `[^)]*`
-  // made every unterminated `[` rescan to end-of-string, which is quadratic
-  // (measured 5.4 s at 128 KB — the amplifier for the window-size fix above,
-  // R5/S3).
-  text = text.replace(/!\[([^\]\n]*)\]\(([^)\n]*)\)/g, "$1");
-  text = text.replace(/\[([^\]\n]*)\]\(([^)\n]*)\)/g, "$1");
+  // Links / images → their label only. A linear scan (not a regex) because
+  // balanced pairs are not a regular language: `[x](a(b)c)` has href
+  // `a(b)c` in GFM, and the previous `[^)\n]*` target stopped at the FIRST
+  // `)`, leaking `c)` into the excerpt. Escaped brackets (`[a\]b](u)`) come
+  // out as `a]b`. Both are the Rust indexer's semantics (`find_close_bracket`
+  // / `find_close_paren`), so the excerpt and the index finally agree.
+  text = flattenLinks(text);
   // Emphasis / inline code / strikethrough markers. PAIRED markers go with
   // their content kept; lone `*` / backtick / `~` are markers too. A lone
   // `_` is NOT: snake_case identifiers are content (and GFM agrees —

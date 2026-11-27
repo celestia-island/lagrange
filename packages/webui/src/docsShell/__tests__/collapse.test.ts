@@ -78,6 +78,101 @@ describe("toPlainText", () => {
     // Block order survives: heading, then the first row's first cell.
     expect(flat.indexOf("逐环分解")).toBeLessThan(flat.indexOf("真机集成测试"));
   });
+
+  it("keeps a BALANCED target out of the excerpt (GFM href, not first paren)", () => {
+    // L962/②: the old `[^)\n]*` target stopped at the FIRST `)`, so a href
+    // that carries its own parens (a wikipedia/disambiguation URL, an API
+    // page, a localised filename) leaked its tail into the摘要 — `[x](a(b)c)`
+    // came out `xc)`. The Rust indexer's `find_close_paren` is depth-balanced;
+    // the flattener must agree or the underline sits on a phantom.
+    expect(toPlainText("[x](a(b)c)")).toBe("x");
+    expect(toPlainText("[nested](a(b(c)d)e)")).toBe("nested");
+    expect(toPlainText("see [w](https://en.wikipedia.org/wiki/A_(b)) here")).toBe("see w here");
+  });
+
+  it("keeps an ESCAPED bracket inside the label (one link, not literal text)", () => {
+    // L962/②: `[a\]b](u)` used to survive VERBATIM — the `\]` did not close
+    // the label for the regex, so no match, so the raw markdown (target
+    // included) landed in the row. The escape means the bracket is CONTENT:
+    // the label is `a]b` and the whole construct still loses its target.
+    expect(toPlainText("[a\\]b](u)")).toBe("a]b");
+    expect(toPlainText("see [docs\\[beta\\]](https://x.y/z) now")).toBe("see docs[beta] now");
+    // A backslash before an ordinary punctuation character keeps that
+    // character and drops the backslash (no unstripped `\` reaches the row).
+    expect(toPlainText("[a\\-b](u)")).toBe("a-b");
+    expect(toPlainText("[a\\!b](u)")).toBe("a!b");
+  });
+
+  it("flattens an image to its alt text with a balanced target too", () => {
+    expect(toPlainText("![alt](a(b)c.png)")).toBe("alt");
+    // The badge idiom the docs actually use: an image wrapped in a link.
+    expect(toPlainText("[![badge](https://img.shields.io/x.svg)](https://ci)")).toBe("badge");
+    expect(toPlainText("![](https://x.y/z.png)")).toBe("");
+  });
+
+  it("leaves a lone `[` as prose (no phantom link, no swallowed line)", () => {
+    // Half-typed links are common in the window BEFORE the target is closed;
+    // the scan must not invent a link, nor eat text to the next `]`.
+    expect(toPlainText("unclosed [ label")).toBe("unclosed [ label");
+    expect(toPlainText("[t](u) trailing")).toBe("t trailing");
+    expect(toPlainText("pre[link](https://x.y/z)post")).toBe("prelinkpost");
+    // Reference-style labels are prose here (the excerpt path never resolves
+    // them); only the INLINE form is flattened.
+    expect(toPlainText("[t](u)[r]")).toBe("t[r]");
+    expect(toPlainText("[a]: https://x.y/z")).toBe("[a]: https://x.y/z");
+  });
+
+  it("does not treat an ESCAPED bracket as a link opener", () => {
+    // `\[` is a literal bracket in GFM, so this is NOT a link — the old regex
+    // matched from index 1 and DELETED the visible `[-]` (`\[-](u)` → `\-`).
+    // The scan keeps every visible character. The one residual is the escape
+    // backslash itself, which prose still ships: unescaping outside a link
+    // label is a separate concern (`\*` etc.) and out of this fix's scope.
+    const escaped = toPlainText("\\[-](u)");
+    expect(escaped).toContain("[-](u)");
+    expect(toPlainText("see \\[not a link](u) here")).toContain("[not a link](u)");
+    expect(toPlainText("see \\[not a link](u) here")).toContain("see");
+  });
+
+  it("stays LINEAR on an unterminated-`[` window at the PREVIEW_CHARS cap", () => {
+    // L962/①: every unterminated `[` used to rescan to end-of-string, so the
+    // cost was quadratic — MEASURED on this corpus before the scan: 13.0 ms
+    // at 4 KB, 51 ms at 8 KB, 835 ms at 32 KB, 13.4 s at 128 KB. 8 KB is not
+    // hypothetical: `PREVIEW_CHARS` (search.rs) caps a shipped window, and
+    // the hit list flattens once per row per keystroke (`debounce={0}`).
+    //
+    // The assertion is on the SHAPE (`32 KB / 4 KB` ratio), not a wall-clock
+    // budget: an absolute bound is a machine-speed test that flakes on a
+    // loaded CI box, while the ratio is what "linear" actually means. Under
+    // the old quadratic pass the same ratio was ~64x; a linear pass is ~8x
+    // with the shared constant costs keeping it under that.
+    const adversarial = (chars: number): string => "[a".repeat(Math.ceil(chars / 2)).slice(0, chars);
+    /** Median of `reps` runs — one noisy sample must not decide a red. */
+    const median = (fn: (s: string) => unknown, input: string, reps: number): number => {
+      const samples: number[] = [];
+      for (let i = 0; i < reps; i += 1) {
+        const start = performance.now();
+        fn(input);
+        samples.push(performance.now() - start);
+      }
+      samples.sort((a, b) => a - b);
+      return samples[(samples.length - 1) >> 1]!;
+    };
+    const small = adversarial(4096);
+    const large = adversarial(32768);
+    median(toPlainText, small, 15); // warm the JIT before measuring
+    median(toPlainText, large, 5);
+    const smallMs = Math.max(median(toPlainText, small, 15), 0.05);
+    const largeMs = median(toPlainText, large, 5);
+    // 32 KB is 8x the input. Quadratic ⇒ ~64x, linear ⇒ ~8x; 20x leaves the
+    // linear pass a 2.5x margin while a regression to quadratic cannot fit.
+    expect(largeMs / smallMs).toBeLessThan(20);
+
+    // The live cap in absolute terms: one 8 KB window must be imperceptible
+    // even with a generous ceiling (before the fix it measured ~51 ms here).
+    const capped = adversarial(8192);
+    expect(median(toPlainText, capped, 5)).toBeLessThan(20);
+  });
 });
 
 describe("buildExcerptLines — the six-character rule", () => {
