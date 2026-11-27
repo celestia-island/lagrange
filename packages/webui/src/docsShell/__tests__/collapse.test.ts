@@ -151,11 +151,11 @@ describe("toPlainText", () => {
 
   it("caps link nesting, and the cap degrades to NOISE, not to data loss", () => {
     // L962/R2 S2-1. The cap exists for COST, not cosmetics: each nesting level
-    // re-derives its own pair maps, so the recursion is quadratic in depth —
-    // uncapped it measured ~157 ms at depth 1600, ~1.35 s at 5000, and the
-    // stack then overflows somewhere around 4000 levels on a default stack
-    // (the exact depth is engine- and `ulimit`-dependent, so no precise figure
-    // is claimed). One pasted line would then stall, then blank the whole row.
+    // re-derives its own pair maps, so without the cap the cost is quadratic in
+    // depth and the recursion eventually overflows the stack — one pasted line
+    // could stall, then blank the whole row. No durations or depth thresholds
+    // are recorded here on purpose: both vary with the engine, the stack limit
+    // and the machine, and a number that cannot be kept true is worse than none.
     //
     // Shipped behaviour, pinned so the next round cannot quietly "fix" it into
     // a silent flatten and call it a bugfix: `depth > 8` returns the remainder
@@ -192,17 +192,20 @@ describe("toPlainText", () => {
   });
 
   it("stays LINEAR on an unterminated-`[` window at the PREVIEW_CHARS cap", () => {
-    // L962/①: every unterminated `[` used to rescan to end-of-string, so the
-    // cost was quadratic — MEASURED on this corpus before the scan: 13.0 ms
-    // at 4 KB, 51 ms at 8 KB, 835 ms at 32 KB, 13.4 s at 128 KB. 8 KB is not
-    // hypothetical: `PREVIEW_CHARS` (search.rs) caps a shipped window, and
-    // the hit list flattens once per row per keystroke (`debounce={0}`).
+    // L962/①: every unterminated `[` used to rescan to end-of-string, which
+    // makes the cost QUADRATIC in the window length. That complexity is the
+    // durable fact; the old form's actual durations are deliberately not
+    // recorded here because they vary with the machine and the engine. The
+    // cap matters because `PREVIEW_CHARS` (search.rs) bounds a shipped window,
+    // and the hit list flattens once per row per keystroke (`debounce={0}`).
     //
-    // The assertion is on the SHAPE (`32 KB / 4 KB` ratio), not a wall-clock
+    // The assertion is on the SHAPE (the large/small ratio), not a wall-clock
     // budget: an absolute bound is a machine-speed test that flakes on a
-    // loaded CI box, while the ratio is what "linear" actually means. Under
-    // the old quadratic pass the same ratio was ~64x; a linear pass is ~8x
-    // with the shared constant costs keeping it under that.
+    // loaded box, while the ratio is what "linear" actually means. The two
+    // inputs below differ by 8x, so quadratic arithmetic predicts ~64x and
+    // linear arithmetic predicts ~8x; the threshold sits at 20x, which leaves
+    // a linear pass ample margin while a regression to quadratic cannot fit.
+    // These are ratios derived from the input sizes, not measured durations.
     const adversarial = (chars: number): string => "[a".repeat(Math.ceil(chars / 2)).slice(0, chars);
     /** Median of `reps` runs — one noisy sample must not decide a red. */
     const median = (fn: (s: string) => unknown, input: string, reps: number): number => {
@@ -221,12 +224,10 @@ describe("toPlainText", () => {
     median(toPlainText, large, 5);
     const smallMs = Math.max(median(toPlainText, small, 15), 0.05);
     const largeMs = median(toPlainText, large, 5);
-    // 32 KB is 8x the input. Quadratic ⇒ ~64x, linear ⇒ ~8x; 20x leaves the
-    // linear pass a 2.5x margin while a regression to quadratic cannot fit.
     expect(largeMs / smallMs).toBeLessThan(20);
 
-    // The live cap in absolute terms: one 8 KB window must be imperceptible
-    // even with a generous ceiling (before the fix it measured ~51 ms here).
+    // The live cap: one `PREVIEW_CHARS`-sized window must stay imperceptible
+    // even with a generous ceiling.
     const capped = adversarial(8192);
     expect(median(toPlainText, capped, 5)).toBeLessThan(20);
   });

@@ -87,17 +87,18 @@ function headClusters(segs: string[], limit: number): string[] {
 /** Deepest link-inside-link nesting the flattener unrolls.
  *
  *  WHY A CAP AT ALL: the recursion deepens once per nesting level and each
- *  level re-derives its own pair maps, so cost is quadratic in the depth of a
- *  link-in-link chain. Uncapped, that is reachable and unbounded: measured
- *  ~157 ms at 1600 levels and ~1.35 s at 5000, and the stack then overflows
- *  somewhere around 4000 levels on a default stack — a single line of pasted
- *  input would stall, then throw the whole excerpt away. The cap is what keeps
- *  "linear in the window" true for arbitrarily hostile input.
+ *  level re-derives its own pair maps, so without the cap the cost is
+ *  QUADRATIC in the nesting depth of a link-in-link chain — that is a property
+ *  of the shape of the code, not a measurement — and the recursion eventually
+ *  overflows the stack, so a single pasted line could stall and then throw the
+ *  whole excerpt away. The cap is a constant bound, which is what keeps the
+ *  whole projection linear in the window for arbitrarily hostile input.
  *
- *  The exact overflow depth is engine- and `ulimit`-dependent, so no precise
- *  figure is claimed. What matters for the cap is that it is bounded and well
- *  under any plausible limit, not which limit a particular build happens to
- *  have.
+ *  No depth or duration figures are recorded here on purpose. The overflow
+ *  point and the wall-clock costs both depend on the engine, the stack limit
+ *  and the machine, so any specific number would be a claim this file cannot
+ *  keep true. What the cap needs to guarantee is only that it is BOUNDED and
+ *  comfortably below any plausible limit.
  *
  *  WHAT HAPPENS PAST IT (asserted in the tests, do NOT "fix" this into a
  *  silent flatten): the too-deep remainder is returned VERBATIM, so its
@@ -112,11 +113,11 @@ function headClusters(segs: string[], limit: number): string[] {
  *    `MAX_LINK_NESTING = 8` the deepest CORRECT flatten is 9 levels
  *    (`depth` is 0-based and the guard is `depth > MAX_LINK_NESTING`), and
  *    depth ≥ 10 leaks `[x](u)`.
- *  - Reachable in principle: `nest(10)` is only 61 characters, so an 8 KB
- *    `PREVIEW_CHARS` window holds thousands of levels. Real docs nest two
- *    (`[![alt](img)](href)`); ten levels of hand-written link-in-link is a
- *    corpus nobody writes, and if one appears the excerpt is noisy for that
- *    row only — not wrong, not unsafe, not slow. */
+ *  - Reachable in principle: each nesting level costs only a handful of
+ *    characters, so a `PREVIEW_CHARS` window can hold far more levels than the
+ *    cap allows. Real docs nest two (`[![alt](img)](href)`); a hand-written
+ *    ten-deep link-in-link chain is a corpus nobody writes, and if one appears
+ *    the excerpt is noisy for that row only — not wrong, not unsafe, not slow. */
 const MAX_LINK_NESTING = 8;
 
 /** ASCII punctuation — the only characters a backslash can escape in GFM —
@@ -131,9 +132,11 @@ const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u00
  *
  *  Built ONCE per string in a single left-to-right pass, because that single
  *  pass is the whole point: the two regexes this replaced rescanned to
- *  end-of-string for EVERY unterminated `[`, which is quadratic — measured
- *  12.7 ms / 51 ms / 846 ms / 13.3 s at 4 / 8 / 32 / 128 KB of `[a` filler,
- *  and the 8 KB number is the LIVE one (`PREVIEW_CHARS` caps a window).
+ *  end-of-string for EVERY unterminated `[`, which is QUADRATIC in the window
+ *  length. That is why the old form got worse super-linearly as the window
+ *  grew (no durations are recorded here — they vary with the machine and the
+ *  engine; the complexity is the durable fact). One pass is LINEAR regardless
+ *  of how many brackets never close.
  *
  *  Depth semantics mirror the Rust indexer (`src/search.rs`:
  *  `find_close_bracket` / `find_close_paren`): the close is the FIRST one at
@@ -253,9 +256,10 @@ function flattenLinks(source: string, depth = 0): string {
           //
           // The unescape applies to the LABEL ONLY — it is the one place this
           // scan rewrites characters, and text outside every link keeps
-          // whatever backslashes it shipped with (a whole-string unescape
-          // silently changed prose this fix is not about; the fuzz run caught
-          // it at ~9200 diffs before it was narrowed to this line).
+          // whatever backslashes it shipped with. An earlier draft unescaped
+          // the whole string instead; differential fuzzing against that draft
+          // showed it silently rewrote prose this fix is not about, which is
+          // why the unescape is scoped to this line.
           const nested = label.includes("[") ? flattenLinks(label, depth + 1) : label;
           parts.push(label.includes("\\") ? nested.replace(BACKSLASH_ESCAPE, "$1") : nested);
           i = targetClose + 1;
