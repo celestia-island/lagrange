@@ -228,44 +228,47 @@ describe("buildSnippetView", () => {
     expect(view.html).toContain("architecture diagram");
   });
 
-  it("a SHORT table with the naive cut inside its rows still opens at its header", () => {
-    // SHORT prose above a 3-row table: the naive radius lands INSIDE the
-    // table (on a body row), so the line-snapped cut opens on a pipe row
-    // and the containing-run scan is LOAD-BEARING — disabling it leaves the
-    // window on the body row and GFM renders literal pipes (no header +
-    // separator above the row).
+  it("a SHORT table deep past the naive cut still opens at its header, not a body row", () => {
+    // Short rows, MANY of them, match far down: the naive radius lands on a
+    // BODY ROW well past the header+separator (which sit outside the naive
+    // radius entirely). The containing-run scan must eat back to the header
+    // — without it the window opens on a body row and GFM renders literal
+    // pipes (no header + separator above the row).
     const header = "| Name | Purpose | Type |";
     const sep = "| --- | --- | --- |";
-    const rows = [
-      "| alpha | the first row of a compact repository table | code |",
-      "| beta | the second row with slightly longer prose inside it | docs |",
-      "| gamma | the third row, still inside the naive radius from here | infra |",
-    ].join("\n");
-    const prose = "Short intro line.";
-    const chunk = ["## Short table", "", prose, "", header, sep, rows, ""].join("\n");
-    const match = { index: chunk.indexOf("| gamma"), length: 7 };
+    const rows: string[] = [];
+    for (let i = 0; i < 14; i += 1) {
+      rows.push(`| r${i} | row ${i} of a compact repository table | code |`);
+    }
+    const chunk = ["## Short table", "", header, sep, ...rows, ""].join("\n");
+    // The match sits in a deep body row: naive start (mi-160) lands on a
+    // body row several rows BELOW the separator.
+    const match = { index: chunk.indexOf("| r12 "), length: 6 };
     const w = sliceWindow(chunk, match);
     expect(w.window.split("\n")[0]).toBe(header);
-    const view = buildSnippetView(chunk, "gamma");
-    // The wrapper's survival is happy-dom-specific; the cells and the
-    // underlined match are what the card must carry.
-    expect(view.html).toContain("gamma");
-    expect(view.html).toContain("lagrange-docs-search-mark");
+    // And the window still contains the matched row.
+    expect(w.window).toContain("r12");
   });
 
   it("a match in prose BETWEEN two tables keeps the prose opening", () => {
-    // The scan takes the LAST pair whose run contains the match — a match
-    // in prose between two tables is inside NO run, so the prose opening
-    // stays (the first table's header must not hijack the window backwards,
-    // R3 M-3 direction probe).
+    // Long enough that the naive start is NON-ZERO and lands in the prose:
+    // a match in prose between two tables is inside NO table run, so the
+    // prose opening survives — dropping the runEnd containment guard (M-c)
+    // would let the FIRST table's header hijack the window backwards.
     const t1 = ["| A | B |", "| --- | --- |", "| a1 | b1 |"].join("\n");
     const t2 = ["| C | D |", "| --- | --- |", "| c2 | d2 |"].join("\n");
-    const chunk = [t1, "", "Prose between the two tables.", "", t2, "", "More prose about the second table."].join("\n");
+    const mid = "Context between the tables. ".repeat(10) + "Prose between the two tables carries the query.";
+    const chunk = [t1, "", mid, "", t2, "", "More prose about the second table."].join("\n");
     const match = { index: chunk.indexOf("Prose between"), length: 6 };
+    // The naive start (match-160) must land in the PROSE, not clamp to the
+    // text start — otherwise the pin cannot tell the containing-run rule
+    // from the fallback (R5: a 47-char offset clamps to 0 and is vacuous).
+    expect(match.index).toBeGreaterThan(160);
     const w = sliceWindow(chunk, match);
     // No containing run → the prose opening survives (the match marks in
     // the prose; the surrounding tables render as pipes around it —
     // documented).
-    expect(w.window.split("\n")[0]).toBe(t1.split("\n")[0]);
+    expect(w.window.split("\n")[0].startsWith("|")).toBe(false);
+    expect(w.window).toContain("Prose between");
   });
 });
