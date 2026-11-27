@@ -51,3 +51,7 @@ minimumReleaseAgeExclude:
   # slides with the reading direction instead of hard-cutting) plus the Rust
   # code-highlight header slots, hikari#1598/#1599.
   - '@celestia-island/hikari@0.55.503'
+  # Parser-fidelity pickup (2026-11-28): state pseudostates stay separate
+  # circles, `participant A as Alice` resolves, and link head glyphs
+  # (`--o`/`--x`/`<-->`) are syntax rather than node ids — hikari#1602/#1604.
+  - '@celestia-island/hikari@0.55.505'
