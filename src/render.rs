@@ -743,6 +743,8 @@ fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
 /// card would throw every token span away), and it is why this renderer no
 /// longer hand-writes the markup: the classes below are the card's, so a
 /// styling change in hikari reaches this page instead of drifting from it.
+/// MUT: dropping `code_html` never passes the fence pin — every syntect span
+/// disappears; emitting the old hand-written classes never passes either.
 fn el_pre_code(lang_class: &str, code: &str) -> VNode {
     let lang = lang_class.trim_start_matches("language-");
     let display_lang = if lang.is_empty() { "text" } else { lang };
