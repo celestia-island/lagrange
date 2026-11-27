@@ -116,8 +116,12 @@ export function sliceWindow(
         break;
       }
     }
-    if (match.index < runEnd) {
-      start = Math.min(start, header);
+    // The run bounds the move on both sides (header ≤ match < run end), so
+    // the cut never relocates past the match — and it moves whichever
+    // direction the naive cut needs: back to the header (row/separator
+    // openings) or forward to it (prose openings with the table below).
+    if (match.index >= header && match.index < runEnd) {
+      start = header;
       break;
     }
   }

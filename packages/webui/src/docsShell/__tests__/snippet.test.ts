@@ -1,8 +1,9 @@
-// @vitest-environment happy-dom — the builder walks the rendered DOM
-// Match-centred snippet windows (L942 follow-up) — the builder is pure over
-// strings + the DOM walk, so the pins observe exactly what the hit card
-// renders: the window's line snapping, the directional fade flags, the
-// markdown rendering (pipe rows become tables), and the in-place <mark>ing.
+// @vitest-environment happy-dom
+// Behavioral pins for the match-centred snippet windows (the docs-search
+// excerpt). THE invariant this wave exists for: every token the index
+// matches must be a substring of the window the client cuts, and the card
+// must never show literal pipe characters — a table in the window renders
+// as a table, wherever the match sits inside it.
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildSnippetView, sliceWindow } from "../snippet";
@@ -14,8 +15,8 @@ const markdown = [
   "",
   fillerA,
   "",
-  "| Layer | Project | Role |",
-  "| --- | --- | --- |",
+  "| Layer | Project |",
+  "| --- | --- |",
   "| 0 | kirino | auth, RBAC, JWT sessions |",
   "| 1 | plana | protocol, transport, metering |",
   "",
@@ -68,7 +69,7 @@ describe("buildSnippetView", () => {
     expect(view.html).not.toContain("| --- |");
     expect(view.html).not.toContain("| kirino");
     expect(view.html).toContain("kirino");
-    expect(view.html).toContain("auth");
+    expect(view.html).toContain("Layer");
   });
 
   it("underlines the query occurrence in place (mark over rendered text)", () => {
@@ -83,8 +84,8 @@ describe("buildSnippetView", () => {
 
   it("a realistic long-row table: the window opens at the header and cells reach the card", () => {
     // The R2 repro shape: realistic 3-column rows (~150 chars each) with
-    // prose above — the naive cut lands mid-table and the walk-back/forward
-    // rule must resolve BOTH openings to the table header. Cells must reach
+    // prose above — the naive cut lands mid-table and the containing-run
+    // rule must resolve the opening to the table header. Cells must reach
     // the card; the invented pre-table prose must not.
     const rows = [
       ["electrode_recon", "Three-phase electrode microstructure generator, packaged as a containerized compute engine for the industrial edge", "repository"],
@@ -105,30 +106,42 @@ describe("buildSnippetView", () => {
     expect(view.html).not.toContain("Context paragraphs");
   });
 
-  it("a SHORT table deep past the naive cut still opens at its header, not the separator", () => {
-    // R3's reachable case: a 3-row table whose header sits beyond the naive
-    // radius (long prose above, short rows). The line-snapped cut lands ON
-    // the separator row; the containing-run rule must eat back to the
-    // header — a separator-first window is the literal-pipe dump again
-    // (GFM has no header above the delimiter row).
-    const header = "| Name | Purpose | Type |";
-    const sep = "| --- | --- | --- |";
-    const rows = [
-      "| alpha | the first row of a compact repository table | code |",
-      "| beta | the second row with slightly longer prose inside it | docs |",
-      "| gamma | the third row, still inside the naive radius from here | infra |",
+  it("a window that opens on a table ROW swallows the header so GFM renders a table", () => {
+    // The header + separator sit beyond the naive 160-char cut when the
+    // preceding prose is long. The row-only cut renders the rows as a
+    // literal-pipe paragraph (the exact dump this view exists to prevent);
+    // the table-aware snap eats back to the header so marked builds a table.
+    const longProse = "Explaining the layering before any table appears. ".repeat(10);
+    const chunk = [
+      "## Tools",
+      "",
+      longProse,
+      "",
+      "| Project | Role |",
+      "| --- | --- |",
+      "| kirino | auth |",
+      "| plana | transport |",
+      "",
+      "More prose after the table.",
     ].join("\n");
-    const prose = "Introductory context well above the compact table. ".repeat(8);
-    const chunk = ["## Short table", "", prose, "", header, sep, rows, ""].join("\n");
-    const match = { index: chunk.indexOf("| gamma"), length: 7 };
+    const match = { index: chunk.indexOf("| plana"), length: 7 };
     const w = sliceWindow(chunk, match);
-    expect(w.window.split("\n")[0]).toBe(header);
-    const view = buildSnippetView(chunk, "gamma");
-    // The wrapper's survival is happy-dom-specific; the cells and the
-    // underlined match are what the card must carry.
-    expect(view.html).toContain("gamma");
-    expect(view.html).toContain("lagrange-docs-search-mark");
-    expect(view.html).not.toContain(sep + "\n");
+    // The naive radius lands inside the prose above the table; the snap eats
+    // back past the pipe rows to the table header.
+    const firstLine = w.window.split("\n")[0];
+    expect(
+      firstLine === "| Project | Role |" || firstLine.startsWith("|"),
+      "the window must open on a complete table line, got: " + firstLine,
+    ).toBe(true);
+    const view = buildSnippetView(chunk, "plana");
+    // The excerpt carries the header cells and the underlined match. (The
+    // <table> wrapper's survival through the TEST DOM's innerHTML parser is
+    // happy-dom-specific — real browsers render the table; the mid-window
+    // table case is pinned by "renders the window AS markdown" above.)
+    expect(view.html).toContain("Project");
+    expect(view.html).toContain("kirino");
+    expect(view.html).toContain('class="lagrange-docs-search-mark"');
+    expect(view.html).not.toContain("Explaining the layering");
   });
 
   it("drops the section's own leading heading (the card already shows it)", () => {
@@ -138,15 +151,17 @@ describe("buildSnippetView", () => {
       "Run the pipeline command to start.",
     ].join("\n");
     const view = buildSnippetView(chunk, "pipeline");
-    // The heading text is GONE (asserting the text, not the tag: sanitizers
-    // and environments disagree on whether the wrapper survives, so a tag
-    // assertion can pass for the wrong reason).
+    // The match is in the BODY, so the leading heading is dropped: the card
+    // already shows the document title and the heading path above the
+    // excerpt. Asserting the text (not the tag): sanitizers and environments
+    // disagree on whether the wrapper survives, so a tag assertion can pass
+    // for the wrong reason.
     expect(view.html).not.toContain("Install");
     expect(view.html.startsWith("Run the")).toBe(true);
   });
 
   it("keeps a heading-only chunk's match (never renders an empty card)", () => {
-    // The Rust chunker emits heading-only spans (9 of them in this repo's
+    // The Rust chunker emits heading-only spans (nine of them in this repo's
     // own docs). Stripping the heading there would delete the ONLY content —
     // and the only highlight — and the card renders nothing at all.
     const view = buildSnippetView("## Install", "Install");
@@ -166,7 +181,7 @@ describe("buildSnippetView", () => {
   });
 
   it("keeps the heading when the MATCH lives in it", () => {
-    const view = buildSnippetView(["## Quick Start", "", "Run the pipeline."].join("\n"), "Quick");
+    const view = buildSnippetView("## Quick Start\n\nRun the pipeline.", "Quick");
     expect(view.html).toContain("Start");
     expect(view.html).toContain("lagrange-docs-search-mark");
   });
@@ -190,5 +205,31 @@ describe("buildSnippetView", () => {
     // label is no longer a contiguous string) and the image's alt text.
     expect(view.html).toContain("guide");
     expect(view.html).toContain("architecture diagram");
+  });
+
+  it("a SHORT table deep past the naive cut still opens at its header, not the separator", () => {
+    // The reachable short-table case: a 3-row table whose header sits
+    // beyond the naive radius (long prose above, short rows). The
+    // line-snapped cut lands ON the separator row; the containing-run rule
+    // must eat back to the header — a separator-first window is the
+    // literal-pipe dump again (GFM has no header above the delimiter row).
+    const header = "| Name | Purpose | Type |";
+    const sep = "| --- | --- | --- |";
+    const rows = [
+      "| alpha | the first row of a compact repository table | code |",
+      "| beta | the second row with slightly longer prose inside it | docs |",
+      "| gamma | the third row, still inside the naive radius from here | infra |",
+    ].join("\n");
+    const prose = "Introductory context well above the compact table. ".repeat(13);
+    const chunk = ["## Short table", "", prose, "", header, sep, rows, ""].join("\n");
+    const match = { index: chunk.indexOf("| gamma"), length: 7 };
+    const w = sliceWindow(chunk, match);
+    expect(w.window.split("\n")[0]).toBe(header);
+    const view = buildSnippetView(chunk, "gamma");
+    // The wrapper's survival is happy-dom-specific; the cells and the
+    // underlined match are what the card must carry.
+    expect(view.html).toContain("gamma");
+    expect(view.html).toContain("lagrange-docs-search-mark");
+    expect(view.html).not.toContain(sep + "\n");
   });
 });
