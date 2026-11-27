@@ -37,3 +37,8 @@ minimumReleaseAgeExclude:
   # Same-day pickup (2026-11-24): phone nav drawer, hikari#1535.
   - '@celestia-island/hikari@0.55.479'
   - '@celestia-island/tairitsu-host-client@0.1.0'
+  # Same-day pickup (2026-11-27): mobile drawer body loses its default
+  # padding so the nav panel + its overlay rail reach the drawer edge
+  # (hikari#1590), and graph node labels may use the width the layout
+  # sized for them (hikari#1591).
+  - '@celestia-island/hikari@0.55.500'
