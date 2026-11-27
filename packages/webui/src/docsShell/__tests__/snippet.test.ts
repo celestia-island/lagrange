@@ -59,17 +59,34 @@ describe("buildSnippetView", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders the window AS markdown: the reader never sees literal pipes", () => {
+  it("a BLOCK window (table) collapses to one compact line, never a pipe dump", () => {
+    // 2026-11-27 user direction, superseding the verbatim-markdown shape:
+    // a table rendered as a table made hit rows 75px beside 267px AND put
+    // the tall card's own match below its clamp. Block structure now takes
+    // the flattened `…context[match]context…` form.
     const view = buildSnippetView(markdown, "plana");
-    // The user-facing property: the window's table renders as TABLE MARKUP
-    // (a real browser) — never as raw pipe characters. The exact wrapper in
-    // the test DOM is happy-dom-parser-specific (a LEADING table gets its
-    // cells hoisted there), so this pins the output contract, not the
-    // wrapper.
+    expect(view.compacted).toBe(true);
+    // Never a literal pipe dump, never a five-row table.
     expect(view.html).not.toContain("| --- |");
-    expect(view.html).not.toContain("| kirino");
-    expect(view.html).toContain("kirino");
-    expect(view.html).toContain("Layer");
+    expect(view.html).not.toContain("<table");
+    // The match survives the squeeze and stays underlined.
+    expect(view.html).toContain(">plana</mark>");
+  });
+
+  it("a PROSE window keeps its markdown rendering (real emphasis, real flow)", () => {
+    // The complement of the test above: only structures that cannot be
+    // squeezed take the flattened path. A paragraph keeps `**emphasis**`
+    // rendered as <strong>, because collapsing it would throw away the
+    // reading flow the markdown render exists to preserve.
+    const prose = ["## Notes", "", "The **plana** layer carries the transport and the metering rules.", ""].join("\n");
+    const view = buildSnippetView(prose, "plana");
+    expect(view.compacted).toBe(false);
+    // The mark nests INSIDE the emphasis (the match sits in bold text), so
+    // the pin is "emphasis survived" + "no literal asterisks", not a fixed
+    // element order.
+    expect(view.html).toContain("<strong>");
+    expect(view.html).toContain(">plana</mark>");
+    expect(view.html).not.toContain("**");
   });
 
   it("underlines the query occurrence in place (mark over rendered text)", () => {
@@ -101,8 +118,9 @@ describe("buildSnippetView", () => {
     const w = sliceWindow(chunk, match);
     expect(w.window.split("\n")[0]).toBe("| Project | Purpose | Docs |");
     const view = buildSnippetView(chunk, "hare");
-    expect(view.html).toContain("hare");
-    expect(view.html).toContain("Purpose");
+    expect(view.compacted, "a table window takes the flattened path").toBe(true);
+    expect(view.html).toContain(">hare</mark>");
+    // The pre-table prose never enters the excerpt.
     expect(view.html).not.toContain("Context paragraphs");
   });
 
@@ -134,13 +152,11 @@ describe("buildSnippetView", () => {
       "the window must open on a complete table line, got: " + firstLine,
     ).toBe(true);
     const view = buildSnippetView(chunk, "plana");
-    // The excerpt carries the header cells and the underlined match. (The
-    // <table> wrapper's survival through the TEST DOM's innerHTML parser is
-    // happy-dom-specific — real browsers render the table; the mid-window
-    // table case is pinned by "renders the window AS markdown" above.)
-    expect(view.html).toContain("Project");
-    expect(view.html).toContain("kirino");
+    // The collapsed excerpt carries the underlined match and its
+    // neighbourhood; the prose above the table never enters the card.
+    expect(view.compacted).toBe(true);
     expect(view.html).toContain('class="lagrange-docs-search-mark"');
+    expect(view.html).toContain(">plana</mark>");
     expect(view.html).not.toContain("Explaining the layering");
   });
 

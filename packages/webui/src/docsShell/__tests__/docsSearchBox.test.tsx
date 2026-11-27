@@ -5,6 +5,9 @@
 // shape lives in docsSearchBox.mobile.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { nextTick } from "vue";
 import { mount } from "../testUtils";
 import { DocsSearchBox } from "../DocsSearchBox";
@@ -15,6 +18,30 @@ import type { DocsSiteMeta } from "../types";
 // `update:modelValue(false)`). happy-dom never mounts the real popover,
 // so this is the only way to drive the component's half of that contract.
 // MUT: M6 (round 6 — `onSheetUpdate` made a no-op) left the suite green.
+const here = dirname(fileURLToPath(import.meta.url));
+
+/** Body of the FIRST rule whose selector matches exactly (comments
+ *  stripped), so a declaration can be pinned without a SCSS parser. */
+function ruleBody(sheet: string, selector: string): string | null {
+  // Strip comments FIRST: the rule being pinned carries a long explanatory
+  // comment that itself names the old declarations ("overflow: auto"), so a
+  // body read without this strip matches its own documentation.
+  const css = sheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const idx = css.indexOf(selector);
+  if (idx < 0) return null;
+  const open = css.indexOf("{", idx);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return css.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
 const modalState = vi.hoisted(() => ({ dismiss: null as (() => void) | null, title: "" as string }));
 vi.mock("@celestia-island/hikari", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@celestia-island/hikari")>();
@@ -463,16 +490,15 @@ describe("DocsSearchBox", () => {
   // continues. MUT: dropping either has-fade class from the hit span turns
   // this RED (the classes had no component-level pin before).
   it("fades the snippet edge only where the section continues", async () => {
-    // Real chunk text is MARKDOWN SOURCE: paragraphs carry line breaks, so
-    // the window can line-snap and both cuts leave text behind.
+    // A PROSE window: both cuts leave text behind, so both edges fade. Real
+    // chunk text is MARKDOWN SOURCE and paragraphs carry line breaks, so the
+    // window can line-snap on either side.
     const body = [
-      ...Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1} of the section before the table.`),
+      ...Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1} of the section before the match.`),
       "",
-      "| Layer | Project |",
-      "| --- | --- |",
-      "| 0 | pipeline |",
+      "The pipeline layer carries transport and metering between the nodes.",
       "",
-      ...Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1} after the table.`),
+      ...Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1} after the match.`),
     ].join("\n");
     vi.stubGlobal(
       "fetch",
@@ -507,16 +533,199 @@ describe("DocsSearchBox", () => {
 
     const snippet = document.querySelector(".lagrange-docs-search-hit-snippet");
     expect(snippet).not.toBeNull();
-    // BOTH edges continue → both fades lit, and the window rendered as
-    // markdown (the pipe row became a table, not literal pipes).
+    // A prose window is NOT compacted, so it keeps the directional fades.
+    expect(snippet?.classList.contains("is-compact")).toBe(false);
     expect(snippet?.classList.contains("has-fade-above")).toBe(true);
     expect(snippet?.classList.contains("has-fade-below")).toBe(true);
-    // The reader never sees literal pipes: the table renders as markup and
-    // the cells reach the card as text (happy-dom preserves the table here —
-    // probe: querySelector("table") present) — either way no raw pipe
-    // characters reach the card.
-    expect(snippet?.textContent).not.toContain("| --- |");
     expect(snippet?.querySelector(".lagrange-docs-search-mark")).not.toBeNull();
+  });
+
+  // ── 2026-11-27 field fixes (one phone screenshot each) ──────────────────
+
+  it("DOCKs the field inside the window instead of letting it scroll away", async () => {
+    // USER REPORT: "搜索栏顶部有裁切". The field was in normal flow inside
+    // HkModal's scroll body, so scrolling the hits slid it under the window's
+    // opaque gutter cover (cover z-index 3) and cut its focus ring. The fix
+    // puts it in HkScrollPin, the family's own pinning contract, which stops
+    // at the gutter line and paints its own surface above the cover.
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await openPanel();
+    await typeInto(document, "pipeline");
+    await new Promise((r) => setTimeout(r, 40));
+    await nextTick();
+    const pin = document.querySelector(".hk-scroll-pin");
+    expect(pin, "the field must be pinned, not in flow").not.toBeNull();
+    expect(pin?.getAttribute("data-side")).toBe("top");
+    // The FIELD itself lives inside the pin (a pin wrapping something else
+    // would satisfy the assertion above and fix nothing).
+    expect(pin?.querySelector(".hk-search-input, input")).not.toBeNull();
+    // …and the pin wraps the FIELD and NOTHING ELSE. The R2 review caught
+    // that a pin which also swallowed the results list would pass every
+    // assertion above while breaking the window (a list inside a sticky
+    // layer neither scrolls with the body nor lays out). With hits on
+    // screen, the results must be a SIBLING of the pin under the panel.
+    const results = document.querySelector(".lagrange-docs-search-results");
+    expect(results, "hits on screen for the sibling probe").not.toBeNull();
+    expect(results?.parentElement).toBe(pin?.parentElement);
+    expect(pin?.querySelector(".lagrange-docs-search-results")).toBeNull();
+    expect(pin?.parentElement?.classList.contains("lagrange-docs-search-panel")).toBe(true);
+  });
+
+  it("leaves the window's own scrollbar as the ONLY scroller (no nested one)", async () => {
+    // USER REPORT: "右侧滚动条怎么是原生的…而且滚动条也没使用窗口自身的贴
+    // 边的". A nested `overflow:auto` list renders the browser's native bar,
+    // inset from the window edge, and fights the body for the wheel. The
+    // modal body already carries the family's shared overlay bar
+    // (`attachOverlayScrollbars`), so the results list must not scroll
+    // itself.
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await openPanel();
+    await typeInto(document, "pipeline");
+    await new Promise((r) => setTimeout(r, 40));
+    await nextTick();
+    const results = document.querySelector(".lagrange-docs-search-results");
+    expect(results).not.toBeNull();
+    // Computed style cannot answer this: happy-dom never loads the SCSS, so
+    // `getComputedStyle` reports the initial value and the assertion would
+    // hold even with the nested scroller restored (mutation B SURVIVED that
+    // form). Read the real sheet instead — the same source-level pin the
+    // diagram-card guard uses. TWO guards: the base rule (which must carry
+    // NO scrolling chrome at all — the R2 review flagged the old popover
+    // max-height/overflow as a re-arm waiting for a selector reshuffle) and
+    // the panel-scoped rule (explicit none/visible).
+    const sheet = readFileSync(resolve(here, "../docsShell.scss"), "utf8");
+    const base = ruleBody(sheet, ".lagrange-docs-search-results");
+    expect(base, "the base results rule must exist").not.toBeNull();
+    expect(base!).not.toMatch(/overflow/);
+    expect(base!).not.toMatch(/max-height/);
+    // Nested inside `.lagrange-docs-search-panel { ... }`, so the source
+    // spelling is the bare class; search from the panel block onward.
+    const panelAt = sheet.indexOf(".lagrange-docs-search-panel {");
+    const block = ruleBody(sheet.slice(panelAt), ".lagrange-docs-search-results");
+    expect(block, "the panel's results rule must exist").not.toBeNull();
+    expect(block!).not.toMatch(/overflow:\s*auto/);
+    expect(block!).toMatch(/overflow:\s*visible/);
+    expect(block!).not.toMatch(/max-height:\s*55vh/);
+    expect(block!).toMatch(/max-height:\s*none/);
+  });
+
+  it("gives every hit the SAME excerpt shape, and never hides its own match", async () => {
+    // USER REPORT (screenshot 2): rows were 75px beside 267px, and the tall
+    // table row showed NO underline at all — its mark sat ~1300 chars below
+    // a 13rem clamp. Block content now collapses to `…6[match]6…` lines.
+    // `tokenizeQuery("testing")` = ["testing"], which hashes to shard 4
+    // (charCodeAt(0) % 16), so the fixture must declare at least five
+    // shard slots and put the posting in index 4.
+    const shards = Array.from({ length: 16 }, (_, i) => `search_i_${String(i).padStart(2, "0")}.json`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("search_meta.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              docs: [
+                {
+                  id: 0,
+                  lang: "en",
+                  title: "Closed loop",
+                  url: "/philosophy/closed-loop.html",
+                  document_id: "d",
+                  chunks: [
+                    {
+                      heading_path: ["Closed loop"],
+                      anchor: "a",
+                      // A real table whose LAST row carries the match: the
+                      // shape that reproduced the report.
+                      text: [
+                        "## Breakdown",
+                        "",
+                        "| # | Step | What happens | Project |",
+                        "| --- | --- | --- | --- |",
+                        "| 1 | discover | users find the ecosystem and choose an entry | docs site |",
+                        "| 2 | install | the operator gets a runnable system from the panel | arona |",
+                        "| 7 | verify | real-node integration testing, supervision and usage records | integration |",
+                        "| 9 | operate | feedback and usage records feed the next release | plana |",
+                      ].join("\n"),
+                    },
+                  ],
+                },
+              ],
+              shards,
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ testing: [[0, 0]] }) };
+      }),
+    );
+    const m = await mount(DocsSearchBox, { site, lang: "en" });
+    cleanup = m.unmount;
+    await openPanel();
+    await typeInto(document, "testing");
+    await new Promise((r) => setTimeout(r, 40));
+    await nextTick();
+
+    const snippet = document.querySelector(".lagrange-docs-search-hit-snippet");
+    expect(snippet).not.toBeNull();
+    // Compacted: no table block survives, so the row is uniform by
+    // construction rather than by a clamp that could hide the match.
+    expect(snippet?.classList.contains("is-compact")).toBe(true);
+    expect(snippet?.querySelector("table")).toBeNull();
+    // THE regression: the mark is inside the excerpt and on screen.
+    const mark = snippet?.querySelector(".lagrange-docs-search-mark");
+    expect(mark, "the hit must underline its own match").not.toBeNull();
+    expect(mark?.textContent?.toLowerCase()).toBe("testing");
+    // Six characters of context each side, elided with an ellipsis.
+    const excerpt = snippet?.querySelector(".lagrange-docs-search-hit-excerpt");
+    expect(excerpt?.textContent).toContain("…");
+    expect(excerpt?.textContent).toContain("testing");
+    // A compacted row carries NO edge fades — the ellipsis IS the fade
+    // (this fixture's window continues on BOTH sides, so an unguarded
+    // hasAbove/hasBelow would light both classes and go red here). These
+    // two negatives are the pin for the `!view.compacted &&` guards.
+    expect(snippet?.classList.contains("has-fade-above")).toBe(false);
+    expect(snippet?.classList.contains("has-fade-below")).toBe(false);
+  });
+
+  it("pins the uniform-floor and one-line-clamp mechanics at source level", () => {
+    // Pixel uniformity is browser-measured (happy-dom answers
+    // getComputedStyle from initial values — see the scroller test above),
+    // so the MECHANISM is pinned where it lives: the SHARED row floor
+    // (`.lagrange-docs-search-hit`, every row regardless of path), the
+    // compacted excerpt's one-line clamp, and the prose window's own
+    // max-height clamp (pre-existing, but it is the other half of "no row
+    // runs away"). What this pin deliberately does NOT claim: that title +
+    // heading + excerpt always sum to equal pixel heights — that is the
+    // browser measurement, not a source fact.
+    const sheet = readFileSync(resolve(here, "../docsShell.scss"), "utf8");
+    const hit = ruleBody(sheet, ".lagrange-docs-search-hit");
+    expect(hit, "the hit row rule must exist").not.toBeNull();
+    expect(hit!).toMatch(/min-height/);
+    const excerpt = ruleBody(sheet, ".lagrange-docs-search-hit-excerpt");
+    expect(excerpt, "the compacted excerpt rule must exist").not.toBeNull();
+    expect(excerpt!).toMatch(/white-space:\s*nowrap/);
+    expect(excerpt!).toMatch(/text-overflow:\s*ellipsis/);
+    expect(excerpt!).toMatch(/overflow:\s*hidden/);
+    const snippet = ruleBody(sheet, ".lagrange-docs-search-hit-snippet");
+    expect(snippet, "the prose snippet rule must exist").not.toBeNull();
+    expect(snippet!).toMatch(/max-height/);
+  });
+
+  it("flattens the FULL chunk for the collapsed path (never the snapped window)", () => {
+    // R5/S2, source-level pin: sliceWindow's table-header snap moves
+    // `start` back to the header but never re-derives `end`, so a match
+    // deep in an 80-row table inherited a ~60× window (measured 19,181
+    // chars against a 320 budget) for a line that renders ~20. The
+    // behavioral tests cannot see the difference (their fixtures are
+    // table-only, where window ≈ full text), so the CONTRACT is pinned at
+    // the source: the collapse branch flattens the full chunk — bounded by
+    // the build's 8192 preview cap — and firstMatch is always inside it.
+    // Same source-pin precedent as the diagram-card guard.
+    const src = readFileSync(resolve(here, "../snippet.ts"), "utf8");
+    expect(src).toMatch(/renderCollapsed\(text, tokens\)/);
+    expect(src).not.toMatch(/renderCollapsed\(windowBody/);
   });
 
   it("hides the clear affordance on an empty field", async () => {

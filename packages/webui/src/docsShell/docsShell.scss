@@ -103,21 +103,17 @@ body {
 }
 
 .lagrange-docs-search-results {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  width: min(420px, 90vw);
-  max-height: 60vh;
-  overflow: auto;
-  z-index: 60;
+  // Layout only. The anchored-popover chrome this rule used to carry
+  // (absolute position, own max-height + overflow:auto, surface, border,
+  // shadow, z-index) is GONE — deliberately, not just overridden: since the
+  // search became a modal, the results list renders ONLY inside
+  // `.lagrange-docs-search-panel`, and a scoped override can be defeated by
+  // any future selector reshuffle. Keeping the scrolling chrome anywhere in
+  // this sheet re-arms the exact defect this file exists to prevent (the
+  // native inset scrollbar fighting the window body for the wheel).
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px;
-  border-radius: var(--hk-radius-surface, 10px);
-  background: rgb(var(--hk-color-surface, 255 255 255));
-  border: 1px solid color-mix(in srgb, rgb(var(--hk-color-text, 30 30 30) / 0.12), transparent);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
 }
 
 .lagrange-docs-search-empty {
@@ -131,6 +127,12 @@ body {
   flex-direction: column;
   gap: 2px;
   padding: 0.5rem 0.6rem;
+  // Uniform row height (2026-11-27 user direction: "搜索结果应当每个高度一
+  // 致"). Every hit is title + heading + excerpt; the excerpt is what used to
+  // vary (75px beside 267px), and it is now bounded by construction — either
+  // two compacted lines or a clamped markdown window. A min-height on the row
+  // keeps short hits from collapsing into slivers next to tall ones.
+  min-height: 4.5rem;
   border-radius: var(--hk-radius-control, 8px);
   text-decoration: none;
   color: inherit;
@@ -226,6 +228,27 @@ body {
   &.has-fade-below { --fade-bottom: 14%; }
 }
 
+// A COMPACTED excerpt: one bounded line per match, `…context[match]context…`
+// (the six-character rule). No markdown block survives here, so no page-scale
+// margins and no table overflow — the row is uniform by construction.
+.lagrange-docs-search-hit-snippet.is-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: none;
+  overflow: visible;
+  opacity: 0.78;
+
+  .lagrange-docs-search-hit-excerpt {
+    display: block;
+    // One line each; a very long token run still clips rather than wrapping
+    // the row taller than its neighbours.
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 .lagrange-docs-search-mark {
   background: none;
   color: inherit;
@@ -257,14 +280,20 @@ body {
   }
 
   .lagrange-docs-search-results {
-    // In flow inside the panel: the popover owns the surface.
-    position: static;
+    // In flow inside the panel; the panel fills the modal's content box.
     width: 100%;
-    max-height: 55vh;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    padding: 0;
+    // NO own scroller and NO own max-height. The modal BODY is the one
+    // scroll container here (2026-11-27 user report: "右侧滚动条怎么是原生
+    // 的…而且滚动条也没使用窗口自身的贴边的"). A nested `overflow:auto`
+    // list gets the browser's native bar, inset from the window edge, and
+    // two scroll containers fight over the wheel. HkModal's body already
+    // carries the family's own overlay bar (`attachOverlayScrollbars`), so
+    // letting the body scroll is what puts the SHARED bar on the WINDOW
+    // edge — which is the shape the user asked for. Spelled out even though
+    // the base rule no longer contradicts it, so a revert of either side
+    // shows up as a real declaration change, not the absence of one.
+    max-height: none;
+    overflow: visible;
   }
 
   .lagrange-docs-search-busy {
