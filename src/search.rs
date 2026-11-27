@@ -142,13 +142,17 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
         };
         let mut chunk_metas: Vec<ChunkMeta> = Vec::with_capacity(doc.chunks.len());
         for (chunk_idx, chunk) in doc.chunks.iter().enumerate() {
-            let text = plain_text(&chunk.source_text);
-            // Index the FLATTENED text — the tokenizer's contract predates
-            // the preview and stays put. The hit window cuts the MARKDOWN
-            // source instead.
-            let mut indexable = chunk.heading_path.join(" ");
-            indexable.push(' ');
-            indexable.push_str(&text);
+            // Index the SOURCE projection (see `search_source`): its tokens
+            // are runs of the markdown the hit window is cut from, so every
+            // indexed match is findable and underlinable client-side.
+            // Indexing the FLATTENED text here was the coordinate mismatch:
+            // `plain_text` joins across dropped markers (`pre**post**` became
+            // the one token `prepost`), and that token exists nowhere in the
+            // source the client searches. Heading-path words still ride along
+            // so a section can be found by its own title — those tokens are
+            // NOT always substrings of the chunk body (parent headings), and
+            // the client's no-match fallback covers exactly that case.
+            let indexable = index_source_text(&chunk.heading_path, &chunk.source_text);
             chunk_metas.push(ChunkMeta {
                 heading_path: chunk.heading_path.clone(),
                 anchor: chunk.anchor.clone(),
@@ -448,6 +452,16 @@ struct FenceState {
 /// `![a](b)` → `a`. Everything else (indentation, tags, punctuation) is kept
 /// — this is the fence-body projection, not the prose one.
 fn strip_link_targets_into(text: &str, out: &mut String) {
+    strip_link_targets_mode(text, out, false);
+}
+
+/// Source-mode projection: dropped targets leave a space boundary, so runs
+/// in the output are runs of the input (the indexer's invariant).
+fn strip_link_targets_source(text: &str, out: &mut String) {
+    strip_link_targets_mode(text, out, true);
+}
+
+fn strip_link_targets_mode(text: &str, out: &mut String, boundary: bool) {
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
     while i < chars.len() {
@@ -461,7 +475,10 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
                     if let Some(paren) = find_close_paren(&chars, close + 1) {
                         // Keep the visible part (alt or link text), drop the target.
                         let inner: String = chars[open + 1..close].iter().collect();
-                        strip_link_targets_into(&inner, out);
+                        strip_link_targets_mode(&inner, out, boundary);
+                        if boundary {
+                            out.push(' ');
+                        }
                         i = paren + 1;
                         // After the target: a reference label is a name —
                         // drop it with a boundary (sequential, see the prose
@@ -485,7 +502,7 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
                     // ONLY the boundary, so `see [t][r]` came out as `see` —
                     // the text is the contract.)
                     let inner: String = chars[open + 1..close].iter().collect();
-                    strip_link_targets_into(&inner, out);
+                    strip_link_targets_mode(&inner, out, boundary);
                     // Advance PAST the construct before the label loop: the
                     // loop starts at `chars[i]`, and for the IMAGE form `i`
                     // still sits on the `!` — the loop would skip, `continue`
@@ -533,8 +550,26 @@ fn strip_link_targets_into(text: &str, out: &mut String) {
 /// with three or more backticks or tildes, closes only with the SAME
 /// character at least as long, can sit behind a blockquote marker, and a
 /// longer fence can contain a shorter one (```` ```` ```` around ``` ``` ```).
-pub(crate) fn plain_text(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len() / 2);
+/// One projected line of a raw markdown span, classified by the shared
+/// fence/definition walk (see [`for_each_source_line`]).
+enum SourceLine<'a> {
+    /// Closing fence marker, or a link-reference definition: carries no
+    /// searchable text under either projection.
+    Skip,
+    /// Body of an open fence, container-stripped. `markdown` says whether the
+    /// fence declared itself Markdown (link/image targets are projected;
+    /// other fences keep their bytes).
+    Fenced { markdown: bool, line: &'a str },
+    /// Prose: leading block markers stripped, every other byte verbatim.
+    Prose { line: &'a str },
+}
+
+/// The shared fence/definition walk over a raw markdown span. BOTH consumers
+/// (the flat snippet projection and the source-mode indexer) must agree on
+/// where fences are and what a definition line is — a second copy of this
+/// state machine is one reviewer note away from drifting (the fence rules
+/// alone carry five review round-trips).
+fn for_each_source_line<'a>(raw: &'a str, mut emit: impl FnMut(SourceLine<'a>)) {
     let mut fence: Option<FenceState> = None;
     for raw_line in raw.lines() {
         let line = raw_line.trim();
@@ -567,6 +602,7 @@ pub(crate) fn plain_text(raw: &str) -> String {
         // into the snippet and the index (review R6, S1). An indented line is
         // an indented code block, not a definition.
         if fence.is_none() && indent < 4 && is_reference_definition(body) {
+            emit(SourceLine::Skip);
             continue;
         }
         let opener = fence_opener(body);
@@ -587,20 +623,14 @@ pub(crate) fn plain_text(raw: &str) -> String {
             if let Some((ch, run, info)) = fence_opener(candidate) {
                 if ch == state.ch && run >= state.len && info.is_empty() {
                     fence = None;
-                    continue; // closing marker carries no prose
+                    emit(SourceLine::Skip);
+                    continue;
                 }
             }
-            if !out.is_empty() {
-                out.push(' ');
-            }
-            let literal = strip_container_markers(line, state.depth);
-            if state.markdown {
-                // Markdown example: keep the text, drop the target.
-                strip_link_targets_into(literal, &mut out);
-            } else {
-                // Code in another language: `arr[0](1)` is a call, not a link.
-                out.push_str(literal);
-            }
+            emit(SourceLine::Fenced {
+                markdown: state.markdown,
+                line: candidate,
+            });
             continue;
         }
         if let Some((ch, run, info)) = opener {
@@ -610,7 +640,8 @@ pub(crate) fn plain_text(raw: &str) -> String {
                 depth,
                 markdown: is_markdown_info(&info),
             });
-            continue; // opening marker carries no prose
+            emit(SourceLine::Skip); // opening marker carries no prose
+            continue;
         }
         // Strip leading block markers repeatedly ("> - item", "## # tag"...).
         let mut rest = body;
@@ -657,11 +688,51 @@ pub(crate) fn plain_text(raw: &str) -> String {
             rest = trimmed;
             break;
         }
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        strip_inline_markers_into(rest, &mut out);
+        emit(SourceLine::Prose { line: rest });
     }
+}
+
+/// The flat snippet projection: one line of prose per source line, block
+/// markers and inline markup gone, link targets dropped, whitespace
+/// collapsed. CODE IS TEXT, NOT MARKUP (review round 3+4): a fenced or
+/// inline code span keeps its LITERAL text — tags, angle brackets, `&`,
+/// quotes, CJK. Treating `<` .. `>` as markup inside code silently ate real
+/// content: the quickstart's `lagrange build --src docs --out <dir>` came
+/// out as `--out ` in all nine locales, in both the snippet and the search
+/// tokens.
+///
+/// The one thing still projected inside a fence is a LINK/IMAGE TARGET, and
+/// only the target: the visible text survives, the URL does not. Markdown
+/// fences in this repo's own docs demonstrate image syntax, and once the
+/// body became fully verbatim those URLs reappeared in snippets and in the
+/// index (`dashboard`, `webp` became searchable words) — which contradicts
+/// the same "link targets dropped" contract the prose path enforces.
+///
+/// Fence detection follows CommonMark where it matters here: a fence opens
+/// with three or more backticks or tildes, closes only with the SAME
+/// character at least as long, can sit behind a blockquote marker, and a
+/// longer fence can contain a shorter one (```` ```` ```` around ``` ``` ```).
+pub(crate) fn plain_text(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() / 2);
+    for_each_source_line(raw, |line| match line {
+        SourceLine::Skip => {}
+        SourceLine::Fenced { markdown, line } => {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            if markdown {
+                strip_link_targets_into(line, &mut out);
+            } else {
+                out.push_str(line);
+            }
+        }
+        SourceLine::Prose { line } => {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            strip_inline_markers_into(line, &mut out, false);
+        }
+    });
     // Collapse whitespace runs (code blocks contain none after this pass —
     // their prose lines are plain text).
     let mut collapsed = String::with_capacity(out.len());
@@ -678,6 +749,55 @@ pub(crate) fn plain_text(raw: &str) -> String {
         }
     }
     collapsed.trim().to_string()
+}
+
+/// The exact text the indexer tokenizes for a chunk: the heading path rides
+/// along (find a section by its own title) followed by the SOURCE projection
+/// of the chunk body. The ride-along tokens are NOT always substrings of the
+/// chunk body (a parent heading is not part of this span) — the client's
+/// no-match fallback covers that case; every BODY token is a run of the
+/// source (see `search_source`).
+fn index_source_text(heading_path: &[String], source_text: &str) -> String {
+    let mut indexable = heading_path.join(" ");
+    indexable.push(' ');
+    indexable.push_str(&search_source(source_text));
+    indexable
+}
+
+/// The SOURCE-mode projection the indexer reads: same walk, but every line
+/// keeps its bytes (markers stay, lines stay separate) and every dropped
+/// construct leaves a space boundary behind. That is the whole point — see
+/// `search_source` — tokens cut from this text are substrings of the
+/// markdown source the hit window is cut from, so the client can always find
+/// (and underline) what the index matched.
+///
+/// Inline markup still gets the shared projection (link/image targets and
+/// reference labels dropped, autolinks and tags dropped), because those WOULD
+/// pollute the index with URL words otherwise (`dashboard`, `webp` — the
+/// same regression the flat projection's doc records). Dropping leaves a
+/// boundary, never a merge: every token this emits is a run of the input.
+fn search_source(raw: &str) -> String {
+    let mut out = String::new();
+    for_each_source_line(raw, |line| match line {
+        SourceLine::Skip => {}
+        SourceLine::Fenced { markdown, line } => {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            if markdown {
+                strip_link_targets_source(line, &mut out);
+            } else {
+                out.push_str(line);
+            }
+        }
+        SourceLine::Prose { line } => {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            strip_inline_markers_into(line, &mut out, true);
+        }
+    });
+    out
 }
 
 /// First `limit` CHARACTERS of `text` (never a byte slice).
@@ -717,7 +837,7 @@ pub fn preview_markdown(raw: &str, limit: usize) -> String {
 
 /// Append `text` with inline emphasis/code delimiters removed and link/image
 /// syntax reduced to its visible text.
-fn strip_inline_markers_into(text: &str, out: &mut String) {
+fn strip_inline_markers_into(text: &str, out: &mut String, boundary: bool) {
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
     while i < chars.len() {
@@ -731,9 +851,20 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                 let run = run_len(i, '`');
                 if let Some(close_rel) = chars[i + run..].iter().position(|&x| x == '`') {
                     let inner: String = chars[i + run..i + run + close_rel].iter().collect();
+                    if boundary {
+                        // `a`x`b` must not glue into `axb`: the delimiters are
+                        // word boundaries in the rendered page too.
+                        out.push(' ');
+                    }
                     out.push_str(&inner);
+                    if boundary {
+                        out.push(' ');
+                    }
                     i += run + close_rel + 1;
                 } else {
+                    if boundary {
+                        out.push(' ');
+                    }
                     i += run;
                 }
             }
@@ -742,14 +873,25 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                 if run == 1 && c == '_' {
                     // snake_case identifiers stay literal.
                     out.push(c);
+                } else if boundary {
+                    // `pre**post**` renders as one word but the SOURCE has
+                    // two runs; source mode keeps them separate so the client
+                    // can find (and underline) what it matched.
+                    out.push(' ');
                 }
                 i += run;
             }
             '!' if i + 1 < chars.len() && chars[i + 1] == '[' => {
                 // Image: keep the alt text only.
                 if let Some(close) = find_close_bracket(&chars, i + 1) {
+                    if boundary {
+                        // `pre![alt](u)post` renders `pre` alt `post` with the
+                        // marker gone — without the boundary the alt glues
+                        // onto the preceding run (`prealt`).
+                        out.push(' ');
+                    }
                     let inner: String = chars[i + 2..close].iter().collect();
-                    strip_inline_markers_into(&inner, out);
+                    strip_inline_markers_into(&inner, out, boundary);
                     i = close + 1;
                     // Inline form: drop the (url) tail. Reference form
                     // `![alt][ref]`: the ref is a NAME, not text — drop it
@@ -757,6 +899,9 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                     // invented token `badgeimg` (review R7 S2).
                     if i < chars.len() && chars[i] == '(' {
                         if let Some(parens) = find_close_paren(&chars, i) {
+                            if boundary {
+                                out.push(' ');
+                            }
                             i = parens + 1;
                         }
                     }
@@ -778,6 +923,12 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
             }
             '[' => {
                 if let Some(close) = find_close_bracket(&chars, i) {
+                    if boundary {
+                        // Same glue rule as the image arm: `[label](u)` keeps
+                        // the label, but the label must not glue onto
+                        // whatever run precedes the bracket.
+                        out.push(' ');
+                    }
                     let inner: String = chars[i + 1..close].iter().collect();
                     if inner.is_empty() {
                         // `[]` carries nothing to project — emit it literally
@@ -786,11 +937,14 @@ fn strip_inline_markers_into(text: &str, out: &mut String) {
                         i += 1;
                         continue;
                     }
-                    strip_inline_markers_into(&inner, out);
+                    strip_inline_markers_into(&inner, out, boundary);
                     i = close + 1;
                     if i < chars.len() && chars[i] == '(' {
                         // Inline form: drop the target.
                         if let Some(parens) = find_close_paren(&chars, i) {
+                            if boundary {
+                                out.push(' ');
+                            }
                             i = parens + 1;
                         }
                     }
@@ -913,6 +1067,156 @@ mod tests {
         // Every shard index a real token can produce stays in range.
         for probe in ["a", "z", "9", "_", "运"] {
             assert!(shard_for(probe) < SHARD_COUNT);
+        }
+    }
+
+    /// The tokens the indexer would produce for a one-chunk doc whose body
+    /// is `src` (heading path `["T"]`, mirroring the real chunker).
+    fn index_tokens_of(src: &str) -> Vec<String> {
+        tokenize(&index_source_text(&["T".to_string()], src))
+            .into_iter()
+            .collect()
+    }
+
+    /// THE invariant that closes the index↔window coordinate mismatch: the
+    /// indexer reads the SOURCE projection (`search_source`), whose tokens
+    /// are alphanumeric runs OF the markdown the hit window is cut from —
+    /// so every indexed match is findable (and underlinable) client-side.
+    /// Indexing the FLATTENED text broke this: `plain_text` joins across
+    /// dropped markers, inventing runs like `prepost` that exist nowhere in
+    /// the source, and the client's mark walk then found nothing to
+    /// underline (the fallback head-window showed with no marks).
+
+    #[test]
+    fn indexed_tokens_are_substrings_of_the_source() {
+        let tricky = [
+            // intra-word emphasis: flattened text invents `prepost`
+            "## Heading\n\npre**post** fix",
+            // inline + reference links, autolink, raw tag
+            "see [docs](https://x.example/guide) and [t][r] then <https://y.io> <br> done\n\n[r]: https://ref.example/x",
+            // fenced block (markdown + unknown), code span, badge definition
+            "```markdown\n[![badge](img.png)](site)\n```\n\nuse `snake_case` now\n\n[badge]: https://img.sh/b.svg",
+            // CJK wrapped across lines
+            "## 安装\n\n项目 地图 分区 内容",
+            // table
+            "| A | B |\n| --- | --- |\n| kirino | auth |",
+            // Abutting label form (no whitespace before the bracket): the
+            // source-mode boundary must keep `textlink` from being invented
+            // (R3 M2b: without the pre-label boundary this corpus entry
+            // indexes a run that exists nowhere in the source).
+            "text[link](url)more of the pipeline.",
+        ];
+        for src in tricky {
+            let text = search_source(src);
+            for token in tokenize(&text) {
+                assert!(
+                    src.to_lowercase().contains(&token),
+                    "token {token:?} must be a substring of the source: {src:?} -> {text:?}"
+                );
+            }
+        }
+    }
+
+    /// THE pin on the real wiring: `write_index` (the production entry
+    /// point) must emit the SOURCE runs for an intra-word-emphasis chunk.
+    /// R2's M3 proved the suite could not see a revert to the flattened
+    /// projection — every other test reads `index_source_text` directly, so
+    /// rewiring `write_index` back to `plain_text` stayed green while the
+    /// shards really emitted the invented `prepost` token again.
+    #[test]
+    fn write_index_emits_source_runs_for_intra_word_emphasis() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs = vec![SearchDoc {
+            lang: "en".into(),
+            title: "T".into(),
+            page_path: "t.html".into(),
+            document_id: "t".into(),
+            revision: "abc".into(),
+            chunks: vec![SearchChunk {
+                heading_path: vec!["H".into()],
+                anchor: "h".into(),
+                source_text: "## H\n\npre**post** fix".into(),
+            }],
+        }];
+        write_index(dir.path(), &docs, "").unwrap();
+        let shard: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                dir.path()
+                    .join(format!("search_i_{:02}.json", shard_for("pre"))),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let pre: Vec<Vec<usize>> =
+            serde_json::from_value(shard["pre"].clone()).expect("`pre` must be indexed");
+        assert_eq!(pre, vec![vec![0, 0]], "`pre` must hit chunk 0");
+        let shard_post: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                dir.path()
+                    .join(format!("search_i_{:02}.json", shard_for("post"))),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let post: Vec<Vec<usize>> =
+            serde_json::from_value(shard_post["post"].clone()).expect("`post` must be indexed");
+        assert_eq!(post, vec![vec![0, 0]]);
+        // The invented joined run must be gone from the shards entirely.
+        let joined_idx = shard_for("prepost");
+        let shard_joined: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join(format!("search_i_{joined_idx:02}.json")))
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            shard_joined.get("prepost").is_none(),
+            "the flattened projection must not come back: `prepost` re-appeared"
+        );
+    }
+
+    #[test]
+    fn intra_word_emphasis_indexes_the_source_runs_not_the_joined_word() {
+        let src = "## H\n\npre**post** fix";
+        let tokens = index_tokens_of(src);
+        assert!(tokens.iter().any(|t| t == "pre"), "tokens: {tokens:?}");
+        assert!(tokens.iter().any(|t| t == "post"), "tokens: {tokens:?}");
+        assert!(
+            !tokens.iter().any(|t| t == "prepost"),
+            "the joined run exists in NO projection the client can search: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn link_and_badge_urls_stay_out_of_the_index() {
+        let src = "## H\n\nsee [docs](https://x.example/guide) now\n\n[badge]: https://img.sh/b.svg\n\n<https://auto.example>";
+        let tokens = index_tokens_of(src);
+        for banned in ["https", "example", "x", "guide", "img", "svg", "auto"] {
+            assert!(
+                !tokens.iter().any(|t| t == banned),
+                "URL word {banned:?} leaked: {tokens:?}"
+            );
+        }
+        assert!(tokens.iter().any(|t| t == "docs"));
+        assert!(tokens.iter().any(|t| t == "now"));
+    }
+
+    #[test]
+    fn heading_path_still_rides_along() {
+        let src = "## Install\n\nbody words";
+        let tokens = index_tokens_of(src);
+        assert!(tokens.iter().any(|t| t == "install"));
+        assert!(tokens.iter().any(|t| t == "body"));
+    }
+
+    #[test]
+    fn cjk_bigrams_survive_the_source_projection() {
+        let src = "## 安装\n\n项目 地图 分区 内容";
+        let tokens = index_tokens_of(src);
+        for want in ["项目", "地图", "分区", "内容"] {
+            assert!(
+                tokens.iter().any(|t| t == want),
+                "CJK bigram {want:?} missing: {tokens:?}"
+            );
         }
     }
 
