@@ -118,6 +118,9 @@ describe("toPlainText", () => {
     expect(toPlainText("pre[link](https://x.y/z)post")).toBe("prelinkpost");
     // Reference-style labels are prose here (the excerpt path never resolves
     // them); only the INLINE form is flattened.
+    // MUT:reference-labels-prose — teaching the flattener to resolve or drop
+    // the `[r]` label turns the next two assertions RED (`t[r]` becomes `t`,
+    // and the definition line stops surviving verbatim).
     expect(toPlainText("[t](u)[r]")).toBe("t[r]");
     expect(toPlainText("[a]: https://x.y/z")).toBe("[a]: https://x.y/z");
   });
@@ -132,6 +135,8 @@ describe("toPlainText", () => {
     // diverge here — see the `buildBalanceMaps` note). A backslash suppresses
     // a STRUCTURAL character's role, and the resulting plain-text label gets a
     // full ASCII unescape — but PROSE outside any label is never unescaped.
+    // MUT:label-only-unescape — unescaping the WHOLE string instead of just
+    // the label turns the `\[x](u)` assertion below RED (done in R4).
     // Pin the prose half explicitly: `\[x](u)` must
     // stay `\[x](u)`, because GFM renders `\[` as a literal `[` so this is
     // not a link, and it must NOT be rewritten into `x`.
@@ -142,6 +147,8 @@ describe("toPlainText", () => {
     // So this line pins the composition of two stages, not the link scan
     // alone — kept because it is the only guard that the emphasis stage still
     // runs AFTER the link stage and does not eat the backslashes.
+    // MUT:escape-in-label — deleting the backslash suppression in
+    // `buildBalanceMaps` turns the `[a\]b](u)` assertion above RED (done in R4).
     expect(toPlainText("\\*not emphasis\\*")).toBe("\\not emphasis\\");
     const escaped = toPlainText("\\[-](u)");
     expect(escaped).toContain("[-](u)");
@@ -182,6 +189,10 @@ describe("toPlainText", () => {
     // page does not show. No input may lose visible characters, so the deepest
     // case still yields the label `x` and every level's bracket count is the
     // only thing that grows.
+    // MUT:cap-degrades-to-noise — lowering or raising MAX_LINK_NESTING past
+    // its boundary turns the `nest(9)`/`nest(10)` assertions above RED (CAP 1,
+    // 3, 7 and 9 were each run in R4); the no-visible-loss half was checked
+    // separately over depths 9..40 with zero characters lost.
     const deep = toPlainText(nest(30));
     expect(deep, "visible text survives the cap").toContain("x");
     expect(deep.length).toBeGreaterThan(0);
@@ -205,7 +216,7 @@ describe("toPlainText", () => {
     // inputs below differ by 8x, so quadratic arithmetic predicts ~64x and
     // linear arithmetic predicts ~8x; the threshold sits at 20x, which leaves
     // a linear pass ample margin while a regression to quadratic cannot fit.
-    // These are ratios derived from the input sizes, not measured durations.
+    // These are ratios derived from the input sizes, not measured durations. comment-gate-ok: a disclaimer against misreading, with no behaviour to mutate; the threshold itself is pinned by the `toBeLessThan(20)` call right below.
     const adversarial = (chars: number): string => "[a".repeat(Math.ceil(chars / 2)).slice(0, chars);
     /** Median of `reps` runs — one noisy sample must not decide a red. */
     const median = (fn: (s: string) => unknown, input: string, reps: number): number => {
