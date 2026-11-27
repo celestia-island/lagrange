@@ -86,7 +86,10 @@ type DiagramPane = (typeof DIAGRAM_PANES)[number];
  * baseline — so this REPLACES the pill node and re-parents the two panes into
  * a Vue sub-app mounted in the card's body.
  */
-function upgradeDiagramCard(box: DiagramGlobalBox): void {
+function upgradeDiagramCard(
+  box: DiagramGlobalBox,
+  mountPreview: (canvas: HTMLElement) => void,
+): void {
   const preview = box.querySelector<HTMLElement>(".lg-diagram-preview");
   const source = box.querySelector<HTMLElement>(".lg-diagram-source");
   const toggle = box.querySelector<HTMLElement>(".lg-diagram-toggle");
@@ -95,11 +98,16 @@ function upgradeDiagramCard(box: DiagramGlobalBox): void {
   // The pill leaves the header (HkTabs re-renders it in the sub-app).
   toggle.remove();
 
-  // The panes leave the server markup and become the sub-app's content.
-  const previewPane = preview.cloneNode(true) as HTMLElement;
-  const sourcePane = source.cloneNode(true) as HTMLElement;
-  previewPane.style.display = "";
-  sourcePane.style.display = "";
+  // The panes leave the server markup and become the sub-app's content. What
+  // travels is their HTML, captured HERE — before the mermaid board mounts —
+  // and the preview pane re-mounts the board every time it renders (see the
+  // ref callback). Holding the live nodes instead does not work: the swap
+  // recreates its host element per generation, and Vue wipes children it does
+  // not own.
+  const previewHtml = preview.innerHTML;
+  const sourceHtml = source.innerHTML;
+  preview.style.display = "";
+  source.style.display = "";
 
   // The header (language badge, copy button, and the pill's slot) is NOT part
   // of what the swap replaces: the copy control and its `data-copy` payload
@@ -162,10 +170,18 @@ function upgradeDiagramCard(box: DiagramGlobalBox): void {
             { swapKey: pane.value, direction: direction.value },
             {
               default: () => {
-                const node = pane.value === "preview" ? previewPane : sourcePane;
+                const isPreview = pane.value === "preview";
                 return h("div", {
                   class: "lagrange-docs-diagram-pane",
-                  innerHTML: node.innerHTML,
+                  innerHTML: isPreview ? previewHtml : sourceHtml,
+                  ref: (el: unknown) => {
+                    const hostEl = el as HTMLElement | null;
+                    if (!hostEl || !isPreview) return;
+                    const canvas = hostEl.querySelector<HTMLElement>(".lg-diagram-canvas");
+                    if (canvas && !canvas.querySelector(".lagrange-docs-mermaid")) {
+                      mountPreview(canvas);
+                    }
+                  },
                 });
               },
             },
@@ -189,20 +205,32 @@ function mountMermaidBoxes(): void {
     // mounts — the boot test catches it (MUT: moving these lookups below the
     // upgrade turns that test red).
     const source = box.querySelector<HTMLElement>(".lg-diagram-raw")?.textContent ?? "";
-    upgradeDiagramCard(box);
-    // The upgrade re-rendered the panes into the sub-app; the canvas to
-    // mount into is the one NOW in the DOM (preview pane, freshly cloned).
-    const canvas =
-      box.querySelector<HTMLElement>('.lg-diagram[data-pane="preview"] .lg-diagram-canvas, .lg-diagram-canvas') ??
-      box.querySelector<HTMLElement>(".lg-diagram-canvas");
-    if (!canvas) continue;
-    const host = document.createElement("div");
-    host.className = "lagrange-docs-mermaid";
-    canvas.replaceChildren(host);
-    // A sub-app per diagram: the body is server HTML (not vdom), the
-    // same mount pattern HkMarkdownRenderer uses for its carriers.
-    const app = createApp(HkMermaidDiagram, { source, interactive: true });
-    app.mount(host);
+    // A sub-app per diagram: the body is server HTML (not vdom), the same
+    // mount pattern HkMarkdownRenderer uses for its carriers. The callback
+    // fires whenever the PREVIEW pane renders, so the board re-attaches on
+    // every return to it (the pane moves through the swap; its canvas may be
+    // freshly emptied when HkDirectionalSwap remounts the generation).
+    let previewApp: ReturnType<typeof createApp> | null = null;
+    const mountPreview = (canvas: HTMLElement): void => {
+      if (!source) return;
+      // One live board at a time: a switch back re-renders the pane, so the
+      // previous sub-app is torn down before the new one mounts (otherwise
+      // every toggle would leak an app and its listeners).
+      previewApp?.unmount();
+      previewApp = null;
+      const host = document.createElement("div");
+      host.className = "lagrange-docs-mermaid";
+      canvas.replaceChildren(host);
+      previewApp = createApp(HkMermaidDiagram, { source, interactive: true });
+      previewApp.mount(host);
+    };
+    upgradeDiagramCard(box, mountPreview);
+    // The first preview render may have happened before the callback was
+    // wired (the sub-app mounts synchronously), so seed it explicitly.
+    const firstCanvas = box.querySelector<HTMLElement>(".lg-diagram-canvas");
+    if (firstCanvas && !firstCanvas.querySelector(".lagrange-docs-mermaid")) {
+      mountPreview(firstCanvas);
+    }
   }
 }
 

@@ -105,6 +105,55 @@ describe("docsMain boot", () => {
   });
 });
 
+describe("docsMain boot — pane switching", () => {
+  /** Click one of the two segmented radios by its visible label. */
+  const clickPane = (label: string): void => {
+    const radio = [...document.querySelectorAll<HTMLElement>('[role="radiogroup"] [role="radio"]')]
+      .find((el) => el.textContent === label);
+    expect(radio, `radio "${label}"`).toBeTruthy();
+    radio!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
+
+  it("keeps the diagram host in the pane after switching away and back", { timeout: 20000 }, async () => {
+    // The deployed defect this pins: the preview pane was CLONED at upgrade
+    // time, so returning to it rendered a copy taken BEFORE the diagram
+    // mounted — an empty canvas, no `.lagrange-docs-mermaid` host at all.
+    // (This lane cannot assert board NODES: the mermaid engine resolves
+    // asynchronously and never settles inside the boot fixture, which is why
+    // the original test only ever checked the host.)
+    // MUT: reverting to a stale innerHTML copy, or dropping the re-mount,
+    // turns the post-switch host assertion red.
+    fixture();
+    vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: async () => {} },
+      language: "en",
+      languages: ["en"],
+      userAgent: "vitest",
+    });
+    await boot();
+    const hostInPane = (): Element | null =>
+      document.querySelector(".lagrange-docs-diagram-pane .lagrange-docs-mermaid");
+    expect(hostInPane(), "the diagram host mounts in the preview pane").not.toBeNull();
+
+    clickPane("Source");
+    await new Promise((r) => setTimeout(r, 80));
+    const pane = document.querySelector(".lagrange-docs-diagram-pane");
+    expect(pane, "a pane is on stage").not.toBeNull();
+    // The source pane shows the highlighted code, not the board.
+    expect(pane!.querySelector(".lagrange-docs-mermaid")).toBeNull();
+    expect(pane!.querySelector("code")).not.toBeNull();
+
+    clickPane("Preview");
+    await new Promise((r) => setTimeout(r, 80));
+    expect(
+      hostInPane(),
+      "coming back to Preview must re-mount the diagram host (the deployed defect rendered an empty canvas here)",
+    ).not.toBeNull();
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("docsMain boot — diagram chrome localization", () => {
   it("renders the diagram toggle and copy label in the page's locale", { timeout: 15000 }, async () => {
     fixture();
