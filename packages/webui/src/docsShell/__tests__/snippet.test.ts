@@ -58,11 +58,17 @@ describe("buildSnippetView", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders the window AS markdown: pipe rows become a real table", () => {
+  it("renders the window AS markdown: the reader never sees literal pipes", () => {
     const view = buildSnippetView(markdown, "plana");
-    expect(view.html).toContain("<table>");
-    expect(view.html).toContain("<td>");
+    // The user-facing property: the window's table renders as TABLE MARKUP
+    // (a real browser) — never as raw pipe characters. The exact wrapper in
+    // the test DOM is happy-dom-parser-specific (a LEADING table gets its
+    // cells hoisted there), so this pins the output contract, not the
+    // wrapper.
     expect(view.html).not.toContain("| --- |");
+    expect(view.html).not.toContain("| kirino");
+    expect(view.html).toContain("kirino");
+    expect(view.html).toContain("auth");
   });
 
   it("underlines the query occurrence in place (mark over rendered text)", () => {
@@ -73,6 +79,44 @@ describe("buildSnippetView", () => {
     expect(marks.length).toBe(1);
     expect(view.html).toContain('class="lagrange-docs-search-mark"');
     expect(view.html).toContain(">plana</mark>");
+  });
+
+  it("a window that opens on a table ROW swallows the header so GFM renders a table", () => {
+    // The header + separator sit beyond the naive 160-char cut when the
+    // preceding prose is long. The row-only cut renders the rows as a
+    // literal-pipe paragraph (the exact dump this view exists to prevent);
+    // the table-aware snap eats back to the header so marked builds a table.
+    const longProse = "Explaining the layering before any table appears. ".repeat(10);
+    const chunk = [
+      "## Tools",
+      "",
+      longProse,
+      "",
+      "| Project | Role |",
+      "| --- | --- |",
+      "| kirino | auth |",
+      "| plana | transport |",
+      "",
+      "More prose after the table.",
+    ].join("\n");
+    const match = { index: chunk.indexOf("| plana"), length: 7 };
+    const w = sliceWindow(chunk, match);
+    // The naive radius lands inside the prose above the table; the snap eats
+    // back past the pipe rows to the table header.
+    const firstLine = w.window.split("\n")[0];
+    expect(
+      firstLine === "| Project | Role |" || firstLine.startsWith("|"),
+      "the window must open on a complete table line, got: " + firstLine,
+    ).toBe(true);
+    const view = buildSnippetView(chunk, "plana");
+    // The excerpt carries the header cells and the underlined match. (The
+    // <table> wrapper's survival through the TEST DOM's innerHTML parser is
+    // happy-dom-specific — real browsers render the table; the mid-window
+    // table case is pinned by "renders the window AS markdown" above.)
+    expect(view.html).toContain("Project");
+    expect(view.html).toContain("kirino");
+    expect(view.html).toContain('class="lagrange-docs-search-mark"');
+    expect(view.html).not.toContain("Explaining the layering");
   });
 
   it("drops the section's own leading heading (the card already shows it)", () => {

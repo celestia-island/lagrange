@@ -72,6 +72,69 @@ export function sliceWindow(
     const nl = text.indexOf("\n", end);
     end = nl >= 0 ? nl + 1 : text.length;
   }
+  // Table-aware opening: if the window opens on a table ROW, GFM needs the
+  // header + separator rows above it to render a table at all — without
+  // them the rows collapse into a literal-pipe paragraph, which is exactly
+  // the dump the excerpt exists to prevent. Walk back through pipe rows
+  // until the separator row is included (plus one more line: the header).
+  // A walk that finds no separator means the pipes are a loose paragraph,
+  // not a table — keep the original cut (degrades to pipes, bounded).
+  const firstLineEnd = text.indexOf("\n", start);
+  const firstLine = text
+    .slice(start, firstLineEnd === -1 ? text.length : firstLineEnd)
+    .trim();
+  if (firstLine.startsWith("|")) {
+    const offsets: number[] = [0];
+    for (let i = text.indexOf("\n"); i !== -1 && i < start; i = text.indexOf("\n", i + 1)) {
+      offsets.push(i + 1);
+    }
+    let k = offsets.length - 1; // the window's own first line
+    let seenSeparator = false;
+    let walked = 0;
+    while (k > 0 && walked < 40) {
+      k -= 1;
+      walked += 1;
+      const lineEnd = text.indexOf("\n", offsets[k]);
+      const line = text.slice(offsets[k], lineEnd === -1 ? text.length : lineEnd).trim();
+      if (!line.startsWith("|")) break;
+      if (line.includes("---")) {
+        // The separator: include it and the header row above it.
+        start = offsets[Math.max(0, k - 1)];
+        seenSeparator = true;
+        break;
+      }
+    }
+    // Loose pipes (no separator in reach): keep the line-snapped cut —
+    // those rows are a paragraph in the rendered page too.
+  }
+  // Forward table cut: the window may open on PROSE and still contain a GFM
+  // table (header + separator) at/below the match. Pipe rows following prose
+  // glue into the prose paragraph and render as literal pipes, so when a
+  // table header exists at/before the match, move the opening to it — the
+  // match is at/after the header, so it survives the move. (When the match
+  // sits in prose above the table, the opening stays: the mark is the
+  // priority, and the table below renders as pipes around it.)
+  const winOffsets: number[] = [start];
+  for (let i = text.indexOf("\n", start); i !== -1 && i < end; i = text.indexOf("\n", i + 1)) {
+    winOffsets.push(i + 1);
+  }
+  for (let i = 0; i + 1 < winOffsets.length; i += 1) {
+    const lineEnd = text.indexOf("\n", winOffsets[i]);
+    const line = text.slice(winOffsets[i], lineEnd === -1 ? text.length : lineEnd).trim();
+    const nextEnd = text.indexOf("\n", winOffsets[i + 1]);
+    const next = text.slice(winOffsets[i + 1], nextEnd === -1 ? text.length : nextEnd).trim();
+    if (
+      line.startsWith("|") &&
+      next.startsWith("|") &&
+      next.includes("---") &&
+      winOffsets[i] <= match.index
+    ) {
+      if (winOffsets[i] > start) {
+        start = winOffsets[i];
+      }
+      break;
+    }
+  }
   return {
     window: text.slice(start, end),
     hasAbove: start > 0,
