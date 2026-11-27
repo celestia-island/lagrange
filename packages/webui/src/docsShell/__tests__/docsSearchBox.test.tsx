@@ -689,11 +689,16 @@ describe("DocsSearchBox", () => {
     expect(snippet?.classList.contains("has-fade-below")).toBe(false);
   });
 
-  it("pins the row-height mechanics at source level", () => {
-    // The uniform-row claim is browser-measured (happy-dom answers
+  it("pins the uniform-floor and one-line-clamp mechanics at source level", () => {
+    // Pixel uniformity is browser-measured (happy-dom answers
     // getComputedStyle from initial values — see the scroller test above),
-    // so the MECHANISM that produces it is pinned where it lives: the
-    // shared row floor, and the one-line clamp on compacted excerpts.
+    // so the MECHANISM is pinned where it lives: the SHARED row floor
+    // (`.lagrange-docs-search-hit`, every row regardless of path), the
+    // compacted excerpt's one-line clamp, and the prose window's own
+    // max-height clamp (pre-existing, but it is the other half of "no row
+    // runs away"). What this pin deliberately does NOT claim: that title +
+    // heading + excerpt always sum to equal pixel heights — that is the
+    // browser measurement, not a source fact.
     const sheet = readFileSync(resolve(here, "../docsShell.scss"), "utf8");
     const hit = ruleBody(sheet, ".lagrange-docs-search-hit");
     expect(hit, "the hit row rule must exist").not.toBeNull();
@@ -703,6 +708,24 @@ describe("DocsSearchBox", () => {
     expect(excerpt!).toMatch(/white-space:\s*nowrap/);
     expect(excerpt!).toMatch(/text-overflow:\s*ellipsis/);
     expect(excerpt!).toMatch(/overflow:\s*hidden/);
+    const snippet = ruleBody(sheet, ".lagrange-docs-search-hit-snippet");
+    expect(snippet, "the prose snippet rule must exist").not.toBeNull();
+    expect(snippet!).toMatch(/max-height/);
+  });
+
+  it("flattens the FULL chunk for the collapsed path (never the snapped window)", () => {
+    // R5/S2, source-level pin: sliceWindow's table-header snap moves
+    // `start` back to the header but never re-derives `end`, so a match
+    // deep in an 80-row table inherited a ~60× window (measured 19,181
+    // chars against a 320 budget) for a line that renders ~20. The
+    // behavioral tests cannot see the difference (their fixtures are
+    // table-only, where window ≈ full text), so the CONTRACT is pinned at
+    // the source: the collapse branch flattens the full chunk — bounded by
+    // the build's 8192 preview cap — and firstMatch is always inside it.
+    // Same source-pin precedent as the diagram-card guard.
+    const src = readFileSync(resolve(here, "../snippet.ts"), "utf8");
+    expect(src).toMatch(/renderCollapsed\(text, tokens\)/);
+    expect(src).not.toMatch(/renderCollapsed\(windowBody/);
   });
 
   it("hides the clear affordance on an empty field", async () => {

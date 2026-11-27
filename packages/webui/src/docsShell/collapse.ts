@@ -105,9 +105,13 @@ export function toPlainText(markdown: string): string {
   // Table rows: drop the separator line, then turn cell pipes into spaces.
   text = text.replace(/^ {0,3}\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$/gm, " ");
   text = text.replace(/[ \t]*\|[ \t]*/g, " ");
-  // Links / images → their label only.
-  text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
-  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  // Links / images → their label only. Labels and targets are bounded to
+  // ONE LINE (inline links do not span lines in GFM): an unbounded `[^)]*`
+  // made every unterminated `[` rescan to end-of-string, which is quadratic
+  // (measured 5.4 s at 128 KB — the amplifier for the window-size fix above,
+  // R5/S3).
+  text = text.replace(/!\[([^\]\n]*)\]\(([^)\n]*)\)/g, "$1");
+  text = text.replace(/\[([^\]\n]*)\]\(([^)\n]*)\)/g, "$1");
   // Emphasis / inline code / strikethrough markers. PAIRED markers go with
   // their content kept; lone `*` / backtick / `~` are markers too. A lone
   // `_` is NOT: snake_case identifiers are content (and GFM agrees —

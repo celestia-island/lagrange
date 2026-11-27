@@ -287,7 +287,17 @@ export function buildSnippetView(text: string, rawQuery: string): SnippetView {
 
   if (needsCollapse(windowBody)) {
     return {
-      html: renderCollapsed(windowBody, tokens),
+      // The COMPACTED path flattens the FULL chunk, not the window. The
+      // excerpt re-locates its matches in flattened text anyway, so the
+      // window's only real job here was the prose render's geometry — and
+      // inheriting it handed sliceWindow's table-header snap to the
+      // flatten: that snap moves `start` back to the header but never
+      // re-derives `end`, so a match deep in an 80-row table fed ~19k
+      // chars of source (measured, R5) into the flattener for a line that
+      // renders ~20. The full chunk is bounded by the build's 8192-char
+      // preview cap, and `firstMatch` (the earliest occurrence) is always
+      // inside it, so the match-centred contract cannot regress.
+      html: renderCollapsed(text, tokens),
       hasAbove: windowText.hasAbove,
       hasBelow: windowText.hasBelow,
       compacted: true,
