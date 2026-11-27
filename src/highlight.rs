@@ -89,6 +89,8 @@ mod tests {
         })
     }
 
+    /// MUT: drop the grammar registration in [`super::highlight`] — this
+    /// test and the corpus guard catch it (the pane loses every span).
     #[test]
     fn mermaid_source_is_highlighted_with_the_family_token_classes() {
         let html = highlight(
