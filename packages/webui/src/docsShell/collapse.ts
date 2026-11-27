@@ -84,14 +84,40 @@ function headClusters(segs: string[], limit: number): string[] {
   return window;
 }
 
-/** Deepest link-inside-link nesting the flattener unrolls. GFM has no real
- *  limit, but a pathological corpus does; past this depth the remainder is
- *  left verbatim, which is still correct text (only its targets survive). */
+/** Deepest link-inside-link nesting the flattener unrolls.
+ *
+ *  WHY A CAP AT ALL: the recursion deepens once per nesting level and each
+ *  level re-derives its own pair maps, so cost is quadratic in the depth of a
+ *  link-in-link chain. Uncapped, that is reachable and unbounded: measured
+ *  0.8 ms at depth 10, 157 ms at 1600, 1351 ms at 5000, and a `RangeError`
+ *  (stack exhaustion) at 12000 — a single line of pasted input would stall or
+ *  throw the whole excerpt away. The cap is what keeps "linear in the window"
+ *  true for arbitrarily hostile input.
+ *
+ *  WHAT HAPPENS PAST IT (asserted in the tests, do NOT "fix" this into a
+ *  silent flatten): the too-deep remainder is returned VERBATIM, so its
+ *  markdown syntax — including its `(href)` target — survives into the
+ *  excerpt as visible noise. That is a known, bounded degradation:
+ *
+ *  - It is NOISE, never data loss: every character still on the page is still
+ *    emitted, so the `…context[match]context…` contract and the underline
+ *    invariant hold. (It shows text the page does NOT show — the target — which
+ *    is why it is noise and why `escapeHtml` still covers it: no injection.)
+ *  - Depth 10 already leaks, so the cap and the first leak coincide: with
+ *    `MAX_LINK_NESTING = 8` the deepest CORRECT flatten is 9 levels
+ *    (`depth` is 0-based and the guard is `depth > MAX_LINK_NESTING`), and
+ *    depth ≥ 10 leaks `[x](u)`.
+ *  - Reachable in principle: `nest(10)` is only 61 characters, so an 8 KB
+ *    `PREVIEW_CHARS` window holds thousands of levels. Real docs nest two
+ *    (`[![alt](img)](href)`); ten levels of hand-written link-in-link is a
+ *    corpus nobody writes, and if one appears the excerpt is noisy for that
+ *    row only — not wrong, not unsafe, not slow. */
 const MAX_LINK_NESTING = 8;
 
 /** ASCII punctuation — the only characters a backslash can escape in GFM —
  *  as a replacement pattern: an escaped bracket becomes the bracket it
- *  escaped, which is what the reader was always meant to see. */
+ *  escaped, which is what the reader was always meant to see. Applied to a
+ *  flattened LABEL only; see the two escape rules on `buildBalanceMaps`. */
 const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u007e])/g;
 
 /** Balanced-pair maps for ONE string: `brackets[i]` is the index of the `]`
@@ -107,10 +133,26 @@ const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u00
  *  Depth semantics mirror the Rust indexer (`src/search.rs`:
  *  `find_close_bracket` / `find_close_paren`): the close is the FIRST one at
  *  depth zero, not the first close CHARACTER — that is what makes
- *  `[x](a(b)c)` keep href `a(b)c`. Escape semantics follow the indexer's
- *  reference-definition walk (`is_reference_definition`): `\` escapes the
- *  next character, so `[a\]b](u)` is one link whose label is `a\]b`, not a
- *  link that ends at the escaped bracket.
+ *  `[x](a(b)c)` keep href `a(b)c`.
+ *
+ *  Escape semantics are deliberately TWO rules, and neither is "copy the
+ *  indexer's `\` handling" wholesale — the indexer uses different walks for
+ *  different jobs, so an unqualified "mirror the indexer" claim would be
+ *  false here:
+ *
+ *  (a) STRUCTURAL characters (`\[`, `\]`, `\(`, `\)`) — this follows the
+ *      inline scanner's rule, not `is_reference_definition`'s: a backslash
+ *      suppresses the character's structural role, so `[a\]b](u)` is one link
+ *      whose label is `a\]b` rather than a link ending at the escaped bracket.
+ *      The reference-definition walk instead skips the next character
+ *      UNCONDITIONALLY; copying that here would make `\*` swallow the `*` the
+ *      emphasis stripper must still see.
+ *  (b) INSIDE a flattened label — a full ASCII-punctuation unescape, because
+ *      the label is now plain text and must not carry `\]` through to the row.
+ *      It never reaches outside a label: prose keeps whatever backslashes it
+ *      shipped with, so `\[x](u)` stays `\[x](u)` (GFM renders `\[` as a
+ *      literal `[`, so this prose is NOT a link and must not be expanded) and
+ *      `\*not em\*` keeps its backslashes untouched.
  *
  *  A newline RESETS both stacks: GFM inline links do not span lines, and the
  *  old regexes were line-bounded too, so a stray `[` must not gobble the
@@ -181,11 +223,19 @@ function flattenLinks(source: string, depth = 0): string {
           parts.push(source.slice(literalStart, i));
           const label = source.slice(open + 1, close);
           // Recursing is only worth it when the label can hold a construct of
-          // its own, so the common flat label skips the walk entirely. The
-          // unescape applies to the LABEL ONLY — it is the one place this scan
-          // rewrites characters, and text outside every link keeps whatever
-          // backslashes it shipped with (a whole-string unescape would have
-          // silently changed prose this fix is not about).
+          // its own. The `[` probe is a sufficient short-circuit, not a guess:
+          // every construct this scan can consume starts with `[` — a link
+          // does, and a nested IMAGE does too, because its `!` is the
+          // character immediately BEFORE the `[` (`[![alt](i.png)](u)` puts
+          // `![` inside the label, so the `[` is present). A label without a
+          // `[` can therefore only be flat text, and skipping the walk for it
+          // is what keeps the common case allocation-free.
+          //
+          // The unescape applies to the LABEL ONLY — it is the one place this
+          // scan rewrites characters, and text outside every link keeps
+          // whatever backslashes it shipped with (a whole-string unescape
+          // silently changed prose this fix is not about; the fuzz run caught
+          // it at ~9200 diffs before it was narrowed to this line).
           const nested = label.includes("[") ? flattenLinks(label, depth + 1) : label;
           parts.push(label.includes("\\") ? nested.replace(BACKSLASH_ESCAPE, "$1") : nested);
           i = targetClose + 1;
