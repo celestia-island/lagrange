@@ -40,12 +40,14 @@ use tracing::info;
 /// codepoints and panics — review round 3, B-S3).
 pub const SNIPPET_CHARS: usize = 160;
 
-/// Cap on the per-chunk MARKDOWN preview shipped in `search_meta.json`. The
-/// hit view only ever shows a window of ~±160 characters around the match,
-/// so this bounds the payload without hiding matches in ordinary sections
-/// (a chunk is one heading's span; sections longer than this are rare and
-/// their tail is still indexed, just not previewable).
-pub const PREVIEW_CHARS: usize = 2000;
+/// Cap on the per-chunk MARKDOWN preview shipped in `search_meta.json`, and
+/// the exact text the indexer tokenizes — that identity is the contract: the
+/// indexer must never know a token the shipped preview cannot show, or the
+/// hit renders without its underline (2026-11-27: at the previous 2000 cap,
+/// 29 hub chunks were cut and 2,472 postings pointed past their preview; the
+/// real corpus's longest section is ~7 KB, so 8192 covers every chunk whole
+/// while still bounding a pathological single-heading section).
+pub const PREVIEW_CHARS: usize = 8192;
 
 /// Number of shards (must be ≥ 1). 16 shards keeps each file small for sites
 /// up to a few thousand pages while staying below the HTTP/2 concurrent-request
@@ -142,21 +144,24 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
         };
         let mut chunk_metas: Vec<ChunkMeta> = Vec::with_capacity(doc.chunks.len());
         for (chunk_idx, chunk) in doc.chunks.iter().enumerate() {
-            // Index the SOURCE projection (see `search_source`): its tokens
-            // are runs of the markdown the hit window is cut from, so every
-            // indexed match is findable and underlinable client-side.
-            // Indexing the FLATTENED text here was the coordinate mismatch:
-            // `plain_text` joins across dropped markers (`pre**post**` became
-            // the one token `prepost`), and that token exists nowhere in the
-            // source the client searches. Heading-path words still ride along
-            // so a section can be found by its own title — those tokens are
-            // NOT always substrings of the chunk body (parent headings), and
-            // the client's no-match fallback covers exactly that case.
-            let indexable = index_source_text(&chunk.heading_path, &chunk.source_text);
+            // One cut, two consumers — the shipped preview and the indexer
+            // MUST read the same text, or the index knows tokens the preview
+            // cannot show and the hit renders without its underline (at the
+            // 2000-char cap this was 2,472 hub postings pointing past their
+            // preview; 2026-11-27). The projection only removes constructs
+            // and inserts boundaries, so tokens of the projected preview are
+            // runs of the shipped preview — findable and underlinable.
+            // Heading-path words still ride along for title search. A hit
+            // that only matches a parent heading renders the body's head
+            // window with NO marks — the matched text is not in the excerpt
+            // (the card's heading-path line is what carries it). Do not
+            // claim a client fallback here: there is none.
+            let preview = preview_markdown(&chunk.source_text, PREVIEW_CHARS);
+            let indexable = index_source_text(&chunk.heading_path, &preview);
             chunk_metas.push(ChunkMeta {
                 heading_path: chunk.heading_path.clone(),
                 anchor: chunk.anchor.clone(),
-                text: preview_markdown(&chunk.source_text, PREVIEW_CHARS),
+                text: preview,
             });
             for token in tokenize(&indexable) {
                 let shard_idx = shard_for(&token);
@@ -753,14 +758,17 @@ pub(crate) fn plain_text(raw: &str) -> String {
 
 /// The exact text the indexer tokenizes for a chunk: the heading path rides
 /// along (find a section by its own title) followed by the SOURCE projection
-/// of the chunk body. The ride-along tokens are NOT always substrings of the
-/// chunk body (a parent heading is not part of this span) — the client's
-/// no-match fallback covers that case; every BODY token is a run of the
-/// source (see `search_source`).
-fn index_source_text(heading_path: &[String], source_text: &str) -> String {
+/// of `preview_text` — which MUST be the same string shipped as
+/// `ChunkMeta.text` (cut it before calling; see the `write_index` loop).
+/// The ride-along tokens are NOT always substrings of the body (a parent
+/// heading is not part of this span) — such hits render the excerpt
+/// UNMARKED, and the card's heading-path line is what carries the match;
+/// every BODY token is a run of the shipped preview (see `search_source`),
+/// which is the no-underline guarantee.
+fn index_source_text(heading_path: &[String], preview_text: &str) -> String {
     let mut indexable = heading_path.join(" ");
     indexable.push(' ');
-    indexable.push_str(&search_source(source_text));
+    indexable.push_str(&search_source(preview_text));
     indexable
 }
 
@@ -1072,10 +1080,15 @@ mod tests {
 
     /// The tokens the indexer would produce for a one-chunk doc whose body
     /// is `src` (heading path `["T"]`, mirroring the real chunker).
-    fn index_tokens_of(src: &str) -> Vec<String> {
-        tokenize(&index_source_text(&["T".to_string()], src))
+    fn index_tokens_of_with_path(heading_path: &[&str], src: &str) -> Vec<String> {
+        let path: Vec<String> = heading_path.iter().map(|s| s.to_string()).collect();
+        tokenize(&index_source_text(&path, src))
             .into_iter()
             .collect()
+    }
+
+    fn index_tokens_of(src: &str) -> Vec<String> {
+        index_tokens_of_with_path(&["T"], src)
     }
 
     /// THE invariant that closes the index↔window coordinate mismatch: the
@@ -1123,6 +1136,82 @@ mod tests {
     /// projection — every other test reads `index_source_text` directly, so
     /// rewiring `write_index` back to `plain_text` stayed green while the
     /// shards really emitted the invented `prepost` token again.
+    /// The EXACT invariant this whole wave exists for: every token in the
+    /// shards must be a substring of the preview text SHIPPED for that chunk
+    /// (not merely of the uncapped source). R2's M3 proved pins that read
+    /// `index_source_text` directly cannot see a wiring revert; this pin
+    /// walks the real artifacts — shards on disk vs `search_meta.json` on
+    /// disk — for a chunk LONGER than the cap, so a cap/preview/index
+    /// coordinate regression has no green path left.
+    #[test]
+    fn every_indexed_token_is_inside_the_shipped_preview() {
+        let dir = tempfile::tempdir().unwrap();
+        // A section far longer than PREVIEW_CHARS (8192): filler paragraphs,
+        // a table, and marker-split words sprinkled deep — the tail tokens
+        // that the old 2000 cap pushed past the preview.
+        let mut body = String::from("## Long section\n\n");
+        body.push_str("Intro sentence before the table.\n\n");
+        body.push_str("| Layer | Project |\n| --- | --- |\n");
+        for i in 0..220 {
+            body.push_str(&format!(
+                "| {i} | kirino-{} zero-trust **auth{}** pipeline |\n",
+                i, i
+            ));
+        }
+        body.push_str("\nDeep-tail marker words: pre**post** and `code_span`.\n");
+        assert!(
+            body.chars().count() > PREVIEW_CHARS,
+            "fixture must exceed the cap"
+        );
+        let docs = vec![SearchDoc {
+            lang: "en".into(),
+            title: "T".into(),
+            page_path: "t.html".into(),
+            document_id: "t".into(),
+            revision: "abc".into(),
+            chunks: vec![SearchChunk {
+                heading_path: vec!["Long section".into()],
+                anchor: "long".into(),
+                source_text: body,
+            }],
+        }];
+        write_index(dir.path(), &docs, "").unwrap();
+
+        let meta: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("search_meta.json")).unwrap(),
+        )
+        .unwrap();
+        let shipped = meta["docs"][0]["chunks"][0]["text"].as_str().unwrap();
+        assert!(
+            shipped.chars().count() <= PREVIEW_CHARS,
+            "the shipped preview must respect the cap"
+        );
+
+        // Walk EVERY posting of EVERY shard; each token must be a
+        // case-insensitive substring of the SHIPPED preview.
+        let mut checked = 0usize;
+        for i in 0..SHARD_COUNT {
+            let shard: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dir.path().join(format!("search_i_{i:02}.json"))).unwrap(),
+            )
+            .unwrap();
+            if let Some(map) = shard.as_object() {
+                for (token, _) in map {
+                    checked += 1;
+                    assert!(
+                        shipped.to_lowercase().contains(&token.to_lowercase()),
+                        "indexed token {token:?} is not in the shipped preview"
+                    );
+                }
+            }
+        }
+        assert!(checked > 50, "the fixture must actually exercise tokens");
+        // The tail is BEYOND the shipped preview by design (the cap bounds a
+        // pathological section) — which is exactly why the walk above must
+        // find ZERO indexed tokens pointing at it: an indexed token outside
+        // the shipped preview is an underline that can never render.
+    }
+
     #[test]
     fn write_index_emits_source_runs_for_intra_word_emphasis() {
         let dir = tempfile::tempdir().unwrap();
@@ -1206,6 +1295,33 @@ mod tests {
         let tokens = index_tokens_of(src);
         assert!(tokens.iter().any(|t| t == "install"));
         assert!(tokens.iter().any(|t| t == "body"));
+    }
+
+    /// Title search contract: a chunk must be findable by its PARENT
+    /// heading even when the parent's words appear nowhere in the chunk
+    /// body (R2 proved this ride-along was unpinned — dropping it left the
+    /// whole suite green). The excerpt renders UNMARKED for such hits
+    /// (nothing in the body to underline; the card's heading-path line
+    /// carries the match) — the hit itself is the feature.
+    #[test]
+    fn parent_heading_tokens_ride_along() {
+        // TWO path elements: with a single-element path, `join(" ")` and
+        // `join("")` are indistinguishable and the no-invented-run guard
+        // below cannot fail (review R3 S2).
+        let tokens = index_tokens_of_with_path(
+            &["Projects", "Map"],
+            "| A | B |\n| --- | --- |\n| kirino | auth |",
+        );
+        assert!(
+            tokens.iter().any(|t| t == "projects"),
+            "parent-heading word must ride along: {tokens:?}"
+        );
+        assert!(tokens.iter().any(|t| t == "map"), "tokens: {tokens:?}");
+        // And no invented run across the dropped labels.
+        assert!(
+            !tokens.iter().any(|t| t == "projectsmap"),
+            "tokens: {tokens:?}"
+        );
     }
 
     #[test]
