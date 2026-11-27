@@ -42,8 +42,10 @@ function fixture(): void {
       // The REAL renderer shape (`src/render.rs` render_diagram_block): a
       // preview pane holding the canvas + the hidden raw source, and a
       // source pane holding the highlighted code. The boot pass reads
-      // `.lg-diagram-preview` / `.lg-diagram-source` / `.lg-diagram-toggle`
-      // — a fixture that omitted them let the upgrade silently no-op.
+      // `.lg-diagram-preview` / `.lg-diagram-source` / `.lg-diagram-toggle`;
+      // a fixture that omitted them let the upgrade no-op silently.
+      // MUT: dropping any of the three from this fixture never passes — the
+      // upgrade stops happening and the assertions below catch it.
       + '<div class="lg-diagram-preview" data-pane="preview">'
       + '<div class="lg-diagram-canvas"></div>'
       + '<pre class="lg-diagram-raw" style="display:none"><code>graph TD; A--&gt;B</code></pre>'
