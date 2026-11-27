@@ -1082,7 +1082,9 @@ mod tests {
     /// is `src` (heading path `["T"]`, mirroring the real chunker).
     fn index_tokens_of_with_path(heading_path: &[&str], src: &str) -> Vec<String> {
         let path: Vec<String> = heading_path.iter().map(|s| s.to_string()).collect();
-        tokenize(&index_source_text(&path, src)).into_iter().collect()
+        tokenize(&index_source_text(&path, src))
+            .into_iter()
+            .collect()
     }
 
     fn index_tokens_of(src: &str) -> Vec<String> {
@@ -1303,8 +1305,11 @@ mod tests {
     /// carries the match) — the hit itself is the feature.
     #[test]
     fn parent_heading_tokens_ride_along() {
+        // TWO path elements: with a single-element path, `join(" ")` and
+        // `join("")` are indistinguishable and the no-invented-run guard
+        // below cannot fail (review R3 S2).
         let tokens = index_tokens_of_with_path(
-            &["Projects Map"],
+            &["Projects", "Map"],
             "| A | B |\n| --- | --- |\n| kirino | auth |",
         );
         assert!(
@@ -1313,7 +1318,10 @@ mod tests {
         );
         assert!(tokens.iter().any(|t| t == "map"), "tokens: {tokens:?}");
         // And no invented run across the dropped labels.
-        assert!(!tokens.iter().any(|t| t == "projectsmap"), "tokens: {tokens:?}");
+        assert!(
+            !tokens.iter().any(|t| t == "projectsmap"),
+            "tokens: {tokens:?}"
+        );
     }
 
     #[test]
