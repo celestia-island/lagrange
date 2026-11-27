@@ -12,6 +12,7 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
+import { buildExcerptLines, needsCollapse, toPlainText } from "./collapse";
 import { tokenizeQuery } from "./search";
 
 /** The visible window's radius around the first match, in characters. The
@@ -186,6 +187,11 @@ export interface SnippetView {
   hasAbove: boolean;
   /** The section text continues below the window's last line. */
   hasBelow: boolean;
+  /** The window was COMPACTED (see `collapse.ts`): `html` is then the
+   *  one-line-per-match `…context[match]context…` form instead of a
+   *  markdown render, so the card can clamp to a uniform height without
+   *  hiding its own match. */
+  compacted: boolean;
 }
 
 /** A window that opens on the section's own `# Heading` would repeat what the
@@ -216,7 +222,56 @@ function dropLeadingHeading(
   return rest;
 }
 
-/** Build the match-centred, markdown-rendered snippet view for a hit. */
+/** Render the compacted excerpt: one `<span>` per match neighbourhood,
+ *  matches wrapped in the same `<mark>` the prose path emits, everything
+ *  escaped by construction (no innerHTML from source text). */
+function renderCollapsed(markdown: string, tokens: string[]): string {
+  const lines = buildExcerptLines(markdown, tokens);
+  if (lines.length === 0) {
+    // Nothing renderable at all — fall back to the flattened opening so the
+    // card is never blank below its heading.
+    const flat = toPlainText(markdown);
+    if (flat.length === 0) return "";
+    return `<span class="lagrange-docs-search-hit-excerpt">${escapeHtml(flat.slice(0, 120))}</span>`;
+  }
+  return lines
+    .map((line) => {
+      const inner = line.segments
+        .map((segment) =>
+          segment.match
+            ? `<mark class="lagrange-docs-search-mark">${escapeHtml(segment.text)}</mark>`
+            : escapeHtml(segment.text),
+        )
+        .join("");
+      return `<span class="lagrange-docs-search-hit-excerpt">${inner}</span>`;
+    })
+    .join("");
+}
+
+const ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (ch) => ESCAPES[ch] ?? ch);
+}
+
+/** Build the match-centred snippet view for a hit.
+ *
+ *  TWO shapes, decided by the window's own structure ("自动分析正文", the
+ *  user's 2026-11-27 direction):
+ *
+ *  - PROSE keeps the markdown render — real emphasis, real reading flow;
+ *  - BLOCK CONTENT (tables, lists, fenced code — what cannot be squeezed
+ *    into one line) collapses to `…6 chars[match]6 chars…`. Rendering a
+ *    table verbatim is what made hit rows 75px beside 267px AND pushed the
+ *    match of the tall card below its own clamp, so that card showed no
+ *    underline at all. A uniform one-line excerpt fixes both at once.
+ */
 export function buildSnippetView(text: string, rawQuery: string): SnippetView {
   const tokens = tokenizeQuery(rawQuery).filter((t) => t.length >= 1);
   const match = tokens.length > 0 ? firstMatch(text, tokens) : null;
@@ -228,9 +283,19 @@ export function buildSnippetView(text: string, rawQuery: string): SnippetView {
         hasBelow: text.length > WINDOW_RADIUS * 2,
       };
 
+  const windowBody = dropLeadingHeading(windowText.window, match, tokens);
+
+  if (needsCollapse(windowBody)) {
+    return {
+      html: renderCollapsed(windowBody, tokens),
+      hasAbove: windowText.hasAbove,
+      hasBelow: windowText.hasBelow,
+      compacted: true,
+    };
+  }
+
   // The window is the chunk's MARKDOWN SOURCE: rendering it turns pipe rows
   // into tables and keeps emphasis. marked v18 emits a synchronous string.
-  const windowBody = dropLeadingHeading(windowText.window, match, tokens);
   const raw = marked.parse(windowBody, { async: false }) as string;
   const holder = document.createElement("div");
   holder.innerHTML = purify(raw);
@@ -246,5 +311,10 @@ export function buildSnippetView(text: string, rawQuery: string): SnippetView {
   }
   if (tokens.length > 0) markMatches(holder, tokens);
 
-  return { html: holder.innerHTML, hasAbove: windowText.hasAbove, hasBelow: windowText.hasBelow };
+  return {
+    html: holder.innerHTML,
+    hasAbove: windowText.hasAbove,
+    hasBelow: windowText.hasBelow,
+    compacted: false,
+  };
 }

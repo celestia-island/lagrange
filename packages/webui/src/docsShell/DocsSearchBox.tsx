@@ -41,7 +41,14 @@ import {
   watchEffect,
   type PropType,
 } from "vue";
-import { HkIconButton, HkModal, HkSearchInput, HkSpinner, useI18n } from "@celestia-island/hikari";
+import {
+  HkIconButton,
+  HkModal,
+  HkSearchInput,
+  HkScrollPin,
+  HkSpinner,
+  useI18n,
+} from "@celestia-island/hikari";
 import { Search } from "lucide-vue-next";
 import type { DocsSiteMeta } from "./types";
 import { DocsSearch, tokenizeQuery, type Hit } from "./search";
@@ -225,8 +232,13 @@ export const DocsSearchBox = defineComponent({
                     <span
                       class={[
                         "lagrange-docs-search-hit-snippet",
-                        view.hasAbove && "has-fade-above",
-                        view.hasBelow && "has-fade-below",
+                        // A compacted excerpt is already bounded by its own
+                        // six-character rule, so it needs no edge fade — the
+                        // "…" IS the fade. Only the prose render (which can
+                        // still overflow the clamp) keeps them.
+                        !view.compacted && view.hasAbove && "has-fade-above",
+                        !view.compacted && view.hasBelow && "has-fade-below",
+                        view.compacted && "is-compact",
                       ]}
                       // Sanitized in buildSnippetView (DOMPurify + a text-node
                       // walk that wraps matches in <mark>). innerHTML is a
@@ -274,6 +286,14 @@ export const DocsSearchBox = defineComponent({
               contentClass="lagrange-docs-search-modal"
             >
               <div class="lagrange-docs-search-panel">
+                {/* The field DOCKS at the window's top gutter line instead
+                    of scrolling away with the hits (2026-11-27 user report:
+                    "搜索栏顶部有裁切"). HkScrollPin is the family's contract
+                    for this — it stops at the host's declared gutter and
+                    paints its own surface, so the field's 3px focus ring is
+                    no longer eaten by HkModal's gutter cover (the cover is
+                    z-index 3; the pin is z-index 10). */}
+                <HkScrollPin side="top">
                 <HkSearchInput
                   modelValue={query.value}
                   onUpdate:modelValue={(v: string) => {
@@ -289,6 +309,7 @@ export const DocsSearchBox = defineComponent({
                   // query already ran on every keystroke.
                   debounce={0}
                 />
+                </HkScrollPin>
                 {results()}
               </div>
             </HkModal>
