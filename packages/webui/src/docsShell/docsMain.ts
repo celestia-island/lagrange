@@ -371,21 +371,49 @@ export async function copyText(text: string): Promise<boolean> {
  * Delegated, so it keeps working for blocks added later, and it only
  * paints the `copied` state when the copy actually succeeded.
  */
+let codeCopyInstalled = false;
+
 export function installCodeCopy(): void {
+  // Idempotent: `boot()` runs the upgrade list once, but a re-run (a test
+  // file, a future remount) must not STACK handlers — every extra listener
+  // fires the same click again and writes the clipboard twice.
+  if (codeCopyInstalled) return;
+  codeCopyInstalled = true;
   document.addEventListener("click", (event) => {
     const target = event.target as HTMLElement | null;
-    const button = target?.closest?.(
+    // Two button families: the renderer's own diagram-card copy button
+    // (`hi-code-highlight-copy` carrying a `data-copy` payload), and the
+    // library code card's button (`hk-code-highlight-copy`), which has no
+    // payload — its text is the code element beside it. (The card's own wasm
+    // handler cannot run on this SSR lane.)
+    const legacy = target?.closest?.(
       "button.hi-code-highlight-copy[data-copy]",
     ) as HTMLElement | null;
-    if (!button) return;
-    const text = button.getAttribute("data-copy") ?? "";
+    if (legacy) {
+      copyFrom(legacy, legacy.getAttribute("data-copy") ?? "");
+      return;
+    }
+    const card = target?.closest?.(
+      "button.hk-code-highlight-copy",
+    ) as HTMLElement | null;
+    if (card) {
+      const code = card
+        .closest(".hk-code-highlight")
+        ?.querySelector("pre code");
+      copyFrom(card, code?.textContent ?? "");
+      return;
+    }
+  });
+}
+
+function copyFrom(button: HTMLElement, text: string): void {
     void copyText(text).then((ok) => {
       button.classList.toggle("copied", ok);
       if (!ok) return;
       window.setTimeout(() => button.classList.remove("copied"), 1500);
     });
-  });
 }
+
 
 /**
  * Translate the STATIC chrome the Rust renderer emits: the diagram cards'

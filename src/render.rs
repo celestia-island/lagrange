@@ -16,6 +16,7 @@ use hikari_components::display::{
 use hikari_components::layout::divider::{DividerOrientation, DividerVariant};
 use hikari_components::layout::{Col, ColProps, Divider, DividerProps};
 use hikari_components::navigation::{Menu, MenuProps};
+use hikari_components::production::{CodeHighlight, CodeHighlightProps};
 use tairitsu_vdom::{el, txt, VNode};
 
 use crate::markdown::{Block, Inline, SpannedBlock};
@@ -734,84 +735,25 @@ fn el_node(tag: &str, children: Vec<VNode>) -> VNode {
     VNode::Element(Box::new(el(tag).children(children)))
 }
 
-/// Render a code block with syntax highlighting, line numbers, and a copy button.
-/// Uses syntect at build time to produce highlighted HTML with CSS classes.
+/// Render a code block through the library's code-highlight card.
+///
+/// The card owns the CHROME — header label, gutter, copy control — while
+/// lagrange keeps the thing it is actually better at: server-side syntect
+/// highlighting. `code_html` is what makes that split possible (a plain-text
+/// card would throw every token span away), and it is why this renderer no
+/// longer hand-writes the markup: the classes below are the card's, so a
+/// styling change in hikari reaches this page instead of drifting from it.
 fn el_pre_code(lang_class: &str, code: &str) -> VNode {
     let lang = lang_class.trim_start_matches("language-");
-    let highlighted = highlight::highlight(code, lang);
-
-    // Build line numbers.
-    let line_count = code.lines().count().max(1);
-    let line_num_nodes: Vec<VNode> = (1..=line_count)
-        .map(|i| {
-            VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "hi-code-highlight-line-number")
-                    .child(txt(&i.to_string())),
-            ))
-        })
-        .collect();
-
-    // Build the <code> element with highlighted HTML.
-    let mut code_el = el("code");
-    if !lang_class.is_empty() {
-        code_el = code_el.attr("class", lang_class);
-    }
-    code_el = code_el.dangerous_inner_html(&highlighted);
-
-    // Header: language label + copy button. The button is icon-only
-    // (clipboard → check while `.copied`), so no copy/copied i18n strings
-    // are needed; `aria-label`/`title` stay English on purpose.
     let display_lang = if lang.is_empty() { "text" } else { lang };
-    let header = el("div")
-        .attr("class", "hi-code-highlight-header")
-        .children(vec![
-            VNode::Element(Box::new(
-                el("span")
-                    .attr("class", "hi-code-highlight-language")
-                    .child(txt(display_lang)),
-            )),
-            VNode::Element(Box::new(
-                el("button")
-                    .attr("class", "hi-code-highlight-copy")
-                    .attr("type", "button")
-                    .attr("data-copy", code)
-                    .attr("aria-label", "Copy code")
-                    .attr("title", "Copy code")
-                    .child(VNode::Element(Box::new(
-                        el("span")
-                            .attr("class", "hi-code-highlight-copy-icon")
-                            .attr("aria-hidden", "true")
-                            .dangerous_inner_html(crate::icons::icon_svg("content-copy", 14)),
-                    )))
-                    .child(VNode::Element(Box::new(
-                        el("span")
-                            .attr("class", "hi-code-highlight-check")
-                            .attr("aria-hidden", "true")
-                            .dangerous_inner_html(crate::icons::icon_svg("check", 14)),
-                    ))),
-            )),
-        ]);
-
-    VNode::Element(Box::new(
-        el("div")
-            .attr("class", "hi-code-highlight")
-            .child(VNode::Element(Box::new(header)))
-            .child(VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "hi-code-highlight-content")
-                    .child(VNode::Element(Box::new(
-                        el("div")
-                            .attr("class", "hi-code-highlight-line-numbers")
-                            .children(line_num_nodes),
-                    )))
-                    .child(VNode::Element(Box::new(
-                        el("pre")
-                            .attr("class", "hi-code-highlight-code hi-scroll-container")
-                            .child(VNode::Element(Box::new(code_el))),
-                    ))),
-            ))),
-    ))
+    CodeHighlight(CodeHighlightProps {
+        language: lang.to_string(),
+        code: code.to_string(),
+        code_html: Some(highlight::highlight(code, lang)),
+        label: Some(display_lang.to_string()),
+        copyable: true,
+        ..Default::default()
+    })
 }
 
 fn rewrite_link(url: &str) -> String {
@@ -891,6 +833,42 @@ pub fn render_timeline() -> VNode {
 mod tests {
     use super::*;
     use crate::markdown::parse;
+
+    /// The fence goes through the library's card, keeping lagrange's own
+    /// syntect spans: the card owns the chrome, lagrange the highlighting.
+    ///
+    /// MUT: dropping `code_html` from the call loses every span; emitting the
+    /// old hand-written `hi-code-highlight*` markup instead never passes the
+    /// class assertions.
+    #[test]
+    fn code_fence_renders_through_the_card_with_its_spans_kept() {
+        let html = render_to_html(&parse("```rust\nfn main() {}\n```\n"));
+        // The card's chrome…
+        for needle in [
+            "hk-code-highlight",
+            "hk-code-highlight-header",
+            "hk-code-highlight-line-numbers",
+        ] {
+            assert!(html.contains(needle), "missing {needle}: {html}");
+        }
+        // …lagrange's syntect spans (the class-based theme emits
+        // `<span class="source rust">…` and token classes)…
+        assert!(
+            html.contains("<span class=\"source rust\""),
+            "highlight spans dropped: {html}"
+        );
+        assert!(
+            html.contains("storage type function rust"),
+            "token classes dropped: {html}"
+        );
+        // …and none of the old hand-written classes.
+        assert!(
+            !html.contains("hi-code-highlight"),
+            "hand-written markup resurfaced: {html}"
+        );
+        // The label slot carries the language, not the raw token.
+        assert!(html.contains(">rust<"), "language label missing: {html}");
+    }
 
     #[test]
     fn ordered_list_numbers_once_via_the_list_element() {
