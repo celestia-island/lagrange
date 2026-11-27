@@ -5,11 +5,12 @@ y una CLI `lagrange`.
 
 ## Tubería
 
-```
-markdown -> pest parser -> AST (Block / Inline)
-                              |
-                              v
-                 tairitsu VDom (VNode) -> render_to_html -> HTML
+```mermaid
+flowchart TD
+    md[markdown] --> pest[pest parser]
+    pest --> ast[AST]
+    ast --> vdom[tairitsu VDom]
+    vdom --> html[render_to_html]
 ```
 
 ## Módulos

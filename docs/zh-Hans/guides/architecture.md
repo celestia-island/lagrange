@@ -7,20 +7,18 @@ Lagrange 是单个 crate（`lagrange-library`），同时提供一个库和一�
 
 docs 树经由**两条车道**产出：
 
-```
-markdown -> pest parser -> AST (Block / Inline)
-              |                          |
-              |                          +--> tairitsu VDom (VNode) -> HTML
-              |                                （旧车道：手写壳）
-              |
-              +--> knowledge.json -----> docs-manifest.json
-                    （chunk/span）             |
-                                               v
-                                    packages/webui（构建期 Node SSR）
-                                    HkFaceShell + HkAdminHeader + HkSidebar
-                                    -> 每语言一页 <lang>/<page>.html
-                                    + hydration 包（mermaid 走
-                                      hikari/tairitsu wasm 引擎）
+```mermaid
+flowchart TD
+    md[markdown] --> pest[pest parser]
+    pest --> ast[AST]
+    ast -->|旧车道| vdom[tairitsu VDom]
+    vdom --> html[HTML]
+    ast --> knowledge[knowledge.json]
+    knowledge --> manifest[docs-manifest.json]
+    manifest --> webui[webui SSR]
+    webui --> shell[外壳组件]
+    shell --> pages[每语言一页]
+    webui --> hydration[hydration 包]
 ```
 
 **webui 车道**在构建能找到 webui 产物时运行——从仓根
