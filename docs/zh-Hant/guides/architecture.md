@@ -5,11 +5,12 @@ Lagrange 是單一 crate（`lagrange-library`），同時提供一個函式庫�
 
 ## 管線
 
-```
-markdown -> pest parser -> AST (Block / Inline)
-                              |
-                              v
-                 tairitsu VDom (VNode) -> render_to_html -> HTML
+```mermaid
+flowchart TD
+    md[markdown] --> pest[pest parser]
+    pest --> ast[AST]
+    ast --> vdom[tairitsu VDom]
+    vdom --> html[render_to_html]
 ```
 
 ## 模組

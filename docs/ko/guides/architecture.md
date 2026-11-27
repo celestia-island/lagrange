@@ -5,11 +5,12 @@ Lagrange는 단일 crate(`lagrange-library`)로, 라이브러리와
 
 ## 파이프라인
 
-```
-markdown -> pest parser -> AST (Block / Inline)
-                              |
-                              v
-                 tairitsu VDom (VNode) -> render_to_html -> HTML
+```mermaid
+flowchart TD
+    md[markdown] --> pest[pest parser]
+    pest --> ast[AST]
+    ast --> vdom[tairitsu VDom]
+    vdom --> html[render_to_html]
 ```
 
 ## 모듈

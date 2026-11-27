@@ -7,20 +7,18 @@ Lagrange is a single crate (`lagrange-library`) shipping a library and a
 
 The docs tree ships through **two lanes**:
 
-```
-markdown -> pest parser -> AST (Block / Inline)
-              |                          |
-              |                          +--> tairitsu VDom (VNode) -> HTML
-              |                                (legacy lane: hand-built chrome)
-              |
-              +--> knowledge.json -----> docs-manifest.json
-                    (chunks/spans)           |
-                                             v
-                                  packages/webui (Node SSR, build time)
-                                  HkFaceShell + HkAdminHeader + HkSidebar
-                                  -> <lang>/<page>.html per language
-                                  + hydration bundle (mermaid through the
-                                    hikari/tairitsu wasm engine)
+```mermaid
+flowchart TD
+    md[markdown] --> pest[pest parser]
+    pest --> ast[AST]
+    ast -->|legacy lane| vdom[tairitsu VDom]
+    vdom --> html[HTML]
+    ast --> knowledge[knowledge.json]
+    knowledge --> manifest[docs-manifest.json]
+    manifest --> webui[webui SSR]
+    webui --> shell[FaceShell chrome]
+    shell --> pages[per-language HTML]
+    webui --> hydration[hydration bundle]
 ```
 
 The **webui lane** runs when the build finds the webui bundle — from the
