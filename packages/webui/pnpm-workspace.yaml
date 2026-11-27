@@ -55,3 +55,7 @@ minimumReleaseAgeExclude:
   # circles, `participant A as Alice` resolves, and link head glyphs
   # (`--o`/`--x`/`<-->`) are syntax rather than node ids — hikari#1602/#1604.
   - '@celestia-island/hikari@0.55.505'
+  # Structure pickup (2026-11-28): class multiplicities stop inventing class
+  # names, composite states become clusters, and `--o`/`--x`/`<-->` heads are
+  # drawn — hikari#1606/#1607.
+  - '@celestia-island/hikari@0.55.506'
