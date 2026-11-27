@@ -48,7 +48,8 @@ describe("the library code card's copy button", () => {
   }
 
   /// MUT: dropping the `.hk-code-highlight-copy` arm from installCodeCopy
-  /// leaves every fence copy button inert — this is the only gate on it.
+  /// never passes — every fence copy button stays inert, and this test
+  /// catches it (the button writes nothing).
   it("copies the card's own code text, not a payload attribute", async () => {
     const button = cardFixture();
     vi.stubGlobal("navigator", {
