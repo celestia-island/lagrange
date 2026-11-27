@@ -767,7 +767,7 @@ fn index_source_text(heading_path: &[String], source_text: &str) -> String {
 /// The SOURCE-mode projection the indexer reads: same walk, but every line
 /// keeps its bytes (markers stay, lines stay separate) and every dropped
 /// construct leaves a space boundary behind. That is the whole point — see
-/// [`index_search_tokens`] — tokens cut from this text are substrings of the
+/// `search_source` — tokens cut from this text are substrings of the
 /// markdown source the hit window is cut from, so the client can always find
 /// (and underline) what the index matched.
 ///
@@ -1086,14 +1086,6 @@ mod tests {
     /// dropped markers, inventing runs like `prepost` that exist nowhere in
     /// the source, and the client's mark walk then found nothing to
     /// underline (the fallback head-window showed with no marks).
-    #[test]
-    fn probe_nr() {
-        let src = "see [docs](https://x.example/guide) and [t][r] then <https://y.io> <br> done\n\n[r]: https://ref.example/x";
-        let text = search_source(src);
-        println!("TEXT_CHARS: {:?}", text.chars().collect::<Vec<char>>());
-        let toks: Vec<_> = tokenize(&text).into_iter().collect();
-        println!("TOKENS: {toks:?}");
-    }
 
     #[test]
     fn indexed_tokens_are_substrings_of_the_source() {
@@ -1118,6 +1110,63 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// THE pin on the real wiring: `write_index` (the production entry
+    /// point) must emit the SOURCE runs for an intra-word-emphasis chunk.
+    /// R2's M3 proved the suite could not see a revert to the flattened
+    /// projection — every other test reads `index_source_text` directly, so
+    /// rewiring `write_index` back to `plain_text` stayed green while the
+    /// shards really emitted the invented `prepost` token again.
+    #[test]
+    fn write_index_emits_source_runs_for_intra_word_emphasis() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs = vec![SearchDoc {
+            lang: "en".into(),
+            title: "T".into(),
+            page_path: "t.html".into(),
+            document_id: "t".into(),
+            revision: "abc".into(),
+            chunks: vec![SearchChunk {
+                heading_path: vec!["H".into()],
+                anchor: "h".into(),
+                source_text: "## H\n\npre**post** fix".into(),
+            }],
+        }];
+        write_index(dir.path(), &docs, "").unwrap();
+        let shard: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                dir.path()
+                    .join(format!("search_i_{:02}.json", shard_for("pre"))),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let pre: Vec<Vec<usize>> =
+            serde_json::from_value(shard["pre"].clone()).expect("`pre` must be indexed");
+        assert_eq!(pre, vec![vec![0, 0]], "`pre` must hit chunk 0");
+        let shard_post: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                dir.path()
+                    .join(format!("search_i_{:02}.json", shard_for("post"))),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let post: Vec<Vec<usize>> =
+            serde_json::from_value(shard_post["post"].clone()).expect("`post` must be indexed");
+        assert_eq!(post, vec![vec![0, 0]]);
+        // The invented joined run must be gone from the shards entirely.
+        let joined_idx = shard_for("prepost");
+        let shard_joined: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join(format!("search_i_{joined_idx:02}.json")))
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            shard_joined.get("prepost").is_none(),
+            "the flattened projection must not come back: `prepost` re-appeared"
+        );
     }
 
     #[test]
