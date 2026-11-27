@@ -96,10 +96,18 @@ export function sliceWindow(
   for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) {
     lineOffsets.push(i + 1);
   }
+  // Scan from the END: the LAST header+separator pair whose table run
+  // contains the match wins (a chunk can hold several tables; the match's
+  // own table is the nearest one at or before it). No `header ≤ match`
+  // guard here on purpose: a match deep in a SHORT table's rows can sit
+  // beyond the naive radius while its header sits above it — dropping that
+  // header would reopen the separator-first literal-pipe dump (R3: a
+  // 3-row repo table reproduces it). Matches in prose find no containing
+  // run and keep the prose opening.
   for (let k = lineOffsets.length - 1; k >= 1; k -= 1) {
     const header = lineOffsets[k - 1];
     const separator = lineOffsets[k];
-    if (header > match.index || !isSeparator(text, separator) || !isPipe(text, header)) continue;
+    if (!isSeparator(text, separator) || !isPipe(text, header)) continue;
     // Table run end: the first non-pipe line after the separator.
     let runEnd = text.length;
     for (let m = k + 1; m < lineOffsets.length; m += 1) {
@@ -109,9 +117,9 @@ export function sliceWindow(
       }
     }
     if (match.index < runEnd) {
-      start = header;
+      start = Math.min(start, header);
+      break;
     }
-    break; // the nearest-preceding table wins
   }
   return {
     window: text.slice(start, end),

@@ -105,6 +105,32 @@ describe("buildSnippetView", () => {
     expect(view.html).not.toContain("Context paragraphs");
   });
 
+  it("a SHORT table deep past the naive cut still opens at its header, not the separator", () => {
+    // R3's reachable case: a 3-row table whose header sits beyond the naive
+    // radius (long prose above, short rows). The line-snapped cut lands ON
+    // the separator row; the containing-run rule must eat back to the
+    // header — a separator-first window is the literal-pipe dump again
+    // (GFM has no header above the delimiter row).
+    const header = "| Name | Purpose | Type |";
+    const sep = "| --- | --- | --- |";
+    const rows = [
+      "| alpha | the first row of a compact repository table | code |",
+      "| beta | the second row with slightly longer prose inside it | docs |",
+      "| gamma | the third row, still inside the naive radius from here | infra |",
+    ].join("\n");
+    const prose = "Introductory context well above the compact table. ".repeat(8);
+    const chunk = ["## Short table", "", prose, "", header, sep, rows, ""].join("\n");
+    const match = { index: chunk.indexOf("| gamma"), length: 7 };
+    const w = sliceWindow(chunk, match);
+    expect(w.window.split("\n")[0]).toBe(header);
+    const view = buildSnippetView(chunk, "gamma");
+    // The wrapper's survival is happy-dom-specific; the cells and the
+    // underlined match are what the card must carry.
+    expect(view.html).toContain("gamma");
+    expect(view.html).toContain("lagrange-docs-search-mark");
+    expect(view.html).not.toContain(sep + "\n");
+  });
+
   it("drops the section's own leading heading (the card already shows it)", () => {
     const chunk = [
       "## Install",
