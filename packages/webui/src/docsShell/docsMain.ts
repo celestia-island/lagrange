@@ -12,8 +12,15 @@
 //     from the legacy diagram.js;
 //   - the preview/source segmented toggle rides a delegated listener,
 //     the same semantics the legacy runtime had.
-import { createApp, createSSRApp } from "vue";
-import { HkMermaidDiagram, initTheme, useI18n } from "@celestia-island/hikari";
+import { Fragment, computed, createApp, createSSRApp, h, ref } from "vue";
+import {
+  HkDirectionalSwap,
+  HkMermaidDiagram,
+  HkTabs,
+  initTheme,
+  useI18n,
+  type SwapDirection,
+} from "@celestia-island/hikari";
 import { mermaidParser } from "@celestia-island/hikari/mermaid";
 import "@celestia-island/hikari/styles";
 // The table scroll shells mount hikari's edge-glow PAINTER markup
@@ -54,6 +61,121 @@ function showError(box: HTMLElement, msg: string): void {
   preview?.insertBefore(note, preview.firstChild ?? null);
 }
 
+/** The two panes a diagram card switches between, in reading order. The
+ *  order is what makes a switch "forward" or "back". */
+const DIAGRAM_PANES = ["preview", "source"] as const;
+type DiagramPane = (typeof DIAGRAM_PANES)[number];
+
+/**
+ * Upgrade one diagram card's chrome to the family's standard parts.
+ *
+ * The card's PILL and its pane switching used to be hand-rolled here
+ * (`installDiagramToggle` bound a delegated click listener and flipped
+ * `display` on the two panes) — a second implementation of a control hikari
+ * already ships, and a hard cut between the panes with no motion at all. Both
+ * now come from the library:
+ *
+ *  - `HkTabs` (segmented, no panels) is the Preview/Source pill: one
+ *    radiogroup with the sliding indicator, arrow-key navigation and the
+ *    right ARIA, instead of two buttons we restyled;
+ *  - `HkDirectionalSwap` wraps the panes so the switch slides with the
+ *    reading direction and cross-fades (a "back" motion when the reader
+ *    returns to the preview) instead of blinking.
+ *
+ * The Rust renderer still emits the static markup — that is the no-JS
+ * baseline — so this REPLACES the pill node and re-parents the two panes into
+ * a Vue sub-app mounted in the card's body.
+ */
+function upgradeDiagramCard(box: DiagramGlobalBox): void {
+  const preview = box.querySelector<HTMLElement>(".lg-diagram-preview");
+  const source = box.querySelector<HTMLElement>(".lg-diagram-source");
+  const toggle = box.querySelector<HTMLElement>(".lg-diagram-toggle");
+  if (!preview || !source || !toggle) return;
+
+  // The pill leaves the header (HkTabs re-renders it in the sub-app).
+  toggle.remove();
+
+  // The panes leave the server markup and become the sub-app's content.
+  const previewPane = preview.cloneNode(true) as HTMLElement;
+  const sourcePane = source.cloneNode(true) as HTMLElement;
+  previewPane.style.display = "";
+  sourcePane.style.display = "";
+
+  // The header (language badge, copy button, and the pill's slot) is NOT part
+  // of what the swap replaces: the copy control and its `data-copy` payload
+  // live in the card header, and the boot pass's own copy handler binds to it.
+  // Keeping the header in place and swapping only the body is also what the
+  // no-JS baseline shows.
+  const header = box.querySelector<HTMLElement>(".hi-code-highlight-header");
+  const host = document.createElement("div");
+  host.className = "lagrange-docs-diagram-body";
+  if (header) {
+    box.replaceChildren(header, host);
+  } else {
+    box.replaceChildren(host);
+  }
+
+  const { t } = useI18n();
+  const labels: Record<DiagramPane, string> = {
+    preview: t("lagrange::docs.preview", "Preview"),
+    source: t("lagrange::docs.source", "Source"),
+  };
+
+  const app = createApp({
+    // `docsMain.ts` is a .ts module (no JSX in this lane), so the sub-app
+    // renders through `h()`. Same shape either way: the pill, then the
+    // directional swap holding one pane.
+    setup() {
+      const pane = ref<DiagramPane>("preview");
+      // Leaving the preview for the source is forward; coming back is back.
+      // Two panes make the sequence itself the direction source, so the
+      // library's `resolveSwapDirection` helper is not needed here.
+      const direction = computed<SwapDirection>(() =>
+        pane.value === "source" ? "forward" : "back",
+      );
+      return () =>
+        h(Fragment, null, [
+          h(
+            "div",
+            { class: "lagrange-docs-diagram-tabs" },
+            // Children are ALWAYS an array (or a slot function). Passing a
+            // bare vnode here makes Vue treat it as the default-slot CONTENT
+            // of the wrapper, which for a component child renders as a comment
+            // placeholder — the tabs silently disappeared on the first pass.
+            [
+              h(HkTabs, {
+                variant: "segmented",
+                block: false,
+                scrollable: false,
+                renderPanels: false,
+                ariaLabel: `${labels.preview} / ${labels.source}`,
+                modelValue: pane.value,
+                "onUpdate:modelValue": (next: string) => {
+                  pane.value = next === "source" ? "source" : "preview";
+                },
+                tabs: DIAGRAM_PANES.map((key) => ({ key, label: labels[key] })),
+              }),
+            ],
+          ),
+          h(
+            HkDirectionalSwap,
+            { swapKey: pane.value, direction: direction.value },
+            {
+              default: () => {
+                const node = pane.value === "preview" ? previewPane : sourcePane;
+                return h("div", {
+                  class: "lagrange-docs-diagram-pane",
+                  innerHTML: node.innerHTML,
+                });
+              },
+            },
+          ),
+        ]);
+    },
+  });
+  app.mount(host);
+}
+
 /** Mount HkMermaidDiagram sub-apps into unrendered mermaid boxes. */
 function mountMermaidBoxes(): void {
   const boxes = document.querySelectorAll<DiagramGlobalBox>(
@@ -61,10 +183,19 @@ function mountMermaidBoxes(): void {
   );
   for (const box of boxes) {
     box.setAttribute("data-diagram-rendered", "1");
-    const raw = box.querySelector<HTMLElement>(".lg-diagram-raw");
-    const canvas = box.querySelector<HTMLElement>(".lg-diagram-canvas");
-    if (!raw || !canvas) continue;
-    const source = raw.textContent ?? "";
+    // Read the source and the canvas BEFORE the chrome upgrade re-parents the
+    // panes: `upgradeDiagramCard` detaches the server markup into a Vue
+    // sub-app, so a lookup afterwards finds nothing and the diagram never
+    // mounts — the boot test catches it (MUT: moving these lookups below the
+    // upgrade turns that test red).
+    const source = box.querySelector<HTMLElement>(".lg-diagram-raw")?.textContent ?? "";
+    upgradeDiagramCard(box);
+    // The upgrade re-rendered the panes into the sub-app; the canvas to
+    // mount into is the one NOW in the DOM (preview pane, freshly cloned).
+    const canvas =
+      box.querySelector<HTMLElement>('.lg-diagram[data-pane="preview"] .lg-diagram-canvas, .lg-diagram-canvas') ??
+      box.querySelector<HTMLElement>(".lg-diagram-canvas");
+    if (!canvas) continue;
     const host = document.createElement("div");
     host.className = "lagrange-docs-mermaid";
     canvas.replaceChildren(host);
@@ -261,27 +392,6 @@ function localizeStaticChrome(): void {
   }
 }
 
-/** The segmented preview/source toggle (delegated — the body is server
- * HTML that never re-renders through Vue). */
-function installDiagramToggle(): void {
-  document.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement | null;
-    const btn = target?.closest?.(".lg-diagram-toggle-btn") as HTMLElement | null;
-    if (!btn) return;
-    const box = btn.closest(".lg-diagram");
-    if (!box) return;
-    const pane = btn.getAttribute("data-pane");
-    for (const b of box.querySelectorAll(".lg-diagram-toggle-btn")) {
-      b.classList.remove("active");
-    }
-    btn.classList.add("active");
-    const preview = box.querySelector<HTMLElement>(".lg-diagram-preview");
-    const source = box.querySelector<HTMLElement>(".lg-diagram-source");
-    if (preview) preview.style.display = pane === "source" ? "none" : "";
-    if (source) source.style.display = pane === "source" ? "" : "none";
-  });
-}
-
 async function boot(): Promise<void> {
   // The hikari mermaid convention: HkMermaidDiagram (and any markdown
   // body renderer) reads the parser engine off this global. Register at
@@ -309,7 +419,6 @@ async function boot(): Promise<void> {
   // order was never supposed to matter).
   for (const upgrade of [
     localizeStaticChrome,
-    installDiagramToggle,
     installCodeCopy,
     mountMermaidBoxes,
     renderMathBoxes,
