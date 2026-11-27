@@ -81,42 +81,28 @@ describe("buildSnippetView", () => {
     expect(view.html).toContain(">plana</mark>");
   });
 
-  it("a window that opens on a table ROW swallows the header so GFM renders a table", () => {
-    // The header + separator sit beyond the naive 160-char cut when the
-    // preceding prose is long. The row-only cut renders the rows as a
-    // literal-pipe paragraph (the exact dump this view exists to prevent);
-    // the table-aware snap eats back to the header so marked builds a table.
-    const longProse = "Explaining the layering before any table appears. ".repeat(10);
-    const chunk = [
-      "## Tools",
-      "",
-      longProse,
-      "",
-      "| Project | Role |",
-      "| --- | --- |",
-      "| kirino | auth |",
-      "| plana | transport |",
-      "",
-      "More prose after the table.",
-    ].join("\n");
-    const match = { index: chunk.indexOf("| plana"), length: 7 };
+  it("a realistic long-row table: the window opens at the header and cells reach the card", () => {
+    // The R2 repro shape: realistic 3-column rows (~150 chars each) with
+    // prose above — the naive cut lands mid-table and the walk-back/forward
+    // rule must resolve BOTH openings to the table header. Cells must reach
+    // the card; the invented pre-table prose must not.
+    const rows = [
+      ["electrode_recon", "Three-phase electrode microstructure generator, packaged as a containerized compute engine for the industrial edge", "repository"],
+      ["hare", "no_std bridge crates for the industrial edge: wire protocol, hardware manifest, protocol hub and HAL traits", "repository"],
+      ["shun", "Stream-driven payload delivery with backpressure and replay for the industrial bus", "repository"],
+    ];
+    const table = ["| Project | Purpose | Docs |", "| --- | --- | --- |"]
+      .concat(rows.map(([p, r, d]) => `| ${p} | ${r} | ${d} |`))
+      .join("\n");
+    const prose = "Context paragraphs describing the platform layers. ".repeat(6);
+    const chunk = ["## Ecosystem", "", prose, "", table, "", "Trailing prose."].join("\n");
+    const match = { index: chunk.indexOf("| hare "), length: 7 };
     const w = sliceWindow(chunk, match);
-    // The naive radius lands inside the prose above the table; the snap eats
-    // back past the pipe rows to the table header.
-    const firstLine = w.window.split("\n")[0];
-    expect(
-      firstLine === "| Project | Role |" || firstLine.startsWith("|"),
-      "the window must open on a complete table line, got: " + firstLine,
-    ).toBe(true);
-    const view = buildSnippetView(chunk, "plana");
-    // The excerpt carries the header cells and the underlined match. (The
-    // <table> wrapper's survival through the TEST DOM's innerHTML parser is
-    // happy-dom-specific — real browsers render the table; the mid-window
-    // table case is pinned by "renders the window AS markdown" above.)
-    expect(view.html).toContain("Project");
-    expect(view.html).toContain("kirino");
-    expect(view.html).toContain('class="lagrange-docs-search-mark"');
-    expect(view.html).not.toContain("Explaining the layering");
+    expect(w.window.split("\n")[0]).toBe("| Project | Purpose | Docs |");
+    const view = buildSnippetView(chunk, "hare");
+    expect(view.html).toContain("hare");
+    expect(view.html).toContain("Purpose");
+    expect(view.html).not.toContain("Context paragraphs");
   });
 
   it("drops the section's own leading heading (the card already shows it)", () => {
