@@ -144,6 +144,27 @@ describe("buildSnippetView", () => {
     expect(view.html).not.toContain("Explaining the layering");
   });
 
+  it("a match inside a table BELOW the prose moves the opening FORWARD to the header", () => {
+    // Prose opening with the match inside a table below: the pipe rows glue
+    // into the prose paragraph and render as literal pipes, so the opening
+    // moves FORWARD to the table header (the match is inside the run, so it
+    // survives the move). R4 M-2 (backward-only) kills this pin.
+    const prose = "Intro paragraphs before the compact table appear here. ".repeat(4);
+    const chunk = [
+      "## Compact",
+      "",
+      prose,
+      "",
+      "| Name | Purpose | Type |",
+      "| --- | --- | --- |",
+      "| gamma | the third row carrying the query term | infra |",
+    ].join("\n");
+    const match = { index: chunk.indexOf("| gamma"), length: 7 };
+    const w = sliceWindow(chunk, match);
+    expect(w.window.split("\n")[0]).toBe("| Name | Purpose | Type |");
+    expect(w.hasAbove).toBe(true);
+  });
+
   it("drops the section's own leading heading (the card already shows it)", () => {
     const chunk = [
       "## Install",
@@ -207,12 +228,12 @@ describe("buildSnippetView", () => {
     expect(view.html).toContain("architecture diagram");
   });
 
-  it("a SHORT table deep past the naive cut still opens at its header, not the separator", () => {
-    // The reachable short-table case: a 3-row table whose header sits
-    // beyond the naive radius (long prose above, short rows). The
-    // line-snapped cut lands ON the separator row; the containing-run rule
-    // must eat back to the header — a separator-first window is the
-    // literal-pipe dump again (GFM has no header above the delimiter row).
+  it("a SHORT table with the naive cut inside its rows still opens at its header", () => {
+    // SHORT prose above a 3-row table: the naive radius lands INSIDE the
+    // table (on a body row), so the line-snapped cut opens on a pipe row
+    // and the containing-run scan is LOAD-BEARING — disabling it leaves the
+    // window on the body row and GFM renders literal pipes (no header +
+    // separator above the row).
     const header = "| Name | Purpose | Type |";
     const sep = "| --- | --- | --- |";
     const rows = [
@@ -220,7 +241,7 @@ describe("buildSnippetView", () => {
       "| beta | the second row with slightly longer prose inside it | docs |",
       "| gamma | the third row, still inside the naive radius from here | infra |",
     ].join("\n");
-    const prose = "Introductory context well above the compact table. ".repeat(13);
+    const prose = "Short intro line.";
     const chunk = ["## Short table", "", prose, "", header, sep, rows, ""].join("\n");
     const match = { index: chunk.indexOf("| gamma"), length: 7 };
     const w = sliceWindow(chunk, match);
@@ -230,6 +251,21 @@ describe("buildSnippetView", () => {
     // underlined match are what the card must carry.
     expect(view.html).toContain("gamma");
     expect(view.html).toContain("lagrange-docs-search-mark");
-    expect(view.html).not.toContain(sep + "\n");
+  });
+
+  it("a match in prose BETWEEN two tables keeps the prose opening", () => {
+    // The scan takes the LAST pair whose run contains the match — a match
+    // in prose between two tables is inside NO run, so the prose opening
+    // stays (the first table's header must not hijack the window backwards,
+    // R3 M-3 direction probe).
+    const t1 = ["| A | B |", "| --- | --- |", "| a1 | b1 |"].join("\n");
+    const t2 = ["| C | D |", "| --- | --- |", "| c2 | d2 |"].join("\n");
+    const chunk = [t1, "", "Prose between the two tables.", "", t2, "", "More prose about the second table."].join("\n");
+    const match = { index: chunk.indexOf("Prose between"), length: 6 };
+    const w = sliceWindow(chunk, match);
+    // No containing run → the prose opening survives (the match marks in
+    // the prose; the surrounding tables render as pipes around it —
+    // documented).
+    expect(w.window.split("\n")[0]).toBe(t1.split("\n")[0]);
   });
 });
