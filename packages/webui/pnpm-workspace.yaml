@@ -59,3 +59,6 @@ minimumReleaseAgeExclude:
   # names, composite states become clusters, and `--o`/`--x`/`<-->` heads are
   # drawn — hikari#1606/#1607.
   - '@celestia-island/hikari@0.55.506'
+  # Audit pickup (2026-11-28): the outline shapes stop squeezing their labels
+  # and state notes no longer fail the diagram — hikari#1610.
+  - '@celestia-island/hikari@0.55.507'
