@@ -45,7 +45,7 @@ pub const SNIPPET_CHARS: usize = 160;
 /// indexer must never know a token the shipped preview cannot show, or the
 /// hit renders without its underline (2026-11-27: at the previous 2000 cap,
 /// 29 hub chunks were cut and 2,472 postings pointed past their preview; the
-/// real corpus's longest section is ~4 KB, so 8192 covers every chunk whole
+/// real corpus's longest section is ~7 KB, so 8192 covers every chunk whole
 /// while still bounding a pathological single-heading section).
 pub const PREVIEW_CHARS: usize = 8192;
 
@@ -151,9 +151,11 @@ pub fn write_index(out: &Path, docs: &[SearchDoc], base: &str) -> anyhow::Result
             // preview; 2026-11-27). The projection only removes constructs
             // and inserts boundaries, so tokens of the projected preview are
             // runs of the shipped preview — findable and underlinable.
-            // Heading-path words still ride along for title search; those are
-            // not always in the body, and the client's no-match fallback
-            // covers exactly that case.
+            // Heading-path words still ride along for title search. A hit
+            // that only matches a parent heading renders the body's head
+            // window with NO marks — the matched text is not in the excerpt
+            // (the card's heading-path line is what carries it). Do not
+            // claim a client fallback here: there is none.
             let preview = preview_markdown(&chunk.source_text, PREVIEW_CHARS);
             let indexable = index_source_text(&chunk.heading_path, &preview);
             chunk_metas.push(ChunkMeta {
@@ -759,9 +761,10 @@ pub(crate) fn plain_text(raw: &str) -> String {
 /// of `preview_text` — which MUST be the same string shipped as
 /// `ChunkMeta.text` (cut it before calling; see the `write_index` loop).
 /// The ride-along tokens are NOT always substrings of the body (a parent
-/// heading is not part of this span) — the client's no-match fallback covers
-/// that case; every BODY token is a run of the shipped preview (see
-/// `search_source`), which is the no-underline guarantee.
+/// heading is not part of this span) — such hits render the excerpt
+/// UNMARKED, and the card's heading-path line is what carries the match;
+/// every BODY token is a run of the shipped preview (see `search_source`),
+/// which is the no-underline guarantee.
 fn index_source_text(heading_path: &[String], preview_text: &str) -> String {
     let mut indexable = heading_path.join(" ");
     indexable.push(' ');
@@ -1077,10 +1080,13 @@ mod tests {
 
     /// The tokens the indexer would produce for a one-chunk doc whose body
     /// is `src` (heading path `["T"]`, mirroring the real chunker).
+    fn index_tokens_of_with_path(heading_path: &[&str], src: &str) -> Vec<String> {
+        let path: Vec<String> = heading_path.iter().map(|s| s.to_string()).collect();
+        tokenize(&index_source_text(&path, src)).into_iter().collect()
+    }
+
     fn index_tokens_of(src: &str) -> Vec<String> {
-        tokenize(&index_source_text(&["T".to_string()], src))
-            .into_iter()
-            .collect()
+        index_tokens_of_with_path(&["T"], src)
     }
 
     /// THE invariant that closes the index↔window coordinate mismatch: the
@@ -1287,6 +1293,27 @@ mod tests {
         let tokens = index_tokens_of(src);
         assert!(tokens.iter().any(|t| t == "install"));
         assert!(tokens.iter().any(|t| t == "body"));
+    }
+
+    /// Title search contract: a chunk must be findable by its PARENT
+    /// heading even when the parent's words appear nowhere in the chunk
+    /// body (R2 proved this ride-along was unpinned — dropping it left the
+    /// whole suite green). The excerpt renders UNMARKED for such hits
+    /// (nothing in the body to underline; the card's heading-path line
+    /// carries the match) — the hit itself is the feature.
+    #[test]
+    fn parent_heading_tokens_ride_along() {
+        let tokens = index_tokens_of_with_path(
+            &["Projects Map"],
+            "| A | B |\n| --- | --- |\n| kirino | auth |",
+        );
+        assert!(
+            tokens.iter().any(|t| t == "projects"),
+            "parent-heading word must ride along: {tokens:?}"
+        );
+        assert!(tokens.iter().any(|t| t == "map"), "tokens: {tokens:?}");
+        // And no invented run across the dropped labels.
+        assert!(!tokens.iter().any(|t| t == "projectsmap"), "tokens: {tokens:?}");
     }
 
     #[test]
