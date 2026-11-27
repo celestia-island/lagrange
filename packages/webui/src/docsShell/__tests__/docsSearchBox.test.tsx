@@ -647,6 +647,7 @@ describe("DocsSearchBox", () => {
                         "| 1 | discover | users find the ecosystem and choose an entry | docs site |",
                         "| 2 | install | the operator gets a runnable system from the panel | arona |",
                         "| 7 | verify | real-node integration testing, supervision and usage records | integration |",
+                        "| 9 | operate | feedback and usage records feed the next release | plana |",
                       ].join("\n"),
                     },
                   ],
@@ -680,6 +681,28 @@ describe("DocsSearchBox", () => {
     const excerpt = snippet?.querySelector(".lagrange-docs-search-hit-excerpt");
     expect(excerpt?.textContent).toContain("…");
     expect(excerpt?.textContent).toContain("testing");
+    // A compacted row carries NO edge fades — the ellipsis IS the fade
+    // (this fixture's window continues on BOTH sides, so an unguarded
+    // hasAbove/hasBelow would light both classes and go red here). These
+    // two negatives are the pin for the `!view.compacted &&` guards.
+    expect(snippet?.classList.contains("has-fade-above")).toBe(false);
+    expect(snippet?.classList.contains("has-fade-below")).toBe(false);
+  });
+
+  it("pins the row-height mechanics at source level", () => {
+    // The uniform-row claim is browser-measured (happy-dom answers
+    // getComputedStyle from initial values — see the scroller test above),
+    // so the MECHANISM that produces it is pinned where it lives: the
+    // shared row floor, and the one-line clamp on compacted excerpts.
+    const sheet = readFileSync(resolve(here, "../docsShell.scss"), "utf8");
+    const hit = ruleBody(sheet, ".lagrange-docs-search-hit");
+    expect(hit, "the hit row rule must exist").not.toBeNull();
+    expect(hit!).toMatch(/min-height/);
+    const excerpt = ruleBody(sheet, ".lagrange-docs-search-hit-excerpt");
+    expect(excerpt, "the compacted excerpt rule must exist").not.toBeNull();
+    expect(excerpt!).toMatch(/white-space:\s*nowrap/);
+    expect(excerpt!).toMatch(/text-overflow:\s*ellipsis/);
+    expect(excerpt!).toMatch(/overflow:\s*hidden/);
   });
 
   it("hides the clear affordance on an empty field", async () => {
