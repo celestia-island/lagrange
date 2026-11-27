@@ -9,7 +9,7 @@ interface ChunkMeta {
   heading_path: string[];
   anchor: string;
   /** The chunk's MARKDOWN SOURCE, capped by the build at `PREVIEW_CHARS`
-   *  (2000) on a line boundary — the hit view cuts its own match-centred
+   *  (8192) on a line boundary — the hit view cuts its own match-centred
    *  window from this. A section longer than the cap is still fully indexed;
    *  only its tail is not previewable. */
   text: string;
@@ -34,7 +34,7 @@ export interface Hit {
   title: string;
   heading: string;
   url: string;
-  /** The chunk's markdown preview, capped by the build at 2000 chars on a
+  /** The chunk's markdown preview, capped by the build at 8192 chars on a
    *  line boundary — the view cuts the match-centred window itself. */
   text: string;
 }
