@@ -1,6 +1,6 @@
 [package]
 name = "lagrange-library"
-version = "0.3.14"
+version = "0.3.15"
 edition = "2021"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
