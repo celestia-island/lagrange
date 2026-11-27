@@ -134,8 +134,8 @@ describe("diagram card layout", () => {
 describe("code block margins", () => {
   const legacy = stripComments(readFileSync(resolve(here, "../../../../../styles/layout.scss"), "utf8"));
 
-  // MUT: zeroing the margin rule below is caught here and in the legacy
-  // lane pin — both turn red.
+  // MUT: zeroing the margin rule below never passes — this pin catches it,
+  // and the legacy-lane twin catches it again.
   it("gives every code block at least 1rem above and below (webui lane)", () => {
     const rule = ruleBody(sheet, ".hi-code-highlight");
     expect(rule, ".hi-code-highlight rule must exist under the body scope").not.toBeNull();
