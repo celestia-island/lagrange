@@ -16,13 +16,14 @@ use hikari_components::display::{
     EmptyState, EmptyStateProps, Skeleton, SkeletonProps, Tag, TagProps, TagVariant, Timeline,
     TimelineProps,
 };
+use hikari_components::feedback::{Spinner, SpinnerProps, SpinnerSize};
 use hikari_components::layout::divider::{DividerOrientation, DividerVariant};
 use hikari_components::layout::{Col, ColProps, Divider, DividerProps};
 use hikari_components::navigation::{Menu, MenuProps};
 use hikari_components::production::{CodeHighlight, CodeHighlightProps};
 use tairitsu_vdom::{el, txt, VNode};
 
-use crate::markdown::{Block, Inline, SpannedBlock};
+use crate::markdown::{Block, DiagramKind, Inline, SpannedBlock};
 
 // ── public API ────────────────────────────────────────────────────────────
 
@@ -562,7 +563,7 @@ fn render_live_pair(
 /// packages/webui/src/docsShell/docsMain.ts, keys
 /// `lagrange::docs.preview|source|copyCode`). Adding a language here instead
 /// would fork the wording in three places.
-fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNode {
+fn render_diagram_block(kind: DiagramKind, source: &str) -> VNode {
     let lang = kind.source_lang();
     let highlighted = highlight::highlight(source, lang);
 
@@ -626,7 +627,47 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
                         .attr("class", "lg-diagram-preview")
                         .attr("data-pane", "preview")
                         .children(vec![
-                            VNode::Element(Box::new(el("div").attr("class", "lg-diagram-canvas"))),
+                            VNode::Element(Box::new({
+                                let mut canvas = el("div").attr("class", "lg-diagram-canvas");
+                                // Only a NON-EMPTY mermaid fence gets a loading
+                                // placeholder. An empty fence has nothing to
+                                // render (the client's `mountPreview` returns
+                                // early, so a placeholder there would spin
+                                // forever), and a math card is KaTeX display
+                                // output whose own runtime clears the canvas —
+                                // a 160px stage would only flash.
+                                // The parser already `trim_end`s a fence body,
+                                // so `trim()` here is a guard for callers that
+                                // build the VNode directly rather than through
+                                // the parser.
+                                // MUT:diagram-loading-scope — dropping either
+                                // the kind or the emptiness half never passes
+                                // the renderer pins.
+                                if kind == DiagramKind::Mermaid && !source.trim().is_empty() {
+                                    canvas = canvas.child(VNode::Element(Box::new(
+                                        el("div")
+                                            .attr("class", "lg-diagram-loading")
+                                            .attr("role", "status")
+                                            // A live region with no name
+                                            // announces nothing. The name is
+                                            // ENGLISH on purpose and is NOT
+                                            // localised client-side: this host
+                                            // only exists before the bundle
+                                            // runs, and a no-JS page has no
+                                            // locale to pick. The real loading
+                                            // state (after hydration) is
+                                            // hikari's own, which names itself.
+                                            .attr("aria-label", "Loading diagram")
+                                            .child(Spinner(SpinnerProps {
+                                                size: SpinnerSize::Lg,
+                                                center: true,
+                                                min_height: Some("160px".to_string()),
+                                                ..Default::default()
+                                            })),
+                                    )));
+                                }
+                                canvas
+                            })),
                             VNode::Element(Box::new(
                                 el("pre")
                                     .attr("class", "lg-diagram-raw")
@@ -644,6 +685,12 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
                             language: lang.to_string(),
                             code: source.to_string(),
                             code_html: Some(highlighted),
+                            // The outer diagram card already owns the language
+                            // label, pane switch and copy IconButton. The
+                            // embedded code body must not repeat that chrome.
+                            show_header: false,
+                            framed: false,
+                            copyable: false,
                             ..Default::default()
                         })),
                 )),
@@ -824,6 +871,89 @@ mod tests {
         assert!(
             !html.contains("hi-code-highlight-copy"),
             "scaffold copy button resurfaced: {html}"
+        );
+    }
+
+    /// The source pane is only the library's highlighted code body. Its outer
+    /// diagram card owns the sole header, so the old nested MERMAID + Copy row
+    /// can never come back through a default component invocation.
+    ///
+    /// MUT:diagram-source-chrome — dropping show_header/framed/copyable from
+    /// the call catches the duplicate header, frame flag and copy button.
+    #[test]
+    fn diagram_source_has_one_outer_header_and_an_unframed_code_body() {
+        let html = render_to_html(&parse("```mermaid\nflowchart TD\n  A --> B\n```\n"));
+        assert_eq!(
+            html.matches("lg-diagram-header").count(),
+            1,
+            "outer header: {html}"
+        );
+        assert!(
+            !html.contains("hk-code-highlight-header"),
+            "nested header: {html}"
+        );
+        assert!(
+            !html.contains("hk-code-highlight-copy"),
+            "nested copy: {html}"
+        );
+        assert!(
+            html.contains("data-framed=\"false\""),
+            "flush code body: {html}"
+        );
+        assert!(
+            html.contains("hk-code-highlight-code"),
+            "code body missing: {html}"
+        );
+        assert!(
+            html.contains("source mermaid"),
+            "highlight spans missing: {html}"
+        );
+        assert!(
+            html.contains("lg-diagram-loading"),
+            "SSR loading host missing: {html}"
+        );
+        assert!(
+            html.contains("hk-spinner-centered"),
+            "SSR Spinner missing: {html}"
+        );
+        // The live region needs a NAME, or assistive tech announces an unnamed
+        // status (upstream's own loading host carries one).
+        assert!(
+            html.contains("aria-label=\"Loading diagram\""),
+            "loading status has no accessible name: {html}"
+        );
+    }
+
+    /// Only a NON-EMPTY mermaid fence gets the loading placeholder. An empty
+    /// fence has nothing to render — the client's `mountPreview` returns early
+    /// before it clears the canvas, so a placeholder there would spin for ever.
+    /// A math card is KaTeX display output whose runtime clears the canvas
+    /// itself, so a 160px stage would only flash before the formula.
+    ///
+    /// MUT:diagram-loading-scope — dropping the kind or the emptiness half
+    /// turns one of these two cases red.
+    #[test]
+    fn the_loading_placeholder_only_covers_a_non_empty_mermaid_fence() {
+        let empty = render_to_html(&parse("```mermaid\n\n```\n"));
+        assert!(
+            !empty.contains("lg-diagram-loading"),
+            "empty mermaid must not spin: {empty}"
+        );
+        let blank = render_to_html(&parse("```mermaid\n   \n```\n"));
+        assert!(
+            !blank.contains("lg-diagram-loading"),
+            "whitespace mermaid must not spin: {blank}"
+        );
+        let math = render_to_html(&parse("```math\nx^2 + y^2\n```\n"));
+        assert!(
+            !math.contains("lg-diagram-loading"),
+            "math cards keep their own runtime, not a diagram stage: {math}"
+        );
+        // …and the real mermaid case still has it (the test above pins that).
+        let real = render_to_html(&parse("```mermaid\nflowchart TD\n  A --> B\n```\n"));
+        assert!(
+            real.contains("lg-diagram-loading"),
+            "a real mermaid fence keeps the placeholder: {real}"
         );
     }
 

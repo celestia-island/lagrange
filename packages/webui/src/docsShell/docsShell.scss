@@ -403,5 +403,8 @@ body {
 // ── mermaid sub-app host ──────────────────────────────────────────────────
 .lagrange-docs-mermaid {
   width: 100%;
-  min-height: 120px;
+  /* No min-height: the diagram's own stage owns its height (40vh cap with a
+   * content-aware suggestion), and a floor here left dead space under short
+   * graphs. The body sheet carries the same rule; both must stay in step
+   * (diagramCardLayout.test.ts pins the absence). */
 }

@@ -623,17 +623,25 @@ a {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 1.25rem;
-    overflow-x: auto;
+    padding: 0;
+    overflow: auto;
 
     > .lg-diagram-canvas {
         max-width: 100%;
+        overflow: auto;
 
         svg { max-width: 100%; height: auto; }
     }
 
     /* KaTeX display output inherits page colors */
     .katex { color: var(--fg); }
+}
+
+/* The viewport cap belongs to MERMAID cards only: KaTeX display math is
+ * prose-height content and must not be cropped to a diagram stage. The webui
+ * lane caps through hikari's own stage instead. */
+.lg-diagram[data-diagram-kind="mermaid"] .lg-diagram-canvas {
+    max-height: 40vh;
 }
 
 .lg-diagram-error {
@@ -648,7 +656,9 @@ a {
 }
 
 .lg-diagram-source {
-    border-top: 1px solid var(--border);
+    border-top: 0;
+
+    .hk-code-highlight { margin: 0; }
 }
 
 /* ── mobile navigation drawer ─────────────────────────────────────────────

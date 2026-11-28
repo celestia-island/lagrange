@@ -49,12 +49,11 @@ function fixture(): void {
       // button here is the family IconButton shape the renderer emits; the
       // legacy payload shape is gone.
       + '<div class="lg-diagram-preview" data-pane="preview">'
-      + '<div class="lg-diagram-canvas"></div>'
+      + '<div class="lg-diagram-canvas"><div class="lg-diagram-loading" role="status"><div class="hk-spinner-wrapper hk-spinner-centered"><div class="hk-spinner hk-spinner-lg"></div></div></div></div>'
       + '<pre class="lg-diagram-raw" style="display:none"><code>graph TD; A--&gt;B</code></pre>'
       + '</div>'
       + '<div class="lg-diagram-source" data-pane="source" style="display:none">'
-      + '<div class="hk-code-highlight"><div class="hk-code-highlight-header"><div class="hk-code-highlight-label">mermaid</div>'
-      + '<div class="hk-code-highlight-actions"><button aria-label="Copy" class="hk-code-highlight-copy">Copy</button></div></div>'
+      + '<div class="hk-code-highlight" data-framed="false">'
       + '<div class="hk-code-highlight-content"><pre class="hk-code-highlight-code"><code class="language-mermaid">graph TD; A--&gt;B</code></pre></div></div>'
       + '</div></div>',
   };
@@ -66,6 +65,11 @@ function fixture(): void {
 describe("docsMain boot", () => {
   it("boots hydration without throwing and upgrades mermaid boxes", { timeout: 15000 }, async () => {
     fixture();
+    // The fixture carries the renderer's SSR shape (a `.lg-diagram-loading`
+    // host holding the shared Spinner). Whether the RUST renderer emits that
+    // shape is pinned there (`render.rs` tests); asserting it again against
+    // this hand-written string would only test the fixture. What the webui
+    // lane owes is the REPLACEMENT: after boot no spinner may remain.
     vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
     const writes: string[] = [];
     vi.stubGlobal("navigator", {
@@ -81,7 +85,11 @@ describe("docsMain boot", () => {
     // The mermaid box got flagged + a sub-app host mounted into its canvas.
     const box = document.querySelector(".lg-diagram") as HTMLElement | null;
     expect(box?.getAttribute("data-diagram-rendered")).toBe("1");
-    expect(box?.querySelector(".lagrange-docs-mermaid")).toBeTruthy();
+    expect(box?.querySelector(".lagrange-docs-mermaid"), box?.outerHTML).toBeTruthy();
+    expect(box?.querySelector(".lg-diagram-loading")).toBeNull();
+    // MUT:diagram-flush-mount — dropping framed=false from the HkMermaidDiagram
+    // props catches the second inner frame even when the board itself renders.
+    expect(box?.querySelector(".hk-mermaid--flush")).not.toBeNull();
     // Round 9 M40: boot() must INSTALL the copy handler — a direct unit
     // call of installCodeCopy pinned the helper but not the wiring, and
     // removing the call left every code-block copy button dead.
@@ -110,7 +118,12 @@ describe("docsMain boot", () => {
     expect(radios.map((b) => b.textContent)).toEqual(["Preview", "Source"]);
     expect(radios[0].getAttribute("aria-checked")).toBe("true");
     // …and the panes really came through the swap (the preview is mounted).
-    expect(document.querySelector(".lagrange-docs-diagram-pane")).not.toBeNull();
+    const pane = document.querySelector(".lagrange-docs-diagram-pane");
+    expect(pane).not.toBeNull();
+    // MUT:diagram-pane-identity — the pane carries which side it is, because
+    // hydration keeps only the server pane's INNER HTML (the `.lg-diagram-*`
+    // wrapper is gone), and the source body's zero margin keys off this.
+    expect(pane!.getAttribute("data-pane")).toBe("preview");
     expect(copyBtn!.getAttribute("aria-label")).toBe("Copy code");
     vi.unstubAllGlobals();
   });
@@ -151,9 +164,14 @@ describe("docsMain boot — pane switching", () => {
     await new Promise((r) => setTimeout(r, 80));
     const pane = document.querySelector(".lagrange-docs-diagram-pane");
     expect(pane, "a pane is on stage").not.toBeNull();
+    expect(pane!.getAttribute("data-pane")).toBe("source");
     // The source pane shows the highlighted code, not the board.
     expect(pane!.querySelector(".lagrange-docs-mermaid")).toBeNull();
     expect(pane!.querySelector("code")).not.toBeNull();
+    // MUT:diagram-single-header — restoring CodeHighlight's default header or
+    // copy control catches the duplicated MERMAID/Copy row in the source pane.
+    expect(pane!.querySelector(".hk-code-highlight-header")).toBeNull();
+    expect(pane!.querySelector(".hk-code-highlight-copy")).toBeNull();
 
     clickPane("Preview");
     await new Promise((r) => setTimeout(r, 80));
@@ -190,6 +208,42 @@ describe("docsMain boot — diagram chrome localization", () => {
     const copyBtn = document.querySelector<HTMLElement>(".lg-diagram-actions .hk-icon-button");
     expect(copyBtn!.getAttribute("title")).toBe("复制代码");
     expect(copyBtn!.getAttribute("aria-label")).toBe("复制代码");
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("docsMain boot — empty diagram fences", () => {
+  /// An empty mermaid fence has nothing to render, so `mountPreview` returns
+  /// before it mounts anything. The SSR placeholder must not survive that
+  /// early return: it would announce a load that can never finish.
+  ///
+  /// MUT:diagram-loading-scope — dropping the `canvas.replaceChildren()` in
+  /// that branch leaves a permanent live region and turns this red.
+  it("clears the SSR loading host when a fence has no source", { timeout: 15000 }, async () => {
+    fixture();
+    const payload = document.getElementById("lagrange-page-data") as HTMLScriptElement;
+    const page = JSON.parse(payload.textContent as string);
+    // Same card shape, empty raw source.
+    page.html = page.html.replace(
+      /<pre class="lg-diagram-raw"[^>]*>[\s\S]*?<\/pre>/,
+      '<pre class="lg-diagram-raw" style="display:none"><code></code></pre>',
+    );
+    payload.textContent = JSON.stringify(page);
+
+    vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: async () => {} },
+      language: "en",
+      languages: ["en"],
+      userAgent: "vitest",
+    });
+    await boot();
+
+    const box = document.querySelector(".lg-diagram") as HTMLElement;
+    expect(box.getAttribute("data-diagram-rendered")).toBe("1");
+    expect(box.querySelector(".lagrange-docs-mermaid")).toBeNull();
+    expect(box.querySelector(".lg-diagram-loading")).toBeNull();
+    expect(box.querySelector(".lg-diagram-canvas")!.childElementCount).toBe(0);
     vi.unstubAllGlobals();
   });
 });

@@ -247,8 +247,8 @@
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 1.25rem;
-    overflow-x: auto;
+    padding: 0;
+    overflow: auto;
 
     // The canvas is a FLEX ITEM and its content (the mermaid board) is a
     // `width: 100%` child: with the default `flex: 0 1 auto` the item is
@@ -297,13 +297,27 @@
   }
 
   .lg-diagram-source {
-    border-top: 1px solid rgb(var(--color-border) / 40%);
+    border-top: 0;
+
+    // The outer card owns the frame and the only header/copy action. Ordinary
+    // fences keep 1rem vertical separation; an embedded source pane does not.
+    .hk-code-highlight {
+      margin: 0;
+    }
 
     pre {
       margin: 0;
       border: 0;
       border-radius: 0;
     }
+  }
+
+  // The hydrated pane is the server pane's INNER HTML, so `.lg-diagram-source`
+  // no longer wraps it (docsMain.ts carries the identity as data-pane). Both
+  // selectors must exist: the first is the no-JS baseline, this one is what
+  // the reader actually sees after hydration.
+  .lagrange-docs-diagram-pane[data-pane="source"] .hk-code-highlight {
+    margin: 0;
   }
 
   // ── live component blocks (```hikari fences) ───────────────────────
@@ -365,5 +379,4 @@
 // inside the diagram canvas — give it a stable block box.
 .lagrange-docs-mermaid {
   width: 100%;
-  min-height: 120px;
 }

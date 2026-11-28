@@ -71,3 +71,6 @@ minimumReleaseAgeExclude:
   # Legibility pickup (2026-11-28): edge end captions step off the shaft and
   # scale to the edge — hikari#1618.
   - '@celestia-island/hikari@0.55.510'
+  # Viewport pickup: readable linear zoom, capped stage, full minimap and
+  # loading state, hikari#1625.
+  - '@celestia-island/hikari@0.55.513'

@@ -120,6 +120,64 @@ describe("diagram card layout", () => {
   });
 });
 
+describe("diagram embedded content spacing", () => {
+  const legacy = stripComments(readFileSync(resolve(here, "../../../../../styles/layout.scss"), "utf8"));
+
+  it("removes preview padding and source-card margins in both lanes", () => {
+    // MUT:diagram-flush-spacing — restoring preview padding or the generic
+    // 1rem margin inside a source pane catches the source-shape assertions in
+    // each lane; ordinary fenced blocks keep their separate margin pins below.
+    for (const [label, css] of [["webui", sheet], ["legacy", legacy]] as const) {
+      expect(ruleBody(css, ".lg-diagram-preview"), label).toMatch(/padding:\s*0/);
+      const source = ruleBody(css, ".lg-diagram-source");
+      expect(source, `${label} source rule`).not.toBeNull();
+      expect(source!).toMatch(/border-top:\s*0/);
+      expect(ruleBody(source!, ".hk-code-highlight"), label).toMatch(/margin:\s*0/);
+    }
+  });
+
+  /// The hydrated host must not carry a min-height floor: the diagram stage
+  /// owns the height, and a floor left dead space under short graphs. The rule
+  /// lived in TWO sheets with equal specificity (measured live: deleting only
+  /// the body sheet's copy was a runtime no-op), so both are pinned absent.
+  ///
+  /// MUT:diagram-host-floor — restoring `min-height: 120px` in either sheet
+  /// turns this red.
+  it("drops the min-height floor from BOTH mermaid host sheets", () => {
+    const shell = stripComments(
+      readFileSync(resolve(here, "../docsShell.scss"), "utf8"),
+    );
+    for (const [label, cssFile] of [["body", sheet], ["shell", shell]] as const) {
+      const rule = ruleBody(cssFile, ".lagrange-docs-mermaid");
+      expect(rule, `${label} host rule must exist`).not.toBeNull();
+      expect(rule, `${label} must not floor the host`).not.toMatch(/min-height/);
+    }
+  });
+
+  it("caps the legacy diagram canvas at the same default viewport share", () => {
+    // Scoped to mermaid cards on purpose: KaTeX display math is prose-height
+    // content and must not inherit a diagram stage cap.
+    const cap = ruleBody(legacy, '.lg-diagram[data-diagram-kind="mermaid"] .lg-diagram-canvas');
+    expect(cap, "mermaid-scoped cap must exist").not.toBeNull();
+    expect(cap).toMatch(/max-height:\s*40vh/);
+    const base = ruleBody(ruleBody(legacy, ".lg-diagram-preview")!, ".lg-diagram-canvas")!;
+    expect(base).not.toMatch(/max-height/);
+  });
+
+  /// Hydration moves each pane's INNER HTML into `.lagrange-docs-diagram-pane`,
+  /// so the server wrapper `.lg-diagram-source` is gone by the time a reader
+  /// sees the card — the margin rule above stops matching. Measured live
+  /// 2026-11-28: the source body kept `margin: 16px 0px`. This pins the
+  /// hydrated selector, and the boot test pins the data attribute it needs.
+  ///
+  /// MUT:diagram-pane-identity — dropping either half re-introduces the gap.
+  it("zeroes the source card margin in the HYDRATED pane too", () => {
+    const rule = ruleBody(sheet, '.lagrange-docs-diagram-pane[data-pane="source"] .hk-code-highlight');
+    expect(rule, "hydrated source selector must exist").not.toBeNull();
+    expect(rule).toMatch(/margin:\s*0/);
+  });
+});
+
 /**
  * Code blocks need breathing room. The `.hk-code-highlight*` rules the card
  * bridges in from hikari's component sheet give the box no margin, and the
