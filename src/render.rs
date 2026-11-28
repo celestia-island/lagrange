@@ -644,9 +644,14 @@ fn render_diagram_block(kind: DiagramKind, source: &str) -> VNode {
                                             .attr("class", "lg-diagram-loading")
                                             .attr("role", "status")
                                             // A live region with no name
-                                            // announces nothing (the client
-                                            // relabels it from its i18n table
-                                            // like the copy/toggle chrome).
+                                            // announces nothing. The name is
+                                            // ENGLISH on purpose and is NOT
+                                            // localised client-side: this host
+                                            // only exists before the bundle
+                                            // runs, and a no-JS page has no
+                                            // locale to pick. The real loading
+                                            // state (after hydration) is
+                                            // hikari's own, which names itself.
                                             .attr("aria-label", "Loading diagram")
                                             .child(Spinner(SpinnerProps {
                                                 size: SpinnerSize::Lg,
