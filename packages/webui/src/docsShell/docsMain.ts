@@ -12,7 +12,7 @@
 //     from the legacy diagram.js;
 //   - the preview/source segmented toggle rides a delegated listener,
 //     the same semantics the legacy runtime had.
-import { Fragment, computed, createApp, createSSRApp, h, ref } from "vue";
+import { Fragment, computed, createApp, createSSRApp, h, onMounted, ref } from "vue";
 import {
   HkDirectionalSwap,
   HkMermaidDiagram,
@@ -95,7 +95,8 @@ function upgradeDiagramCard(
   const toggle = box.querySelector<HTMLElement>(".lg-diagram-toggle");
   if (!preview || !source || !toggle) return;
 
-  // The pill leaves the header (HkTabs re-renders it in the sub-app).
+  // The pill leaves its slot (HkTabs re-renders it IN that slot — the header's
+  // action cluster — via the ref callback below).
   toggle.remove();
 
   // The panes leave the server markup and become the sub-app's content. What
@@ -115,6 +116,12 @@ function upgradeDiagramCard(
   // Keeping the header in place and swapping only the body is also what the
   // no-JS baseline shows.
   const header = box.querySelector<HTMLElement>(".hi-code-highlight-header");
+  // The pill's slot is the header's action cluster — the family convention
+  // (page chrome: title left, actions right, the card's own control nearest
+  // the corner). HkTabs mounts INTO it via the ref callback below, so the
+  // hydrated header reads [label ··· tabs copy] instead of carrying a second
+  // row for the pill.
+  const actions = header?.querySelector<HTMLElement>(".lg-diagram-actions") ?? null;
   const host = document.createElement("div");
   host.className = "lagrange-docs-diagram-body";
   if (header) {
@@ -135,6 +142,14 @@ function upgradeDiagramCard(
     // directional swap holding one pane.
     setup() {
       const pane = ref<DiagramPane>("preview");
+      // The tabs host moves into the header's action cluster AFTER the whole
+      // tree mounts. Moving it inside the ref callback (mid-mount) steals the
+      // insertion anchor of the sibling swap, which then never lands in the
+      // DOM — the panes vanished until this moved to onMounted.
+      onMounted(() => {
+        const el = host.querySelector<HTMLElement>(".lagrange-docs-diagram-tabs");
+        if (el && actions && el.parentElement !== actions) actions.prepend(el);
+      });
       // Leaving the preview for the source is forward; coming back is back.
       // Two panes make the sequence itself the direction source, so the
       // library's `resolveSwapDirection` helper is not needed here.
@@ -145,7 +160,14 @@ function upgradeDiagramCard(
         h(Fragment, null, [
           h(
             "div",
-            { class: "lagrange-docs-diagram-tabs" },
+            {
+              class: "lagrange-docs-diagram-tabs",
+              // The tabs HOST moves into the header's action cluster (Vue
+              // owns the node and patches it in place; moving the container
+              // itself is the same trick the pane host uses below). Without
+              // the move the pill renders as a second row under the header —
+              // the misplacement the audit screenshot circled.
+            },
             // Children are ALWAYS an array (or a slot function). Passing a
             // bare vnode here makes Vue treat it as the default-slot CONTENT
             // of the wrapper, which for a component child renders as a comment

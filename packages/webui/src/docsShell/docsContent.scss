@@ -190,6 +190,22 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  // The ghost copy button carries the family's `hk-icon-button*` classes
+  // (sheet registered in theme.rs); what lagrange adds locally is the glyph
+  // swap: one icon at a time, check only while copied.
+  .lg-diagram .lg-copy-glyph--check {
+    display: none;
+  }
+
+  .lg-diagram .lg-diagram-copy.copied .lg-copy-glyph--copy {
+    display: none;
+  }
+
+  .lg-diagram .lg-diagram-copy.copied .lg-copy-glyph--check {
+    display: inline-flex;
   }
 
   .lg-diagram-toggle {

@@ -618,22 +618,37 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
         })
         .collect();
 
+    // The copy control is the family's GHOST IconButton — the same control the
+    // chest headers dock in their top-right action area: no border, transparent
+    // ground, one glyph that swaps to the check while copied. The old bare
+    // `hi-code-highlight-copy` class had NO sheet on this lane (the aliased
+    // hk- sheet styles the component card, not this hand-written header), so
+    // the button rendered as a default-bordered box with BOTH icons visible.
     let copy_btn = VNode::Element(Box::new(
         el("button")
-            .attr("class", "hi-code-highlight-copy")
+            .attr(
+                "class",
+                "lg-diagram-copy hk-icon-button hk-icon-button-28 hk-icon-button-ghost",
+            )
             .attr("type", "button")
             .attr("data-copy", source)
             .attr("aria-label", "Copy code")
             .attr("title", "Copy code")
             .child(VNode::Element(Box::new(
                 el("span")
-                    .attr("class", "hi-code-highlight-copy-icon")
+                    .attr(
+                        "class",
+                        "hk-icon-button-icon lg-copy-glyph lg-copy-glyph--copy",
+                    )
                     .attr("aria-hidden", "true")
                     .dangerous_inner_html(crate::icons::icon_svg("content-copy", 14)),
             )))
             .child(VNode::Element(Box::new(
                 el("span")
-                    .attr("class", "hi-code-highlight-check")
+                    .attr(
+                        "class",
+                        "hk-icon-button-icon lg-copy-glyph lg-copy-glyph--check",
+                    )
                     .attr("aria-hidden", "true")
                     .dangerous_inner_html(crate::icons::icon_svg("check", 14)),
             ))),

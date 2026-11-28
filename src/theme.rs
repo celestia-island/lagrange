@@ -40,6 +40,10 @@ fn webui_component_css() -> String {
     let mut registry = StyleRegistry::default();
     hikari_components::basic::link::LinkComponent::register(&mut registry);
     hikari_components::production::code_highlight::CodeHighlightComponent::register(&mut registry);
+    // The diagram cards' copy control carries the family's ghost IconButton
+    // classes (`hk-icon-button*`) — its sheet must ship or the button is an
+    // unstyled default box again.
+    hikari_components::basic::icon_button::IconButtonComponent::register(&mut registry);
     // `.hk-tag` chips (inline code spans, frontmatter tags).
     hikari_components::display::tag::TagComponent::register(&mut registry);
 
@@ -137,6 +141,10 @@ fn hikari_component_css() -> String {
     registry.register_available();
     hikari_components::basic::link::LinkComponent::register(&mut registry);
     hikari_components::production::code_highlight::CodeHighlightComponent::register(&mut registry);
+    // The diagram cards' copy control carries the family's ghost IconButton
+    // classes (`hk-icon-button*`) — its sheet must ship or the button is an
+    // unstyled default box again.
+    hikari_components::basic::icon_button::IconButtonComponent::register(&mut registry);
     // The layout group is NOT covered by register_available — but the site
     // top bar renders hikari's header grammar (.hk-header*), so its sheet
     // must ship too.
