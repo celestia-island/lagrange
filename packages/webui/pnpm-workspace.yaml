@@ -65,3 +65,6 @@ minimumReleaseAgeExclude:
   # Parser-semantics pickup (2026-11-28): implied classes, out-of-block
   # members, and activation markers stop becoming lane names — hikari#1614.
   - '@celestia-island/hikari@0.55.508'
+  # Painter-fidelity pickup (2026-11-28): class multiplicities paint at the
+  # relation's ends and sequence blocks paint as frames — hikari#1616.
+  - '@celestia-island/hikari@0.55.509'
