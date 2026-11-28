@@ -142,6 +142,27 @@ describe("code block margins", () => {
     expect(rule).toMatch(/margin:\s*1rem 0/);
   });
 
+  /// The card header is LAGRANGE chrome and must be flexed by lagrange's own
+  /// sheet: its old `hi-code-highlight-header` borrow only looked right because
+  /// the aliased component sheet happened to flex it, and deleting the borrow
+  /// without a local rule left the label and the pill stacked on two rows
+  /// (measured live 2026-11-28: `display: block`, zero padding).
+  ///
+  /// MUT: dropping either `.lg-diagram-header` block never passes these.
+  it("flexes the diagram header in both lanes", () => {
+    for (const [label, css] of [
+      ["webui", sheet],
+      ["legacy", legacy],
+    ] as const) {
+      const rule = ruleBody(css, ".lg-diagram-header");
+      expect(rule, `${label} sheet must style .lg-diagram-header`).not.toBeNull();
+      expect(rule).toMatch(/display:\s*flex/);
+      expect(rule).toMatch(/justify-content:\s*space-between/);
+      // …and the language chip gets its own type treatment.
+      expect(ruleBody(css, ".lg-diagram-lang")).toMatch(/text-transform:\s*uppercase/);
+    }
+  });
+
   /// The renderer emits the LIBRARY's classes only: `hi-code-highlight*` was
   /// the hand-written scaffold's namespace and the alias bridge that styled it
   /// is gone. A stray `hi-` rule here would be dead CSS — or, worse, a sign the
