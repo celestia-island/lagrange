@@ -92,9 +92,14 @@ describe("docsMain boot", () => {
     // Static chrome strings ride the shell's i18n table, not the English
     // fallback the renderer ships: with the page locale installed, both the
     // segmented toggle and the copy button's accessible name are translated.
-    // The pill is hikari's segmented HkTabs (a radiogroup), not the
-    // hand-rolled `.lg-diagram-toggle-btn` pair: the boot pass must have
-    // replaced it, and both radios must be labelled.
+    // The pill is hikari's segmented HkTabs (a radiogroup), and it lives in
+    // the header's ACTION CLUSTER (page chrome: title left, actions right) —
+    // not on a second row under the header, which is where the audit
+    // screenshot circled it.
+    // MUT:code-copy — mounting the tabs outside `.lg-diagram-actions` never
+    // passes this placement assertion.
+    const tabsHost = document.querySelector(".lg-diagram-actions .hk-tabs");
+    expect(tabsHost, "the segmented pill sits in the header actions").not.toBeNull();
     const radios = [...document.querySelectorAll('[role="radiogroup"] [role="radio"]')];
     expect(radios.map((b) => b.textContent)).toEqual(["Preview", "Source"]);
     expect(radios[0].getAttribute("aria-checked")).toBe("true");
