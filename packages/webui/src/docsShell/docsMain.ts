@@ -54,6 +54,9 @@ function readPageData(): DocsPageData {
 
 function showError(box: HTMLElement, msg: string): void {
   box.querySelector(".lg-diagram-error")?.remove();
+  // A terminal error replaces the SSR spinner; leaving both would announce a
+  // perpetual load beside the failure.
+  box.querySelector(".lg-diagram-canvas")?.replaceChildren();
   const note = document.createElement("div");
   note.className = "lg-diagram-error";
   note.textContent = msg;
@@ -195,6 +198,12 @@ function upgradeDiagramCard(
                 const isPreview = pane.value === "preview";
                 return h("div", {
                   class: "lagrange-docs-diagram-pane",
+                  // The panes travel as their innerHTML, so the server-side
+                  // `.lg-diagram-source` / `.lg-diagram-preview` wrappers no
+                  // longer exist here. Styling needs to know WHICH pane this
+                  // is (the source body drops its card margin); the data
+                  // attribute is that signal.
+                  "data-pane": isPreview ? "preview" : "source",
                   innerHTML: isPreview ? previewHtml : sourceHtml,
                   ref: (el: unknown) => {
                     const hostEl = el as HTMLElement | null;
@@ -243,7 +252,7 @@ function mountMermaidBoxes(): void {
       const host = document.createElement("div");
       host.className = "lagrange-docs-mermaid";
       canvas.replaceChildren(host);
-      previewApp = createApp(HkMermaidDiagram, { source, interactive: true });
+      previewApp = createApp(HkMermaidDiagram, { source, interactive: true, framed: false });
       previewApp.mount(host);
     };
     upgradeDiagramCard(box, mountPreview);

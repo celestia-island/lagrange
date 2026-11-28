@@ -44,6 +44,8 @@ fn webui_component_css() -> String {
     // classes (`hk-icon-button*`) — its sheet must ship or the button is an
     // unstyled default box again.
     hikari_components::basic::icon_button::IconButtonComponent::register(&mut registry);
+    // SSR preview placeholders use the same centered Spinner as the Vue board.
+    hikari_components::feedback::spinner::SpinnerComponent::register(&mut registry);
     // `.hk-tag` chips (inline code spans, frontmatter tags).
     hikari_components::display::tag::TagComponent::register(&mut registry);
 
@@ -69,6 +71,7 @@ fn hikari_component_css() -> String {
     // classes (`hk-icon-button*`) — its sheet must ship or the button is an
     // unstyled default box again.
     hikari_components::basic::icon_button::IconButtonComponent::register(&mut registry);
+    hikari_components::feedback::spinner::SpinnerComponent::register(&mut registry);
     // The layout group is NOT covered by register_available — but the site
     // top bar renders hikari's header grammar (.hk-header*), so its sheet
     // must ship too.
@@ -201,6 +204,7 @@ mod tests {
                 ".hk-code-highlight-content",
                 ".hk-code-highlight-copy",
                 ".hk-icon-button-ghost",
+                ".hk-spinner-centered",
             ] {
                 assert!(
                     css.contains(needle),

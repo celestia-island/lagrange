@@ -49,12 +49,11 @@ function fixture(): void {
       // button here is the family IconButton shape the renderer emits; the
       // legacy payload shape is gone.
       + '<div class="lg-diagram-preview" data-pane="preview">'
-      + '<div class="lg-diagram-canvas"></div>'
+      + '<div class="lg-diagram-canvas"><div class="lg-diagram-loading" role="status"><div class="hk-spinner-wrapper hk-spinner-centered"><div class="hk-spinner hk-spinner-lg"></div></div></div></div>'
       + '<pre class="lg-diagram-raw" style="display:none"><code>graph TD; A--&gt;B</code></pre>'
       + '</div>'
       + '<div class="lg-diagram-source" data-pane="source" style="display:none">'
-      + '<div class="hk-code-highlight"><div class="hk-code-highlight-header"><div class="hk-code-highlight-label">mermaid</div>'
-      + '<div class="hk-code-highlight-actions"><button aria-label="Copy" class="hk-code-highlight-copy">Copy</button></div></div>'
+      + '<div class="hk-code-highlight" data-framed="false">'
       + '<div class="hk-code-highlight-content"><pre class="hk-code-highlight-code"><code class="language-mermaid">graph TD; A--&gt;B</code></pre></div></div>'
       + '</div></div>',
   };
@@ -66,6 +65,13 @@ function fixture(): void {
 describe("docsMain boot", () => {
   it("boots hydration without throwing and upgrades mermaid boxes", { timeout: 15000 }, async () => {
     fixture();
+    // SSR presents the shared Spinner before the bundle arrives. Verify it in
+    // a DETACHED static tree so hydration cannot race this assertion; the live
+    // probe below then checks that the real mount replaces it.
+    const payload = JSON.parse(document.getElementById("lagrange-page-data")!.textContent!) as DocsPageData;
+    const ssr = document.createElement("div");
+    ssr.innerHTML = payload.html;
+    expect(ssr.querySelector(".lg-diagram-loading .hk-spinner")).not.toBeNull();
     vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
     const writes: string[] = [];
     vi.stubGlobal("navigator", {
@@ -81,7 +87,11 @@ describe("docsMain boot", () => {
     // The mermaid box got flagged + a sub-app host mounted into its canvas.
     const box = document.querySelector(".lg-diagram") as HTMLElement | null;
     expect(box?.getAttribute("data-diagram-rendered")).toBe("1");
-    expect(box?.querySelector(".lagrange-docs-mermaid")).toBeTruthy();
+    expect(box?.querySelector(".lagrange-docs-mermaid"), box?.outerHTML).toBeTruthy();
+    expect(box?.querySelector(".lg-diagram-loading")).toBeNull();
+    // MUT:diagram-flush-mount — dropping framed=false from the HkMermaidDiagram
+    // props catches the second inner frame even when the board itself renders.
+    expect(box?.querySelector(".hk-mermaid--flush")).not.toBeNull();
     // Round 9 M40: boot() must INSTALL the copy handler — a direct unit
     // call of installCodeCopy pinned the helper but not the wiring, and
     // removing the call left every code-block copy button dead.
@@ -110,7 +120,12 @@ describe("docsMain boot", () => {
     expect(radios.map((b) => b.textContent)).toEqual(["Preview", "Source"]);
     expect(radios[0].getAttribute("aria-checked")).toBe("true");
     // …and the panes really came through the swap (the preview is mounted).
-    expect(document.querySelector(".lagrange-docs-diagram-pane")).not.toBeNull();
+    const pane = document.querySelector(".lagrange-docs-diagram-pane");
+    expect(pane).not.toBeNull();
+    // MUT:diagram-pane-identity — the pane carries which side it is, because
+    // hydration keeps only the server pane's INNER HTML (the `.lg-diagram-*`
+    // wrapper is gone), and the source body's zero margin keys off this.
+    expect(pane!.getAttribute("data-pane")).toBe("preview");
     expect(copyBtn!.getAttribute("aria-label")).toBe("Copy code");
     vi.unstubAllGlobals();
   });
@@ -151,9 +166,14 @@ describe("docsMain boot — pane switching", () => {
     await new Promise((r) => setTimeout(r, 80));
     const pane = document.querySelector(".lagrange-docs-diagram-pane");
     expect(pane, "a pane is on stage").not.toBeNull();
+    expect(pane!.getAttribute("data-pane")).toBe("source");
     // The source pane shows the highlighted code, not the board.
     expect(pane!.querySelector(".lagrange-docs-mermaid")).toBeNull();
     expect(pane!.querySelector("code")).not.toBeNull();
+    // MUT:diagram-single-header — restoring CodeHighlight's default header or
+    // copy control catches the duplicated MERMAID/Copy row in the source pane.
+    expect(pane!.querySelector(".hk-code-highlight-header")).toBeNull();
+    expect(pane!.querySelector(".hk-code-highlight-copy")).toBeNull();
 
     clickPane("Preview");
     await new Promise((r) => setTimeout(r, 80));

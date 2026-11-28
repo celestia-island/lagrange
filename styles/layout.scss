@@ -623,11 +623,13 @@ a {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 1.25rem;
-    overflow-x: auto;
+    padding: 0;
+    overflow: auto;
 
     > .lg-diagram-canvas {
         max-width: 100%;
+        max-height: 40vh;
+        overflow: auto;
 
         svg { max-width: 100%; height: auto; }
     }
@@ -648,7 +650,9 @@ a {
 }
 
 .lg-diagram-source {
-    border-top: 1px solid var(--border);
+    border-top: 0;
+
+    .hk-code-highlight { margin: 0; }
 }
 
 /* ── mobile navigation drawer ─────────────────────────────────────────────

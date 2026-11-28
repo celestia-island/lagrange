@@ -22,6 +22,8 @@
     function showError(box, msg) {
       var old = box.querySelector(".lg-diagram-error");
       if (old && old.parentNode) old.parentNode.removeChild(old);
+      var canvas = box.querySelector(".lg-diagram-canvas");
+      if (canvas) canvas.innerHTML = "";
       var note = document.createElement("div");
       note.className = "lg-diagram-error";
       note.textContent = msg;

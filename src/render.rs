@@ -16,6 +16,7 @@ use hikari_components::display::{
     EmptyState, EmptyStateProps, Skeleton, SkeletonProps, Tag, TagProps, TagVariant, Timeline,
     TimelineProps,
 };
+use hikari_components::feedback::{Spinner, SpinnerProps, SpinnerSize};
 use hikari_components::layout::divider::{DividerOrientation, DividerVariant};
 use hikari_components::layout::{Col, ColProps, Divider, DividerProps};
 use hikari_components::navigation::{Menu, MenuProps};
@@ -626,7 +627,21 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
                         .attr("class", "lg-diagram-preview")
                         .attr("data-pane", "preview")
                         .children(vec![
-                            VNode::Element(Box::new(el("div").attr("class", "lg-diagram-canvas"))),
+                            VNode::Element(Box::new(
+                                el("div")
+                                    .attr("class", "lg-diagram-canvas")
+                                    .child(VNode::Element(Box::new(
+                                        el("div")
+                                            .attr("class", "lg-diagram-loading")
+                                            .attr("role", "status")
+                                            .child(Spinner(SpinnerProps {
+                                                size: SpinnerSize::Lg,
+                                                center: true,
+                                                min_height: Some("160px".to_string()),
+                                                ..Default::default()
+                                            })),
+                                    ))),
+                            )),
                             VNode::Element(Box::new(
                                 el("pre")
                                     .attr("class", "lg-diagram-raw")
@@ -644,6 +659,12 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
                             language: lang.to_string(),
                             code: source.to_string(),
                             code_html: Some(highlighted),
+                            // The outer diagram card already owns the language
+                            // label, pane switch and copy IconButton. The
+                            // embedded code body must not repeat that chrome.
+                            show_header: false,
+                            framed: false,
+                            copyable: false,
                             ..Default::default()
                         })),
                 )),
@@ -824,6 +845,50 @@ mod tests {
         assert!(
             !html.contains("hi-code-highlight-copy"),
             "scaffold copy button resurfaced: {html}"
+        );
+    }
+
+    /// The source pane is only the library's highlighted code body. Its outer
+    /// diagram card owns the sole header, so the old nested MERMAID + Copy row
+    /// can never come back through a default component invocation.
+    ///
+    /// MUT:diagram-source-chrome — dropping show_header/framed/copyable from
+    /// the call catches the duplicate header, frame flag and copy button.
+    #[test]
+    fn diagram_source_has_one_outer_header_and_an_unframed_code_body() {
+        let html = render_to_html(&parse("```mermaid\nflowchart TD\n  A --> B\n```\n"));
+        assert_eq!(
+            html.matches("lg-diagram-header").count(),
+            1,
+            "outer header: {html}"
+        );
+        assert!(
+            !html.contains("hk-code-highlight-header"),
+            "nested header: {html}"
+        );
+        assert!(
+            !html.contains("hk-code-highlight-copy"),
+            "nested copy: {html}"
+        );
+        assert!(
+            html.contains("data-framed=\"false\""),
+            "flush code body: {html}"
+        );
+        assert!(
+            html.contains("hk-code-highlight-code"),
+            "code body missing: {html}"
+        );
+        assert!(
+            html.contains("source mermaid"),
+            "highlight spans missing: {html}"
+        );
+        assert!(
+            html.contains("lg-diagram-loading"),
+            "SSR loading host missing: {html}"
+        );
+        assert!(
+            html.contains("hk-spinner-centered"),
+            "SSR Spinner missing: {html}"
         );
     }
 
