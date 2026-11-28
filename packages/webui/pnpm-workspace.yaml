@@ -68,3 +68,6 @@ minimumReleaseAgeExclude:
   # Painter-fidelity pickup (2026-11-28): class multiplicities paint at the
   # relation's ends and sequence blocks paint as frames — hikari#1616.
   - '@celestia-island/hikari@0.55.509'
+  # Legibility pickup (2026-11-28): edge end captions step off the shaft and
+  # scale to the edge — hikari#1618.
+  - '@celestia-island/hikari@0.55.510'
