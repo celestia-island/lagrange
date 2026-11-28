@@ -8,7 +8,10 @@ use std::fs;
 use std::path::Path;
 
 use crate::highlight;
-use hikari_components::basic::{Card, CardProps, Image, ImageProps, Link, LinkProps};
+use hikari_components::basic::{
+    Card, CardProps, IconButton, IconButtonProps, IconButtonSize, IconButtonVariant, Image,
+    ImageProps, Link, LinkProps,
+};
 use hikari_components::display::{
     EmptyState, EmptyStateProps, Skeleton, SkeletonProps, Tag, TagProps, TagVariant, Timeline,
     TimelineProps,
@@ -618,41 +621,21 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
         })
         .collect();
 
-    // The copy control is the family's GHOST IconButton — the same control the
-    // chest headers dock in their top-right action area: no border, transparent
-    // ground, one glyph that swaps to the check while copied. The old bare
-    // `hi-code-highlight-copy` class had NO sheet on this lane (the aliased
-    // hk- sheet styles the component card, not this hand-written header), so
-    // the button rendered as a default-bordered box with BOTH icons visible.
-    let copy_btn = VNode::Element(Box::new(
-        el("button")
-            .attr(
-                "class",
-                "lg-diagram-copy hk-icon-button hk-icon-button-28 hk-icon-button-ghost",
-            )
-            .attr("type", "button")
-            .attr("data-copy", source)
-            .attr("aria-label", "Copy code")
-            .attr("title", "Copy code")
-            .child(VNode::Element(Box::new(
-                el("span")
-                    .attr(
-                        "class",
-                        "hk-icon-button-icon lg-copy-glyph lg-copy-glyph--copy",
-                    )
-                    .attr("aria-hidden", "true")
-                    .dangerous_inner_html(crate::icons::icon_svg("content-copy", 14)),
-            )))
-            .child(VNode::Element(Box::new(
-                el("span")
-                    .attr(
-                        "class",
-                        "hk-icon-button-icon lg-copy-glyph lg-copy-glyph--check",
-                    )
-                    .attr("aria-hidden", "true")
-                    .dangerous_inner_html(crate::icons::icon_svg("check", 14)),
-            ))),
-    ));
+    // The copy control IS the family's IconButton component (ghost, 28px,
+    // ContentCopy) — the same control the chest headers dock in their top-right
+    // action area. The component's own clipboard handler is wasm-only and this
+    // lane is SSR, so the button is inert here; the docs shell's delegated
+    // handler copies the card's raw source (see `installCodeCopy`). No
+    // `data-copy` payload: `IconButtonProps` has no pass-through attribute, and
+    // the source lives in the card's own `.lg-diagram-raw`.
+    let copy_btn = IconButton(IconButtonProps {
+        icon: Some(hikari_components::prelude::MdiIcon::ContentCopy),
+        variant: IconButtonVariant::Ghost,
+        size: IconButtonSize::S28,
+        aria_label: Some("Copy code".to_string()),
+        title: Some("Copy code".to_string()),
+        ..Default::default()
+    });
 
     let toggle = VNode::Element(Box::new(
         el("div")
@@ -885,6 +868,39 @@ mod tests {
         );
         // The label slot carries the language, not the raw token.
         assert!(html.contains(">rust<"), "language label missing: {html}");
+    }
+
+    /// The diagram card's copy control IS the family IconButton (ghost, 28px,
+    /// ContentCopy) — not a hand-styled button and not the old
+    /// `hi-code-highlight-copy` scaffold (which had no sheet on the webui lane
+    /// and rendered as a bordered box with both glyphs visible).
+    ///
+    /// MUT: reverting to the hand-written button (or dropping the component)
+    /// loses the family classes and brings the scaffold class back — both
+    /// assertions red.
+    #[test]
+    fn diagram_card_copy_button_is_the_family_icon_button() {
+        let html = render_to_html(&parse("```mermaid\nflowchart TD\n  A --> B\n```\n"));
+        assert!(
+            html.contains("hk-icon-button-ghost"),
+            "family ghost IconButton missing: {html}"
+        );
+        // The hook for the delegated handler is the COMPONENT's own classes
+        // scoped by the card (`IconButtonProps` has no class pass-through —
+        // the pre-#199 `lg-diagram-copy` hook class cannot ride it).
+        assert!(
+            html.contains("hk-icon-button-28") && html.contains("hk-icon-button-ghost"),
+            "family size/variant classes missing: {html}"
+        );
+        // No payload attribute: the handler copies the card's raw source.
+        assert!(
+            !html.contains("data-copy"),
+            "payload attribute resurfaced: {html}"
+        );
+        assert!(
+            !html.contains("hi-code-highlight-copy"),
+            "scaffold copy button resurfaced: {html}"
+        );
     }
 
     #[test]

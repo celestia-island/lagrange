@@ -37,7 +37,7 @@ function fixture(): void {
       + '<div class="lg-diagram-actions"><div class="lg-diagram-toggle">'
       + '<button type="button" class="lg-diagram-toggle-btn active" data-pane="preview">Preview</button>'
       + '<button type="button" class="lg-diagram-toggle-btn" data-pane="source">Source</button>'
-      + '</div><button class="hi-code-highlight-copy" data-copy="cargo build" title="Copy code" aria-label="Copy code">copy</button>'
+      + '</div><button type="button" class="hk-icon-button hk-icon-button-28 hk-icon-button-ghost" aria-label="Copy code" title="Copy code"><span class="hk-icon-button-icon"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"/></svg></span></button>'
       + '</div></div>'
       // The REAL renderer shape (`src/render.rs` render_diagram_block): a
       // preview pane holding the canvas + the hidden raw source, and a
@@ -45,7 +45,9 @@ function fixture(): void {
       // `.lg-diagram-preview` / `.lg-diagram-source` / `.lg-diagram-toggle`;
       // a fixture that omitted them let the upgrade no-op silently.
       // MUT: dropping any of the three from this fixture never passes — the
-      // upgrade stops happening and the assertions below catch it.
+      // upgrade stops happening and the assertions below catch it. The copy
+      // button here is the family IconButton shape the renderer emits; the
+      // legacy payload shape is gone.
       + '<div class="lg-diagram-preview" data-pane="preview">'
       + '<div class="lg-diagram-canvas"></div>'
       + '<pre class="lg-diagram-raw" style="display:none"><code>graph TD; A--&gt;B</code></pre>'
@@ -81,14 +83,16 @@ describe("docsMain boot", () => {
     // Round 9 M40: boot() must INSTALL the copy handler — a direct unit
     // call of installCodeCopy pinned the helper but not the wiring, and
     // removing the call left every code-block copy button dead.
+    // MUT:code-copy — dropping the diagram arm from `installCodeCopy` leaves
+    // the family IconButton inert on this SSR lane, and this catches it.
     const copyBtn = document.querySelector<HTMLElement>(
-      "button.hi-code-highlight-copy[data-copy]",
+      ".lg-diagram-actions .hk-icon-button",
     );
     expect(copyBtn, "the fixture's copy button must render").toBeTruthy();
     copyBtn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 10));
-    expect(writes).toEqual(["cargo build"]);
-    expect(copyBtn!.classList.contains("copied")).toBe(true);
+    // The payload is the card's own hidden raw source (no data-copy).
+    expect(writes).toEqual(["graph TD; A-->B"]);
     // Static chrome strings ride the shell's i18n table, not the English
     // fallback the renderer ships: with the page locale installed, both the
     // segmented toggle and the copy button's accessible name are translated.
@@ -181,7 +185,7 @@ describe("docsMain boot — diagram chrome localization", () => {
 
     const panes = [...document.querySelectorAll('[role="radiogroup"] [role="radio"]')].map((b) => b.textContent);
     expect(panes).toEqual(["预览", "源码"]);
-    const copyBtn = document.querySelector<HTMLElement>("button.hi-code-highlight-copy[data-copy]");
+    const copyBtn = document.querySelector<HTMLElement>(".lg-diagram-actions .hk-icon-button");
     expect(copyBtn!.getAttribute("title")).toBe("复制代码");
     expect(copyBtn!.getAttribute("aria-label")).toBe("复制代码");
     vi.unstubAllGlobals();

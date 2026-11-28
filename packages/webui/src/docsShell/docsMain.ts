@@ -408,6 +408,20 @@ export function installCodeCopy(): void {
     // library code card's button (`hk-code-highlight-copy`), which has no
     // payload — its text is the code element beside it. (The card's own wasm
     // handler cannot run on this SSR lane.)
+    // The diagram card's copy control is the family IconButton rendered by
+    // the Rust card — inert on this SSR lane. Its payload is the card's own
+    // hidden raw source (`IconButtonProps` has no attribute pass-through, so
+    // there is no `data-copy`).
+    const diagram = target?.closest?.(
+      ".lg-diagram .lg-diagram-actions .hk-icon-button",
+    ) as HTMLElement | null;
+    if (diagram) {
+      const raw = diagram
+        .closest(".lg-diagram")
+        ?.querySelector(".lg-diagram-raw");
+      copyFrom(diagram, raw?.textContent ?? "");
+      return;
+    }
     const legacy = target?.closest?.(
       "button.hi-code-highlight-copy[data-copy]",
     ) as HTMLElement | null;
@@ -459,11 +473,15 @@ function localizeStaticChrome(): void {
     if (pane === "preview") btn.textContent = t("lagrange::docs.preview", "Preview");
     else if (pane === "source") btn.textContent = t("lagrange::docs.source", "Source");
   }
-  // Every code-block copy button, not only the diagram card's: the ordinary
-  // fenced blocks emit the same node and the legacy lane re-labels them all.
+  // Every copy control, in both markups the renderer emits: the fenced
+  // blocks' family IconButton (`.lg-diagram-copy` is gone — see #191/#199,
+  // the button is the library's now) and the diagram card's ghost button.
   const copy = t("lagrange::docs.copyCode", "Copy code");
   for (const btn of document.querySelectorAll<HTMLElement>(
-    "button.hi-code-highlight-copy[data-copy]",
+    [
+      ".lg-diagram-actions .hk-icon-button",
+      "button.hi-code-highlight-copy[data-copy]",
+    ].join(","),
   )) {
     btn.setAttribute("title", copy);
     btn.setAttribute("aria-label", copy);
