@@ -84,6 +84,196 @@ function headClusters(segs: string[], limit: number): string[] {
   return window;
 }
 
+/** Deepest link-inside-link nesting the flattener unrolls.
+ *
+ *  WHY A CAP AT ALL: the recursion deepens once per nesting level and each
+ *  level re-derives its own pair maps, so without the cap the cost is
+ *  QUADRATIC in the nesting depth of a link-in-link chain — that is a property
+ *  of the shape of the code, not a measurement — and the recursion eventually
+ *  overflows the stack, so a single pasted line could stall and then throw the
+ *  whole excerpt away. The cap is a constant bound, which is what keeps the
+ *  whole projection linear in the window for arbitrarily hostile input.
+ *
+ *  No depth or duration figures are recorded here on purpose. The overflow
+ *  point and the wall-clock costs both depend on the engine, the stack limit
+ *  and the machine, so any specific number would be a claim this file cannot
+ *  keep true. What the cap needs to guarantee is only that it is BOUNDED and
+ *  comfortably below any plausible limit.
+ *
+ *  WHAT HAPPENS PAST IT (asserted in the tests, do NOT "fix" this into a
+ *  silent flatten): the too-deep remainder is returned VERBATIM, so its
+ *  markdown syntax — including its `(href)` target — survives into the
+ *  excerpt as visible noise. That is a known, bounded degradation:
+ *
+ *  - It is NOISE, never data loss: every character still on the page is still
+ *    emitted, so the `…context[match]context…` contract and the underline
+ *    invariant hold. (It shows text the page does NOT show — the target — which
+ *    is why it is noise and why `escapeHtml` still covers it: no injection.)
+ *  - Depth 10 already leaks, so the cap and the first leak coincide: with
+ *    `MAX_LINK_NESTING = 8` the deepest CORRECT flatten is 9 levels
+ *    (`depth` is 0-based and the guard is `depth > MAX_LINK_NESTING`), and
+ *    depth ≥ 10 leaks `[x](u)`.
+ *  - Reachable in principle: each nesting level costs only a handful of
+ *    characters, so a `PREVIEW_CHARS` window can hold far more levels than the
+ *    cap allows. Real docs nest two (`[![alt](img)](href)`); a hand-written
+ *    ten-deep link-in-link chain is a corpus nobody writes, and if one appears
+ *    the excerpt is noisy for that row only — not wrong, not unsafe, not slow. */
+const MAX_LINK_NESTING = 8;
+
+/** ASCII punctuation — the only characters a backslash can escape in GFM —
+ *  as a replacement pattern: an escaped bracket becomes the bracket it
+ *  escaped, which is what the reader was always meant to see. Applied to a
+ *  flattened LABEL only; see the two escape rules on `buildBalanceMaps`. */
+const BACKSLASH_ESCAPE = /\\([\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u007e])/g;
+
+/** Balanced-pair maps for ONE string: `brackets[i]` is the index of the `]`
+ *  that closes the `[` at `i` (and `parens[i]` likewise for `(`), or -1 when
+ *  the pair never closes on this line.
+ *
+ *  Built ONCE per string in a single left-to-right pass, because that single
+ *  pass is the whole point: the two regexes this replaced rescanned to
+ *  end-of-string for EVERY unterminated `[`, which is QUADRATIC in the window
+ *  length. That is why the old form got worse super-linearly as the window
+ *  grew (no durations are recorded here — they vary with the machine and the
+ *  engine; the complexity is the durable fact). One pass is LINEAR regardless
+ *  of how many brackets never close.
+ *
+ *  Depth semantics mirror the Rust indexer (`src/search.rs`:
+ *  `find_close_bracket` / `find_close_paren`): the close is the FIRST one at
+ *  depth zero, not the first close CHARACTER — that is what makes
+ *  `[x](a(b)c)` keep href `a(b)c`. The agreement claimed here is BALANCE ONLY
+ *  (depth counting); it does not cover newline handling (see the stack-reset
+ *  note below, where the two do differ) and it does not cover the ESCAPE
+ *  semantics, which differ too and are called out rather than glossed.
+ *
+ *  Escape semantics are the TS flattener's OWN rules, closer to how GFM
+ *  RENDERS than to how the indexer SCANS. There is no Rust counterpart to
+ *  point at: `strip_inline_markers_into` (`src/search.rs:848`) has five match
+ *  arms (`` ` ``, `*`/`_`, `![`, `[`, `<`) and NO `\` arm, and the
+ *  `find_close_bracket` / `find_close_paren` it calls do zero escape
+ *  handling. Two rules, both stated as what this file does:
+ *
+ *  (a) STRUCTURAL characters (`\[`, `\]`, `\(`, `\)`) — a backslash suppresses
+ *      the character's structural role, so `[a\]b](u)` is one link whose label
+ *      is `a]b` rather than a link ending at the escaped bracket.
+ *
+ *      ⚠️ THIS KNOWINGLY DIVERGES FROM THE RUST INDEXER. Compiled and run
+ *      against the real `find_close_bracket`: the same input
+ *      `[a\]b](u)` yields `close = 3`, i.e. label `"a\"` — Rust treats the
+ *      escaped `\]` as the closing bracket and TS does not. The two are
+ *      OPPOSITE on this input, by design. The divergence is accepted because
+ *      it only affects which characters an excerpt SHOWS; the underline
+ *      contract is carried by token positions the index ships, not by this
+ *      projection, and `escapeHtml` covers the text either way. Do not
+ *      "restore consistency" by copying the indexer's escape-free walk: that
+ *      would print `a\` and lose the `b` the page shows.
+ *  (b) INSIDE a flattened label — a full ASCII-punctuation unescape, because
+ *      the label is now plain text and must not carry `\]` through to the row.
+ *      It never reaches outside a label: prose keeps whatever backslashes it
+ *      shipped with, so `\[x](u)` stays `\[x](u)` (GFM renders `\[` as a
+ *      literal `[`, so this prose is NOT a link and must not be expanded) and
+ *      `\*not em\*` keeps its backslashes untouched.
+ *
+ *  A newline RESETS both stacks. That is THIS flattener's own choice, and it
+ *  is stated as such rather than justified by a standard: it does not match
+ *  GFM, which does allow an inline link to span lines, and it does not match
+ *  the indexer's `find_close_bracket`, which has no newline handling at all.
+ *  It is kept because the excerpt is a one-line projection by construction, so
+ *  a stray `[` must not gobble the rest of the chunk. */
+function buildBalanceMaps(source: string): { brackets: Int32Array; parens: Int32Array } {
+  const length = source.length;
+  const brackets = new Int32Array(length).fill(-1);
+  const parens = new Int32Array(length).fill(-1);
+  const bracketStack: number[] = [];
+  const parenStack: number[] = [];
+  for (let i = 0; i < length; i += 1) {
+    const ch = source.charCodeAt(i);
+    if (ch === 10 /* \n */) {
+      bracketStack.length = 0;
+      parenStack.length = 0;
+      continue;
+    }
+    if (ch === 92 /* \ */) {
+      // The escaped character is content: it may not open or close a pair.
+      // A backslash before the newline escapes nothing.
+      if (i + 1 < length && source.charCodeAt(i + 1) !== 10) i += 1;
+      continue;
+    }
+    if (ch === 91 /* [ */) {
+      bracketStack.push(i);
+    } else if (ch === 93 /* ] */) {
+      const open = bracketStack.pop();
+      if (open !== undefined) brackets[open] = i;
+    } else if (ch === 40 /* ( */) {
+      parenStack.push(i);
+    } else if (ch === 41 /* ) */) {
+      const open = parenStack.pop();
+      if (open !== undefined) parens[open] = i;
+    }
+  }
+  return { brackets, parens };
+}
+
+/** `[text](target)` / `![alt](target)` → `text` / `alt`.
+ *
+ *  A scan, not a replacement: balanced pairs are not a regular language. The
+ *  label is flattened RECURSIVELY the way the indexer does it, so
+ *  `[![alt](i.png)](u)` yields `alt` and `[a[b]c](u)` yields `a[b]c` instead
+ *  of leaving half a construct for the emphasis strippers to maul. Every
+ *  construct the scan consumes advances `i` past its target, so the caller's
+ *  text is walked exactly once. */
+function flattenLinks(source: string, depth = 0): string {
+  if (depth > MAX_LINK_NESTING) return source;
+  const { brackets, parens } = buildBalanceMaps(source);
+  const parts: string[] = [];
+  const length = source.length;
+  let literalStart = 0;
+  let i = 0;
+  while (i < length) {
+    const ch = source.charCodeAt(i);
+    if (ch === 92 /* \ */) {
+      // Escaped character: literal content, never a link opener.
+      i += 2;
+      continue;
+    }
+    const image = ch === 33 /* ! */ && i + 1 < length && source.charCodeAt(i + 1) === 91 /* [ */;
+    if (image || ch === 91 /* [ */) {
+      const open = image ? i + 1 : i;
+      const close = brackets[open];
+      if (close >= 0 && source.charCodeAt(close + 1) === 40 /* ( */) {
+        const targetClose = parens[close + 1];
+        if (targetClose >= 0) {
+          parts.push(source.slice(literalStart, i));
+          const label = source.slice(open + 1, close);
+          // Recursing is only worth it when the label can hold a construct of
+          // its own. The `[` probe is a sufficient short-circuit, not a guess:
+          // every construct this scan can consume starts with `[` — a link
+          // does, and a nested IMAGE does too, because its `!` is the
+          // character immediately BEFORE the `[` (`[![alt](i.png)](u)` puts
+          // `![` inside the label, so the `[` is present). A label without a
+          // `[` can therefore only be flat text, and skipping the walk for it
+          // is what keeps the common case allocation-free.
+          //
+          // The unescape applies to the LABEL ONLY — it is the one place this
+          // scan rewrites characters, and text outside every link keeps
+          // whatever backslashes it shipped with. An earlier draft unescaped
+          // the whole string instead; differential fuzzing against that draft
+          // showed it silently rewrote prose this fix is not about, which is
+          // why the unescape is scoped to this line.
+          const nested = label.includes("[") ? flattenLinks(label, depth + 1) : label;
+          parts.push(label.includes("\\") ? nested.replace(BACKSLASH_ESCAPE, "$1") : nested);
+          i = targetClose + 1;
+          literalStart = i;
+          continue;
+        }
+      }
+    }
+    i += 1;
+  }
+  parts.push(source.slice(literalStart));
+  return parts.join("");
+}
+
 /**
  * Flatten markdown source to readable single-space text.
  *
@@ -105,13 +295,22 @@ export function toPlainText(markdown: string): string {
   // Table rows: drop the separator line, then turn cell pipes into spaces.
   text = text.replace(/^ {0,3}\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$/gm, " ");
   text = text.replace(/[ \t]*\|[ \t]*/g, " ");
-  // Links / images → their label only. Labels and targets are bounded to
-  // ONE LINE (inline links do not span lines in GFM): an unbounded `[^)]*`
-  // made every unterminated `[` rescan to end-of-string, which is quadratic
-  // (measured 5.4 s at 128 KB — the amplifier for the window-size fix above,
-  // R5/S3).
-  text = text.replace(/!\[([^\]\n]*)\]\(([^)\n]*)\)/g, "$1");
-  text = text.replace(/\[([^\]\n]*)\]\(([^)\n]*)\)/g, "$1");
+  // Links / images → their label only. A linear scan (not a regex) because
+  // balanced pairs are not a regular language: `[x](a(b)c)` has href
+  // `a(b)c` in GFM, and the previous `[^)\n]*` target stopped at the FIRST
+  // `)`, leaking `c)` into the excerpt. Escaped brackets (`[a\]b](u)`) come
+  // out as `a]b`.
+  //
+  // The BALANCED-PAIR half matches the indexer (`find_close_bracket` /
+  // `find_close_paren` count depth the same way) — BALANCE ONLY, not newline
+  // handling, which differs. The ESCAPE half does NOT match, and pretending
+  // otherwise would be a false claim: Rust's
+  // `strip_inline_markers_into` has no `\` arm, so `[a\]b](u)` gives the index
+  // the label `a\` while this flattener gives `a]b`. That is a KNOWN,
+  // DELIBERATE divergence — see the long note on `buildBalanceMaps` for why it
+  // is safe (display-only; the underline contract rides on token positions,
+  // not on this projection) and why "restoring consistency" is the wrong fix.
+  text = flattenLinks(text);
   // Emphasis / inline code / strikethrough markers. PAIRED markers go with
   // their content kept; lone `*` / backtick / `~` are markers too. A lone
   // `_` is NOT: snake_case identifiers are content (and GFM agrees —

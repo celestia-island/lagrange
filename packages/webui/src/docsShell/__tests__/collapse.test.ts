@@ -78,6 +78,170 @@ describe("toPlainText", () => {
     // Block order survives: heading, then the first row's first cell.
     expect(flat.indexOf("逐环分解")).toBeLessThan(flat.indexOf("真机集成测试"));
   });
+
+  it("keeps a BALANCED target out of the excerpt (GFM href, not first paren)", () => {
+    // L962/②: the old `[^)\n]*` target stopped at the FIRST `)`, so a href
+    // that carries its own parens (a wikipedia/disambiguation URL, an API
+    // page, a localised filename) leaked its tail into the摘要 — `[x](a(b)c)`
+    // came out `xc)`. The Rust indexer's `find_close_paren` is depth-balanced;
+    // the flattener must agree or the underline sits on a phantom.
+    expect(toPlainText("[x](a(b)c)")).toBe("x");
+    expect(toPlainText("[nested](a(b(c)d)e)")).toBe("nested");
+    expect(toPlainText("see [w](https://en.wikipedia.org/wiki/A_(b)) here")).toBe("see w here");
+  });
+
+  it("keeps an ESCAPED bracket inside the label (one link, not literal text)", () => {
+    // L962/②: `[a\]b](u)` used to survive VERBATIM — the `\]` did not close
+    // the label for the regex, so no match, so the raw markdown (target
+    // included) landed in the row. The escape means the bracket is CONTENT:
+    // the label is `a]b` and the whole construct still loses its target.
+    expect(toPlainText("[a\\]b](u)")).toBe("a]b");
+    expect(toPlainText("see [docs\\[beta\\]](https://x.y/z) now")).toBe("see docs[beta] now");
+    // A backslash before an ordinary punctuation character keeps that
+    // character and drops the backslash (no unstripped `\` reaches the row).
+    expect(toPlainText("[a\\-b](u)")).toBe("a-b");
+    expect(toPlainText("[a\\!b](u)")).toBe("a!b");
+  });
+
+  it("flattens an image to its alt text with a balanced target too", () => {
+    expect(toPlainText("![alt](a(b)c.png)")).toBe("alt");
+    // The badge idiom the docs actually use: an image wrapped in a link.
+    expect(toPlainText("[![badge](https://img.shields.io/x.svg)](https://ci)")).toBe("badge");
+    expect(toPlainText("![](https://x.y/z.png)")).toBe("");
+  });
+
+  it("leaves a lone `[` as prose (no phantom link, no swallowed line)", () => {
+    // Half-typed links are common in the window BEFORE the target is closed;
+    // the scan must not invent a link, nor eat text to the next `]`.
+    expect(toPlainText("unclosed [ label")).toBe("unclosed [ label");
+    expect(toPlainText("[t](u) trailing")).toBe("t trailing");
+    expect(toPlainText("pre[link](https://x.y/z)post")).toBe("prelinkpost");
+    // Reference-style labels are prose here (the excerpt path never resolves
+    // them); only the INLINE form is flattened.
+    // MUT:reference-labels-prose — teaching the flattener to resolve or drop
+    // the `[r]` label turns the next two assertions RED (`t[r]` becomes `t`,
+    // and the definition line stops surviving verbatim).
+    expect(toPlainText("[t](u)[r]")).toBe("t[r]");
+    expect(toPlainText("[a]: https://x.y/z")).toBe("[a]: https://x.y/z");
+  });
+
+  it("does not treat an ESCAPED bracket as a link opener", () => {
+    // `\[` is a literal bracket in GFM, so this is NOT a link — the old regex
+    // matched from index 1 and DELETED the visible `[-]` (`\[-](u)` → `\-`).
+    // The scan keeps every visible character.
+    //
+    // The escape rules are the TS flattener's OWN (Rust's
+    // `strip_inline_markers_into` has no `\` arm, so the two sides knowingly
+    // diverge here — see the `buildBalanceMaps` note). A backslash suppresses
+    // a STRUCTURAL character's role, and the resulting plain-text label gets a
+    // full ASCII unescape — but PROSE outside any label is never unescaped.
+    // MUT:label-only-unescape — unescaping the WHOLE string instead of just
+    // the label turns the `\[x](u)` assertion below RED (done in R4).
+    // Pin the prose half explicitly: `\[x](u)` must
+    // stay `\[x](u)`, because GFM renders `\[` as a literal `[` so this is
+    // not a link, and it must NOT be rewritten into `x`.
+    expect(toPlainText("\\[x](u)")).toBe("\\[x](u)");
+    // NOTE ON STAGE: this asserts the output of the WHOLE `toPlainText`
+    // pipeline, and the value `\not emphasis\` is shaped by the LATER
+    // `[*`~]` stripper (it removes the two `*`s, leaving the backslashes).
+    // So this line pins the composition of two stages, not the link scan
+    // alone — kept because it is the only guard that the emphasis stage still
+    // runs AFTER the link stage and does not eat the backslashes.
+    // MUT:escape-in-label — deleting the backslash suppression in
+    // `buildBalanceMaps` turns the `[a\]b](u)` assertion above RED (done in R4).
+    expect(toPlainText("\\*not emphasis\\*")).toBe("\\not emphasis\\");
+    const escaped = toPlainText("\\[-](u)");
+    expect(escaped).toContain("[-](u)");
+    expect(toPlainText("see \\[not a link](u) here")).toContain("[not a link](u)");
+    expect(toPlainText("see \\[not a link](u) here")).toContain("see");
+  });
+
+  it("caps link nesting, and the cap degrades to NOISE, not to data loss", () => {
+    // L962/R2 S2-1. The cap exists for COST, not cosmetics: each nesting level
+    // re-derives its own pair maps, so without the cap the cost is quadratic in
+    // depth and the recursion eventually overflows the stack — one pasted line
+    // could stall, then blank the whole row. No durations or depth thresholds
+    // are recorded here on purpose: both vary with the engine, the stack limit
+    // and the machine, and a number that cannot be kept true is worse than none.
+    //
+    // Shipped behaviour, pinned so the next round cannot quietly "fix" it into
+    // a silent flatten and call it a bugfix: `depth > 8` returns the remainder
+    // VERBATIM, so past the cap the markdown syntax — target included — is
+    // visible noise. Depth is 0-based, so 9 levels still flatten correctly and
+    // 10 is the first leaking depth.
+    const nest = (levels: number): string => {
+      let out = "x";
+      for (let i = 0; i < levels; i += 1) out = `[${out}](u${i})`;
+      return out;
+    };
+
+    // Correctly flattened at and below the boundary...
+    for (const levels of [1, 2, 5, 8, 9]) {
+      expect(toPlainText(nest(levels)), `nest(${levels}) must flatten`).toBe("x");
+    }
+    // ...and the KNOWN degradation one level past it. `nest(10)` is 61 chars,
+    // so this is comfortably inside a real `PREVIEW_CHARS` window — the reason
+    // the test says "noise" is honest rather than academic.
+    expect(toPlainText(nest(10))).toBe("[x](u0)");
+    expect(toPlainText(nest(10))).toContain("u0");
+
+    // The invariant that makes the cap ACCEPTABLE: it only ever ADDS text the
+    // page does not show. No input may lose visible characters, so the deepest
+    // case still yields the label `x` and every level's bracket count is the
+    // only thing that grows.
+    // MUT:cap-degrades-to-noise — lowering or raising MAX_LINK_NESTING past
+    // its boundary turns the `nest(9)`/`nest(10)` assertions above RED (CAP 1,
+    // 3, 7 and 9 were each run in R4); the no-visible-loss half was checked
+    // separately over depths 9..40 with zero characters lost.
+    const deep = toPlainText(nest(30));
+    expect(deep, "visible text survives the cap").toContain("x");
+    expect(deep.length).toBeGreaterThan(0);
+
+    // Unreachable-by-real-docs sanity: real nesting is two levels
+    // (`[![alt](img)](href)`), which is far under the cap.
+    expect(toPlainText("[![badge](i.svg)](href)")).toBe("badge");
+  });
+
+  it("stays LINEAR on an unterminated-`[` window at the PREVIEW_CHARS cap", () => {
+    // L962/①: every unterminated `[` used to rescan to end-of-string, which
+    // makes the cost QUADRATIC in the window length. That complexity is the
+    // durable fact; the old form's actual durations are deliberately not
+    // recorded here because they vary with the machine and the engine. The
+    // cap matters because `PREVIEW_CHARS` (search.rs) bounds a shipped window,
+    // and the hit list flattens once per row per keystroke (`debounce={0}`).
+    //
+    // The assertion is on the SHAPE (the large/small ratio), not a wall-clock
+    // budget: an absolute bound is a machine-speed test that flakes on a
+    // loaded box, while the ratio is what "linear" actually means. The two
+    // inputs below differ by 8x, so quadratic arithmetic predicts ~64x and
+    // linear arithmetic predicts ~8x; the threshold sits at 20x, which leaves
+    // a linear pass ample margin while a regression to quadratic cannot fit.
+    // These are ratios derived from the input sizes, not measured durations. comment-gate-ok: a disclaimer against misreading, with no behaviour to mutate; the threshold itself is pinned by the `toBeLessThan(20)` call right below.
+    const adversarial = (chars: number): string => "[a".repeat(Math.ceil(chars / 2)).slice(0, chars);
+    /** Median of `reps` runs — one noisy sample must not decide a red. */
+    const median = (fn: (s: string) => unknown, input: string, reps: number): number => {
+      const samples: number[] = [];
+      for (let i = 0; i < reps; i += 1) {
+        const start = performance.now();
+        fn(input);
+        samples.push(performance.now() - start);
+      }
+      samples.sort((a, b) => a - b);
+      return samples[(samples.length - 1) >> 1]!;
+    };
+    const small = adversarial(4096);
+    const large = adversarial(32768);
+    median(toPlainText, small, 15); // warm the JIT before measuring
+    median(toPlainText, large, 5);
+    const smallMs = Math.max(median(toPlainText, small, 15), 0.05);
+    const largeMs = median(toPlainText, large, 5);
+    expect(largeMs / smallMs).toBeLessThan(20);
+
+    // The live cap: one `PREVIEW_CHARS`-sized window must stay imperceptible
+    // even with a generous ceiling.
+    const capped = adversarial(8192);
+    expect(median(toPlainText, capped, 5)).toBeLessThan(20);
+  });
 });
 
 describe("buildExcerptLines — the six-character rule", () => {
