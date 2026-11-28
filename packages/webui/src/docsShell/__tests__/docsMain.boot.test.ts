@@ -211,3 +211,39 @@ describe("docsMain boot — diagram chrome localization", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("docsMain boot — empty diagram fences", () => {
+  /// An empty mermaid fence has nothing to render, so `mountPreview` returns
+  /// before it mounts anything. The SSR placeholder must not survive that
+  /// early return: it would announce a load that can never finish.
+  ///
+  /// MUT:diagram-loading-scope — dropping the `canvas.replaceChildren()` in
+  /// that branch leaves a permanent live region and turns this red.
+  it("clears the SSR loading host when a fence has no source", { timeout: 15000 }, async () => {
+    fixture();
+    const payload = document.getElementById("lagrange-page-data") as HTMLScriptElement;
+    const page = JSON.parse(payload.textContent as string);
+    // Same card shape, empty raw source.
+    page.html = page.html.replace(
+      /<pre class="lg-diagram-raw"[^>]*>[\s\S]*?<\/pre>/,
+      '<pre class="lg-diagram-raw" style="display:none"><code></code></pre>',
+    );
+    payload.textContent = JSON.stringify(page);
+
+    vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: async () => {} },
+      language: "en",
+      languages: ["en"],
+      userAgent: "vitest",
+    });
+    await boot();
+
+    const box = document.querySelector(".lg-diagram") as HTMLElement;
+    expect(box.getAttribute("data-diagram-rendered")).toBe("1");
+    expect(box.querySelector(".lagrange-docs-mermaid")).toBeNull();
+    expect(box.querySelector(".lg-diagram-loading")).toBeNull();
+    expect(box.querySelector(".lg-diagram-canvas")!.childElementCount).toBe(0);
+    vi.unstubAllGlobals();
+  });
+});

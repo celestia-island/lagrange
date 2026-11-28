@@ -243,7 +243,15 @@ function mountMermaidBoxes(): void {
     // freshly emptied when HkDirectionalSwap remounts the generation).
     let previewApp: ReturnType<typeof createApp> | null = null;
     const mountPreview = (canvas: HTMLElement): void => {
-      if (!source) return;
+      if (!source) {
+        // Nothing to render. The server only emits a loading host for a
+        // non-empty mermaid fence, but a card from an older build (or any
+        // future caller) may still carry one: clear it rather than leave a
+        // live region spinning for ever on a card that will never settle.
+        // MUT:diagram-loading-scope — removing this leaves the placeholder.
+        canvas.replaceChildren();
+        return;
+      }
       // One live board at a time: a switch back re-renders the pane, so the
       // previous sub-app is torn down before the new one mounts (otherwise
       // every toggle would leak an app and its listeners).
