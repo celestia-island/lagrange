@@ -136,9 +136,32 @@ describe("diagram embedded content spacing", () => {
     }
   });
 
+  /// The hydrated host must not carry a min-height floor: the diagram stage
+  /// owns the height, and a floor left dead space under short graphs. The rule
+  /// lived in TWO sheets with equal specificity (measured live: deleting only
+  /// the body sheet's copy was a runtime no-op), so both are pinned absent.
+  ///
+  /// MUT:diagram-host-floor — restoring `min-height: 120px` in either sheet
+  /// turns this red.
+  it("drops the min-height floor from BOTH mermaid host sheets", () => {
+    const shell = stripComments(
+      readFileSync(resolve(here, "../docsShell.scss"), "utf8"),
+    );
+    for (const [label, cssFile] of [["body", sheet], ["shell", shell]] as const) {
+      const rule = ruleBody(cssFile, ".lagrange-docs-mermaid");
+      expect(rule, `${label} host rule must exist`).not.toBeNull();
+      expect(rule, `${label} must not floor the host`).not.toMatch(/min-height/);
+    }
+  });
+
   it("caps the legacy diagram canvas at the same default viewport share", () => {
-    const preview = ruleBody(legacy, ".lg-diagram-preview")!;
-    expect(ruleBody(preview, ".lg-diagram-canvas")).toMatch(/max-height:\s*40vh/);
+    // Scoped to mermaid cards on purpose: KaTeX display math is prose-height
+    // content and must not inherit a diagram stage cap.
+    const cap = ruleBody(legacy, '.lg-diagram[data-diagram-kind="mermaid"] .lg-diagram-canvas');
+    expect(cap, "mermaid-scoped cap must exist").not.toBeNull();
+    expect(cap).toMatch(/max-height:\s*40vh/);
+    const base = ruleBody(ruleBody(legacy, ".lg-diagram-preview")!, ".lg-diagram-canvas")!;
+    expect(base).not.toMatch(/max-height/);
   });
 
   /// Hydration moves each pane's INNER HTML into `.lagrange-docs-diagram-pane`,

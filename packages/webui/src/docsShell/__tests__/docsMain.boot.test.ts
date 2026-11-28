@@ -65,13 +65,11 @@ function fixture(): void {
 describe("docsMain boot", () => {
   it("boots hydration without throwing and upgrades mermaid boxes", { timeout: 15000 }, async () => {
     fixture();
-    // SSR presents the shared Spinner before the bundle arrives. Verify it in
-    // a DETACHED static tree so hydration cannot race this assertion; the live
-    // probe below then checks that the real mount replaces it.
-    const payload = JSON.parse(document.getElementById("lagrange-page-data")!.textContent!) as DocsPageData;
-    const ssr = document.createElement("div");
-    ssr.innerHTML = payload.html;
-    expect(ssr.querySelector(".lg-diagram-loading .hk-spinner")).not.toBeNull();
+    // The fixture carries the renderer's SSR shape (a `.lg-diagram-loading`
+    // host holding the shared Spinner). Whether the RUST renderer emits that
+    // shape is pinned there (`render.rs` tests); asserting it again against
+    // this hand-written string would only test the fixture. What the webui
+    // lane owes is the REPLACEMENT: after boot no spinner may remain.
     vi.stubGlobal("location", { assign: vi.fn(), replace: vi.fn() });
     const writes: string[] = [];
     vi.stubGlobal("navigator", {

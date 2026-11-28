@@ -628,7 +628,6 @@ a {
 
     > .lg-diagram-canvas {
         max-width: 100%;
-        max-height: 40vh;
         overflow: auto;
 
         svg { max-width: 100%; height: auto; }
@@ -636,6 +635,13 @@ a {
 
     /* KaTeX display output inherits page colors */
     .katex { color: var(--fg); }
+}
+
+/* The viewport cap belongs to MERMAID cards only: KaTeX display math is
+ * prose-height content and must not be cropped to a diagram stage. The webui
+ * lane caps through hikari's own stage instead. */
+.lg-diagram[data-diagram-kind="mermaid"] .lg-diagram-canvas {
+    max-height: 40vh;
 }
 
 .lg-diagram-error {
