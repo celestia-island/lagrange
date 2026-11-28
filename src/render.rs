@@ -636,8 +636,13 @@ fn render_diagram_block(kind: DiagramKind, source: &str) -> VNode {
                                 // forever), and a math card is KaTeX display
                                 // output whose own runtime clears the canvas —
                                 // a 160px stage would only flash.
+                                // The parser already `trim_end`s a fence body,
+                                // so `trim()` here is a guard for callers that
+                                // build the VNode directly rather than through
+                                // the parser.
                                 // MUT:diagram-loading-scope — dropping either
-                                // condition never passes the renderer pins.
+                                // the kind or the emptiness half never passes
+                                // the renderer pins.
                                 if kind == DiagramKind::Mermaid && !source.trim().is_empty() {
                                     canvas = canvas.child(VNode::Element(Box::new(
                                         el("div")
