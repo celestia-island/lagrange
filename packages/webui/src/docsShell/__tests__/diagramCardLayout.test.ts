@@ -121,10 +121,10 @@ describe("diagram card layout", () => {
 });
 
 /**
- * Code blocks need breathing room. The `.hi-code-highlight*` rules lagrange
+ * Code blocks need breathing room. The `.hk-code-highlight*` rules the card
  * bridges in from hikari's component sheet give the box no margin, and the
  * generic `pre` rule in this sheet deliberately skips
- * `.hi-code-highlight-code` — so a fenced block sat flush against its
+ * `.hk-code-highlight-code` — so a fenced block sat flush against its
  * neighbours (the CLA page's `Signed-off-by:` block, docs.celestia.world
  * 2026-11-27). Both lanes carry the rule: this one for the webui shell,
  * `styles/layout.scss` for the legacy lane.
@@ -137,14 +137,37 @@ describe("code block margins", () => {
   // MUT: zeroing the margin rule below never passes — this pin catches it,
   // and the legacy-lane twin catches it again.
   it("gives every code block at least 1rem above and below (webui lane)", () => {
-    const rule = ruleBody(sheet, ".hi-code-highlight");
-    expect(rule, ".hi-code-highlight rule must exist under the body scope").not.toBeNull();
+    const rule = ruleBody(sheet, ".hk-code-highlight");
+    expect(rule, ".hk-code-highlight rule must exist under the body scope").not.toBeNull();
     expect(rule).toMatch(/margin:\s*1rem 0/);
+  });
+
+  /// The renderer emits the LIBRARY's classes only: `hi-code-highlight*` was
+  /// the hand-written scaffold's namespace and the alias bridge that styled it
+  /// is gone. A stray `hi-` rule here would be dead CSS — or, worse, a sign the
+  /// markup went back to being hand-written.
+  ///
+  /// MUT: reintroducing a `hi-code-highlight` rule (or going back to hand-written
+  /// markup) never passes these assertions.
+  it("carries no retired hi- code-highlight rules in either lane", () => {
+    for (const [label, css] of [
+      ["webui", sheet],
+      ["legacy", legacy],
+    ] as const) {
+      expect(
+        css.includes(".hi-code-highlight"),
+        `${label} sheet still styles the retired scaffold`,
+      ).toBe(false);
+      expect(
+        css.includes(".hk-code-highlight"),
+        `${label} sheet must style the component`,
+      ).toBe(true);
+    }
   });
 
   it("gives every code block at least 1rem above and below (legacy lane)", () => {
     const content = ruleBody(legacy, ".content")!;
-    const rule = ruleBody(content, ".hi-code-highlight");
+    const rule = ruleBody(content, ".hk-code-highlight");
     expect(rule, "the rule must stay nested under .content").not.toBeNull();
     expect(rule).toMatch(/margin:\s*1rem 0/);
     // the legacy article is selectable too

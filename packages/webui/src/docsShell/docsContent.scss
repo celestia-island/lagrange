@@ -23,16 +23,12 @@
   line-height: 1.7;
 
   // Every code block keeps at least this much room above and below. The
-  // `.hi-code-highlight*` sheet gives its own box no margin at all, and the
-  // generic `pre` rule below deliberately skips `.hi-code-highlight-code`
-  // — so a fenced block used to sit flush against the paragraph before and
-  // after it (the CLA page's `Signed-off-by: …` block, 2026-11-27).
+  // The library card gives its box no margin, and the generic `pre` rule below
+  // deliberately skips its code element — so a fenced block used to sit flush
+  // against the paragraph before and after it (the CLA page's
+  // `Signed-off-by: …` block, 2026-11-27). The class is the COMPONENT's now
+  // (the fence is a CodeHighlight call, not hand-written markup).
   // Adjacent blocks' margins collapse, so two blocks in a row keep one gap.
-  .hi-code-highlight {
-    margin: 1rem 0;
-  }
-  // The library code card (the fence renderer calls the component now) needs
-  // the same room — its own sheet gives the box no margin either.
   .hk-code-highlight {
     margin: 1rem 0;
   }
@@ -136,7 +132,7 @@
   // hikari's own markup (code highlights, tags) styles itself; the
   // generic rules below must stay off it — a specificity tie would
   // clobber padding, background and font metrics.
-  pre:not(.hi-code-highlight-code) {
+  pre:not(.hk-code-highlight-code) {
     margin: 1rem 0;
     padding: 1rem;
     border-radius: var(--radius-md, 8px);
@@ -191,21 +187,6 @@
     align-items: center;
     gap: 0.5rem;
     margin-left: auto;
-  }
-
-  // The ghost copy button carries the family's `hk-icon-button*` classes
-  // (sheet registered in theme.rs); what lagrange adds locally is the glyph
-  // swap: one icon at a time, check only while copied.
-  .lg-diagram .lg-copy-glyph--check {
-    display: none;
-  }
-
-  .lg-diagram .lg-diagram-copy.copied .lg-copy-glyph--copy {
-    display: none;
-  }
-
-  .lg-diagram .lg-diagram-copy.copied .lg-copy-glyph--check {
-    display: inline-flex;
   }
 
   .lg-diagram-toggle {

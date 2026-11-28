@@ -1173,7 +1173,7 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
   /* chrome i18n — re-apply UI strings after every render (body is swapped) */
   var si=document.getElementById('lg-search-input');if(si)si.placeholder=lgUI.t('search');
   var sc=document.getElementById('lg-search-clear');if(sc){sc.title=lgUI.t('clearSearch');sc.setAttribute('aria-label',lgUI.t('clearSearch'))}
-  var cp=document.querySelectorAll('.hi-code-highlight-copy');for(var i=0;i<cp.length;i++){cp[i].title=lgUI.t('copyCode');cp[i].setAttribute('aria-label',lgUI.t('copyCode'))}
+  var cp=document.querySelectorAll('.hi-code-highlight-copy,.lg-diagram-actions .hk-icon-button');for(var i=0;i<cp.length;i++){cp[i].title=lgUI.t('copyCode');cp[i].setAttribute('aria-label',lgUI.t('copyCode'))}
   var nt=document.querySelector('.lg-nav-toggle');if(nt){nt.title=lgUI.t('nav');nt.setAttribute('aria-label',lgUI.t('nav'))}
   /* diagrams — render mermaid/KaTeX previews in the freshly swapped body */
   if(window.lgDiagram)window.lgDiagram.init();
@@ -1265,9 +1265,23 @@ const LAGRANGE_JS_TEMPLATE: &str = r##"<script>
 
  /* ── code copy — delegated so buttons keep working after rL body swaps ── */
  document.addEventListener('click',function(e){
-  var btn=e.target&&e.target.closest?e.target.closest('.hi-code-highlight-copy[data-copy]'):null;
-  if(!btn)return;
-  if(window.lagrangeCopy)window.lagrangeCopy(btn.getAttribute('data-copy')||'');
+  if(!e.target||!e.target.closest)return;
+  /* The diagram card's control is the family IconButton rendered by the
+     library card: no `data-copy` (its props do not pass attributes through),
+     so its payload is the card's own hidden raw source. The fenced blocks'
+     card button has no payload either — their code sits in the card. */
+  var dia=e.target.closest('.lg-diagram .lg-diagram-actions .hk-icon-button');
+  var btn=dia;
+  var payload='';
+  if(dia){
+   var raw=dia.closest('.lg-diagram').querySelector('.lg-diagram-raw');
+   payload=raw?raw.textContent:'';
+  }else{
+   btn=e.target.closest('.hi-code-highlight-copy[data-copy]');
+   if(!btn)return;
+   payload=btn.getAttribute('data-copy')||'';
+  }
+  if(window.lagrangeCopy)window.lagrangeCopy(payload);
   btn.classList.add('copied');
   setTimeout(function(){btn.classList.remove('copied')},1500);
  });
@@ -2015,10 +2029,16 @@ mod tests {
             css.contains("--hi-color-primary: rgb(var(--color-primary))"),
             "the bridge must map onto hikari's own token, not the legacy palette"
         );
-        assert!(
-            css.contains(".hi-code-highlight-code"),
-            "the hi- aliases must be emitted (code blocks are unstyled without them)"
-        );
+        // The COMPONENTS' own rules, not a `hi-` alias: the renderer emits the
+        // library classes, so an alias would duplicate rules nothing matches.
+        // MUT: unregistering CodeHighlight/IconButton in the webui builder
+        // never passes this assertion.
+        for needle in [".hk-code-highlight-code", ".hk-icon-button-ghost"] {
+            assert!(
+                css.contains(needle),
+                "the component sheet must carry {needle} (components are unstyled without it)"
+            );
+        }
         // Anchored, not substring: descendant selectors may legitimately
         // contain the substring `body {` inside a rule block — what is
         // forbidden is a RULE whose selector list starts at body/html.
