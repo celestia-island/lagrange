@@ -62,3 +62,6 @@ minimumReleaseAgeExclude:
   # Audit pickup (2026-11-28): the outline shapes stop squeezing their labels
   # and state notes no longer fail the diagram — hikari#1610.
   - '@celestia-island/hikari@0.55.507'
+  # Parser-semantics pickup (2026-11-28): implied classes, out-of-block
+  # members, and activation markers stop becoming lane names — hikari#1614.
+  - '@celestia-island/hikari@0.55.508'
