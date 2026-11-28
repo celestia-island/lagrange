@@ -9,14 +9,16 @@ import { copyText, installCodeCopy } from "../docsMain";
 
 function fixture(): HTMLElement {
   document.body.innerHTML = `
-    <div class="hi-code-highlight">
-      <div class="hi-code-highlight-header">
-        <span class="hi-code-highlight-language">bash</span>
-        <button class="hi-code-highlight-copy" data-copy="cargo run --release">copy</button>
+    <div class="hk-code-highlight">
+      <div class="hk-code-highlight-header">
+        <div class="hk-code-highlight-label">bash</div>
+        <button class="hk-code-highlight-copy">copy</button>
       </div>
-      <pre><code>cargo run --release</code></pre>
+      <div class="hk-code-highlight-content">
+        <pre class="hk-code-highlight-code"><code class="language-bash">cargo run --release</code></pre>
+      </div>
     </div>`;
-  return document.querySelector<HTMLElement>("button.hi-code-highlight-copy")!;
+  return document.querySelector<HTMLElement>("button.hk-code-highlight-copy")!;
 }
 
 let writes: string[] = [];
@@ -63,7 +65,10 @@ describe("the library code card's copy button", () => {
     expect(button.classList.contains("copied")).toBe(true);
   });
 
-  it("still honours the legacy payload button", async () => {
+  /// The fenced-block card's button copies ITS OWN code text. There is no
+  /// `data-copy` payload arm any more: the renderer emits component calls, and
+  /// `IconButtonProps`/`CodeHighlightProps` cannot pass attributes through.
+  it("copies the fence card's code text, not a payload attribute", async () => {
     const button = fixture();
     vi.stubGlobal("navigator", {
       clipboard: { writeText: async (t: string) => { writes.push(t); } },
@@ -103,7 +108,7 @@ describe("copyText", () => {
 });
 
 describe("installCodeCopy", () => {
-  it("copies the button's data-copy payload on click", async () => {
+  it("copies the fence card's code text on click", async () => {
     vi.stubGlobal("navigator", {
       clipboard: { writeText: async (t: string) => { writes.push(t); } },
     });

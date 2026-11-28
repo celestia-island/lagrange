@@ -142,10 +142,9 @@ fn render_block_with_live(
         }
         Block::Paragraph(inlines) => el_node("p", render_inlines(inlines)),
         Block::CodeBlock { lang, code } => {
-            // hikari CodeHighlight has an SSR bug: the code text is emitted
-            // as an attribute (code="...") instead of text content, resulting
-            // in empty <code> elements with only line numbers visible.
-            // Use plain <pre><code> with hi-code-highlight CSS classes.
+            // Through the library's code-highlight card (the SSR attribute
+            // bug is fixed upstream; lagrange keeps its syntect spans via
+            // `code_html`).
             let lang_class = format!("language-{}", lang.as_deref().unwrap_or(""));
             el_pre_code(&lang_class, code)
         }
@@ -358,6 +357,28 @@ fn split_image_theme_fragment(url: &str) -> (&str, Option<ImageScheme>) {
 
 // ── live block rendering ──────────────────────────────────────────────────
 
+/// One live-block SOURCE pane: the library's code-highlight card (chrome +
+/// gutter + copy), with lagrange's own syntect markup handed over via
+/// `code_html`. The pane wrapper keeps the live runtime's contract
+/// (`display:none`, `data-lg-source`, `data-lang-group`) — the tab switcher
+/// and the webui hydration read those, and the card props cannot carry them.
+fn live_source_pane(lang: &str, src: &str, group: &str) -> VNode {
+    let highlighted = highlight::highlight(src, lang);
+    VNode::Element(Box::new(
+        el("div")
+            .attr("class", "lg-live-source")
+            .attr("style", "display:none")
+            .attr("data-lg-source", "")
+            .attr("data-lang-group", group)
+            .child(CodeHighlight(CodeHighlightProps {
+                language: lang.to_string(),
+                code: src.to_string(),
+                code_html: Some(highlighted),
+                ..Default::default()
+            })),
+    ))
+}
+
 fn render_live_block(source: &str, rendered_html: Option<&String>) -> VNode {
     let live_html = rendered_html
         .map(|html| std::collections::HashMap::from([(source.to_string(), html.clone())]))
@@ -509,78 +530,12 @@ fn render_live_pair(
 
     // Source pane for Rust
     if let Some(src) = rust_src {
-        let highlighted = highlight::highlight(src, "rust");
-        let lc = src.lines().count().max(1);
-        let nums: Vec<VNode> = (1..=lc)
-            .map(|i| {
-                VNode::Element(Box::new(
-                    el("div")
-                        .attr("class", "hi-code-highlight-line-number")
-                        .child(txt(&i.to_string())),
-                ))
-            })
-            .collect();
-        let source_div = el("div")
-            .attr("class", "hi-code-highlight-content")
-            .child(VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "hi-code-highlight-line-numbers")
-                    .children(nums),
-            )))
-            .child(VNode::Element(Box::new(
-                el("pre")
-                    .attr("class", "hi-code-highlight-code hi-scroll-container")
-                    .child(VNode::Element(Box::new(
-                        el("code")
-                            .attr("class", "language-rust")
-                            .dangerous_inner_html(&highlighted),
-                    ))),
-            )));
-        let wrapper = el("div")
-            .attr("class", "hi-code-highlight")
-            .attr("style", "display:none")
-            .attr("data-lg-source", "")
-            .attr("data-lang-group", "rust")
-            .child(VNode::Element(Box::new(source_div)));
-        children.push(VNode::Element(Box::new(wrapper)));
+        children.push(live_source_pane("rust", src, "rust"));
     }
 
     // Source pane for TSX
     if let Some(src) = tsx_src {
-        let highlighted = highlight::highlight(src, "tsx");
-        let lc = src.lines().count().max(1);
-        let nums: Vec<VNode> = (1..=lc)
-            .map(|i| {
-                VNode::Element(Box::new(
-                    el("div")
-                        .attr("class", "hi-code-highlight-line-number")
-                        .child(txt(&i.to_string())),
-                ))
-            })
-            .collect();
-        let source_div = el("div")
-            .attr("class", "hi-code-highlight-content")
-            .child(VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "hi-code-highlight-line-numbers")
-                    .children(nums),
-            )))
-            .child(VNode::Element(Box::new(
-                el("pre")
-                    .attr("class", "hi-code-highlight-code hi-scroll-container")
-                    .child(VNode::Element(Box::new(
-                        el("code")
-                            .attr("class", "language-tsx")
-                            .dangerous_inner_html(&highlighted),
-                    ))),
-            )));
-        let wrapper = el("div")
-            .attr("class", "hi-code-highlight")
-            .attr("style", "display:none")
-            .attr("data-lg-source", "")
-            .attr("data-lang-group", "tsx")
-            .child(VNode::Element(Box::new(source_div)));
-        children.push(VNode::Element(Box::new(wrapper)));
+        children.push(live_source_pane("tsx", src, "tsx"));
     }
 
     VNode::Element(Box::new(
@@ -610,16 +565,6 @@ fn render_live_pair(
 fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNode {
     let lang = kind.source_lang();
     let highlighted = highlight::highlight(source, lang);
-    let line_count = source.lines().count().max(1);
-    let line_num_nodes: Vec<VNode> = (1..=line_count)
-        .map(|i| {
-            VNode::Element(Box::new(
-                el("div")
-                    .attr("class", "hi-code-highlight-line-number")
-                    .child(txt(&i.to_string())),
-            ))
-        })
-        .collect();
 
     // The copy control IS the family's IconButton component (ghost, 28px,
     // ContentCopy) — the same control the chest headers dock in their top-right
@@ -665,20 +610,16 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
             .attr("data-diagram-kind", kind.attr())
             .children(vec![
                 VNode::Element(Box::new(
-                    el("div")
-                        .attr("class", "hi-code-highlight-header lg-diagram-header")
-                        .children(vec![
-                            VNode::Element(Box::new(
-                                el("span")
-                                    .attr("class", "hi-code-highlight-language")
-                                    .child(txt(lang)),
-                            )),
-                            VNode::Element(Box::new(
-                                el("div")
-                                    .attr("class", "lg-diagram-actions")
-                                    .children(vec![toggle, copy_btn]),
-                            )),
-                        ]),
+                    el("div").attr("class", "lg-diagram-header").children(vec![
+                        VNode::Element(Box::new(
+                            el("span").attr("class", "lg-diagram-lang").child(txt(lang)),
+                        )),
+                        VNode::Element(Box::new(
+                            el("div")
+                                .attr("class", "lg-diagram-actions")
+                                .children(vec![toggle, copy_btn]),
+                        )),
+                    ]),
                 )),
                 VNode::Element(Box::new(
                     el("div")
@@ -699,29 +640,12 @@ fn render_diagram_block(kind: crate::markdown::DiagramKind, source: &str) -> VNo
                         .attr("class", "lg-diagram-source")
                         .attr("data-pane", "source")
                         .attr("style", "display:none")
-                        .child(VNode::Element(Box::new(
-                            el("div")
-                                .attr("class", "hi-code-highlight-content")
-                                .children(vec![
-                                    VNode::Element(Box::new(
-                                        el("div")
-                                            .attr("class", "hi-code-highlight-line-numbers")
-                                            .children(line_num_nodes),
-                                    )),
-                                    VNode::Element(Box::new(
-                                        el("pre")
-                                            .attr(
-                                                "class",
-                                                "hi-code-highlight-code hi-scroll-container",
-                                            )
-                                            .child(VNode::Element(Box::new(
-                                                el("code")
-                                                    .attr("class", format!("language-{lang}"))
-                                                    .dangerous_inner_html(&highlighted),
-                                            ))),
-                                    )),
-                                ]),
-                        ))),
+                        .child(CodeHighlight(CodeHighlightProps {
+                            language: lang.to_string(),
+                            code: source.to_string(),
+                            code_html: Some(highlighted),
+                            ..Default::default()
+                        })),
                 )),
             ]),
     ))

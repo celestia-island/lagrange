@@ -33,7 +33,7 @@ function fixture(): void {
     renderMode: "html",
     markdown: "",
     html: '<div class="lg-diagram" data-diagram-kind="mermaid" data-diagram-rendered="0">'
-      + '<div class="hi-code-highlight-header"><span class="hi-code-highlight-language">mermaid</span>'
+      + '<div class="lg-diagram-header"><span class="lg-diagram-lang">mermaid</span>'
       + '<div class="lg-diagram-actions"><div class="lg-diagram-toggle">'
       + '<button type="button" class="lg-diagram-toggle-btn active" data-pane="preview">Preview</button>'
       + '<button type="button" class="lg-diagram-toggle-btn" data-pane="source">Source</button>'
@@ -53,7 +53,9 @@ function fixture(): void {
       + '<pre class="lg-diagram-raw" style="display:none"><code>graph TD; A--&gt;B</code></pre>'
       + '</div>'
       + '<div class="lg-diagram-source" data-pane="source" style="display:none">'
-      + '<div class="hi-code-highlight-content"><pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre></div>'
+      + '<div class="hk-code-highlight"><div class="hk-code-highlight-header"><div class="hk-code-highlight-label">mermaid</div>'
+      + '<div class="hk-code-highlight-actions"><button aria-label="Copy" class="hk-code-highlight-copy">Copy</button></div></div>'
+      + '<div class="hk-code-highlight-content"><pre class="hk-code-highlight-code"><code class="language-mermaid">graph TD; A--&gt;B</code></pre></div></div>'
       + '</div></div>',
   };
   document.body.innerHTML =

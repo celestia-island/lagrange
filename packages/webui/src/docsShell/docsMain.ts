@@ -115,7 +115,7 @@ function upgradeDiagramCard(
   // live in the card header, and the boot pass's own copy handler binds to it.
   // Keeping the header in place and swapping only the body is also what the
   // no-JS baseline shows.
-  const header = box.querySelector<HTMLElement>(".hi-code-highlight-header");
+  const header = box.querySelector<HTMLElement>(".lg-diagram-header");
   // The pill's slot is the header's action cluster — the family convention
   // (page chrome: title left, actions right, the card's own control nearest
   // the corner). HkTabs mounts INTO it via the ref callback below, so the
@@ -408,34 +408,25 @@ export function installCodeCopy(): void {
     // library code card's button (`hk-code-highlight-copy`), which has no
     // payload — its text is the code element beside it. (The card's own wasm
     // handler cannot run on this SSR lane.)
-    // The diagram card's copy control is the family IconButton rendered by
-    // the Rust card — inert on this SSR lane. Its payload is the card's own
-    // hidden raw source (`IconButtonProps` has no attribute pass-through, so
-    // there is no `data-copy`).
+    // Two copy controls, both COMPONENTS the renderer emits (inert on this
+    // SSR lane — their own handlers are wasm-only):
+    //  - the diagram card's family IconButton, whose payload is the card's
+    //    hidden raw source (`IconButtonProps` has no attribute pass-through);
+    //  - the fenced blocks' CodeHighlight button, whose payload is its own
+    //    `pre code` text.
     const diagram = target?.closest?.(
       ".lg-diagram .lg-diagram-actions .hk-icon-button",
     ) as HTMLElement | null;
     if (diagram) {
-      const raw = diagram
-        .closest(".lg-diagram")
-        ?.querySelector(".lg-diagram-raw");
+      const raw = diagram.closest(".lg-diagram")?.querySelector(".lg-diagram-raw");
       copyFrom(diagram, raw?.textContent ?? "");
       return;
     }
-    const legacy = target?.closest?.(
-      "button.hi-code-highlight-copy[data-copy]",
-    ) as HTMLElement | null;
-    if (legacy) {
-      copyFrom(legacy, legacy.getAttribute("data-copy") ?? "");
-      return;
-    }
     const card = target?.closest?.(
-      "button.hk-code-highlight-copy",
+      ".hk-code-highlight-copy",
     ) as HTMLElement | null;
     if (card) {
-      const code = card
-        .closest(".hk-code-highlight")
-        ?.querySelector("pre code");
+      const code = card.closest(".hk-code-highlight")?.querySelector("pre code");
       copyFrom(card, code?.textContent ?? "");
       return;
     }
@@ -480,7 +471,7 @@ function localizeStaticChrome(): void {
   for (const btn of document.querySelectorAll<HTMLElement>(
     [
       ".lg-diagram-actions .hk-icon-button",
-      "button.hi-code-highlight-copy[data-copy]",
+      ".hk-code-highlight-copy",
     ].join(","),
   )) {
     btn.setAttribute("title", copy);

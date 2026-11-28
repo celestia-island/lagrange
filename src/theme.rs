@@ -51,86 +51,10 @@ fn webui_component_css() -> String {
     let mut names: Vec<&'static str> = all.keys().copied().collect();
     names.sort_unstable();
     let css = names.iter().map(|n| all[n]).collect::<Vec<_>>().join("\n");
-    format!("{css}\n{}", code_highlight_alias(&css))
-}
-
-/// hikari's stylesheet styles `.hk-code-highlight-*`; lagrange's renderer
-/// emits `hi-code-highlight-*` (render.rs). Duplicate every such rule under
-/// the `hi-` alias so the shipped DOM is styled without touching hikari's
-/// published CSS. Both the legacy and the webui component sheets share it.
-///
-/// Rules are split by brace depth, skipping comments and strings — a naive
-/// `rfind('}')` boundary scan breaks on comment bodies containing braces
-/// (e.g. `pre { margin-block: 1em }`), orphaning the following rule.
-fn code_highlight_alias(css: &str) -> String {
-    let mut bridge = String::new();
-    {
-        let mut depth: i32 = 0;
-        let mut in_comment = false;
-        let mut in_string: Option<char> = None;
-        let mut rule_start = 0usize;
-        let mut last_rule_end = 0usize;
-        let bytes = css.as_bytes();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            let c = bytes[i] as char;
-            if in_comment {
-                if c == '*' && i + 1 < bytes.len() && bytes[i + 1] as char == '/' {
-                    in_comment = false;
-                    i += 2;
-                    continue;
-                }
-                i += 1;
-                continue;
-            }
-            if let Some(q) = in_string {
-                if c == q && (i == 0 || bytes[i - 1] as char != '\\') {
-                    in_string = None;
-                }
-                i += 1;
-                continue;
-            }
-            match c {
-                '/' if i + 1 < bytes.len() && bytes[i + 1] as char == '*' => {
-                    in_comment = true;
-                    i += 2;
-                    continue;
-                }
-                '\'' | '"' => {
-                    in_string = Some(c);
-                    i += 1;
-                    continue;
-                }
-                '{' => {
-                    if depth == 0 {
-                        rule_start = last_rule_end;
-                    }
-                    depth += 1;
-                    i += 1;
-                    continue;
-                }
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        let rule = &css[rule_start..=i];
-                        if rule.contains(".hk-code-highlight") {
-                            let aliased = rule.replace(".hk-code-highlight", ".hi-code-highlight");
-                            bridge.push_str(&aliased);
-                            bridge.push('\n');
-                        }
-                        last_rule_end = i + 1;
-                    }
-                    i += 1;
-                    continue;
-                }
-                _ => {
-                    i += 1;
-                    continue;
-                }
-            }
-        }
-    }
-    format!("{css}\n/* lagrange: hi-code-highlight aliases for hikari hk- classes */\n{bridge}")
+    // No `hi-` alias pass: the renderer emits the LIBRARY's own classes now
+    // (code blocks and the diagram card are real component calls), so an alias
+    // would only duplicate rules nothing matches.
+    css
 }
 
 fn hikari_component_css() -> String {
@@ -155,7 +79,7 @@ fn hikari_component_css() -> String {
     names.sort_unstable();
     let css = names.iter().map(|n| all[n]).collect::<Vec<_>>().join("\n");
 
-    code_highlight_alias(&css)
+    css
 }
 const HIKARI_VARS: &str = r#":root {
 --hi-radius-sm: 4px; --hi-radius-md: 8px; --hi-radius-lg: 12px; --hi-radius-full: 9999px;
@@ -259,29 +183,35 @@ fn theme_overrides(theme: &ThemeConfig) -> String {
 mod tests {
     use super::*;
 
-    /// The legacy sheet must keep its `hi-` aliases: the legacy pages
-    /// render hikari's `hk-code-highlight-*` markup under lagrange's `hi-`
-    /// class names, and dropping the bridge left them unstyled with every
-    /// gate green (PR #119 round 8, M37).
+    /// Both sheets carry the COMPONENTS' own rules. The `hi-` alias bridge is
+    /// gone with the hand-written markup it existed for: the renderer emits
+    /// the library's classes (real component calls), so an alias would only
+    /// duplicate rules nothing matches.
+    ///
+    /// MUT: unregistering CodeHighlight or IconButton in either builder leaves
+    /// that component unstyled — the assertions below never pass then.
     #[test]
-    fn legacy_sheet_carries_the_hi_code_highlight_aliases() {
-        let css = build_css(&ThemeConfig::default());
-        assert!(
-            css.contains(".hk-code-highlight-code"),
-            "the registry rule must be present"
-        );
-        // A RULE, not a bare mention: layout.scss carries
-        // `pre:not(.hi-code-highlight-code)`, which satisfied a weaker
-        // `.contains` check even with the alias bridge deleted (round 8
-        // follow-up — the vacuous pin was found re-running M37).
-        assert!(
-            css.contains(".hi-code-highlight-content {"),
-            "the hi- alias RULES must be emitted for lagrange's renderer markup"
-        );
-        assert!(
-            css.contains(".hi-code-highlight-copy {"),
-            "the copy button's alias rule must be present too"
-        );
+    fn sheets_carry_the_component_rules_they_render() {
+        for (label, css) in [
+            ("legacy", build_css(&ThemeConfig::default())),
+            ("webui", build_webui_css()),
+        ] {
+            for needle in [
+                ".hk-code-highlight-code",
+                ".hk-code-highlight-content",
+                ".hk-code-highlight-copy",
+                ".hk-icon-button-ghost",
+            ] {
+                assert!(
+                    css.contains(needle),
+                    "{label} sheet is missing {needle} (a component is unregistered)"
+                );
+            }
+            assert!(
+                !css.contains(".hi-code-highlight-content {"),
+                "{label} sheet still emits the retired hi- alias"
+            );
+        }
     }
 
     /// The webui lane's sheet is the COMPONENT half only — the legacy
@@ -294,7 +224,10 @@ mod tests {
             css.contains("--hi-color-primary: rgb(var(--color-primary))"),
             "the bridge maps onto hikari's tokens"
         );
-        assert!(css.contains(".hi-code-highlight-code"), "aliases present");
+        assert!(
+            css.contains(".hk-code-highlight-code"),
+            "the component rule is present"
+        );
         assert!(!css.contains(".lg-topbar"), "no legacy page chrome");
         assert!(!css.contains("body {"), "no page-global rules");
         assert!(

@@ -419,10 +419,10 @@ a {
     -webkit-user-select: text;
     user-select: text;
     /* Code blocks keep at least this much room above and below (the
-     * `.hi-code-highlight*` sheet gives its own box no margin; the generic
+     * `.hk-code-highlight*` sheet gives its own box no margin; the generic
      * `pre` rule further down deliberately skips it). Twin of the webui
      * lane's rule in packages/webui/src/docsShell/docsContent.scss. */
-    .hi-code-highlight { margin: 1rem 0; }
+    .hk-code-highlight { margin: 1rem 0; }
 
     h1 { font-size: 1.85rem; font-weight: 700; margin: 0 0 1rem; line-height: 1.3; }
     h2 { font-size: 1.35rem; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; margin: 2rem 0 1rem; }
@@ -444,9 +444,9 @@ a {
     }
     /* hikari markup carries its own styles (injected via build_css);
      * keep lagrange's generic pre/code rules off it — the specificity
-     * tie (.content pre / .hi-code-highlight-code) would otherwise
+     * tie (.content pre / .hk-code-highlight-code) would otherwise
      * clobber padding, background and font metrics. */
-    pre:not(.hi-code-highlight-code) { background: var(--code-bg); padding: 1rem; border-radius: var(--radius); overflow: auto; font-size: 0.85rem; line-height: 1.5; }
+    pre:not(.hk-code-highlight-code) { background: var(--code-bg); padding: 1rem; border-radius: var(--radius); overflow: auto; font-size: 0.85rem; line-height: 1.5; }
     :not(pre) > code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.88em; }
     p > code, li > code { background: var(--code-bg); padding: 0.12em 0.35em; border-radius: 3px; }
     table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: 0.9rem; }
